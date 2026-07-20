@@ -1,5 +1,6 @@
 #include "ziliu/core/engine.h"
 #include "ziliu/core/ipc_protocol.h"
+#include "ziliu/core/settings.h"
 #include "ziliu/core/session_host.h"
 
 #include <cstddef>
@@ -68,6 +69,43 @@ int main() {
   Expect(decoded.commit == wire_response.commit &&
              decoded.snapshot.candidates == wire_response.snapshot.candidates,
          "UTF-8 protocol round trip should preserve candidates");
+
+  const ziliu::core::Settings defaults;
+  Expect(defaults.candidate_layout == ziliu::core::CandidateLayout::kVertical &&
+             defaults.candidate_count == 5 &&
+             defaults.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kShift &&
+             defaults.punctuation_style == ziliu::core::PunctuationStyle::kFullWidth &&
+             defaults.page_key_set == ziliu::core::PageKeySet::kCommaPeriod,
+         "settings defaults should match the first-run experience");
+
+  const auto parsed_settings = ziliu::core::ParseSettings(
+      "candidate_layout=horizontal\n"
+      "candidate_count=7\n"
+      "input_mode_switch_key=control\n"
+      "punctuation_style=half_width\n"
+      "page_keys=brackets\n"
+      "character_set=traditional\n");
+  Expect(parsed_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal &&
+             parsed_settings.candidate_count == 7 &&
+             parsed_settings.input_mode_switch_key ==
+                 ziliu::core::InputModeSwitchKey::kControl &&
+             parsed_settings.punctuation_style == ziliu::core::PunctuationStyle::kHalfWidth &&
+             parsed_settings.page_key_set == ziliu::core::PageKeySet::kBrackets &&
+             parsed_settings.character_set == ziliu::core::CharacterSet::kTraditional,
+         "settings parser should preserve all supported choices");
+  Expect(ziliu::core::ParseSettings(ziliu::core::SerializeSettings(parsed_settings)) ==
+             parsed_settings,
+         "settings should survive a deterministic serialization round trip");
+  Expect(ziliu::core::ParseSettings("candidate_count=99\n").candidate_count ==
+             ziliu::core::kMaximumCandidateCount,
+         "candidate count should be clamped to the supported range");
+  Expect(ziliu::core::MakeCandidatePageSlice(9, 5, 0) ==
+             ziliu::core::CandidatePageSlice{0, 5} &&
+             ziliu::core::MakeCandidatePageSlice(9, 5, 5) ==
+                 ziliu::core::CandidatePageSlice{5, 4} &&
+             ziliu::core::MakeCandidatePageSlice(9, 5, 99) ==
+                 ziliu::core::CandidatePageSlice{5, 4},
+         "candidate pagination should clamp to a stable visible slice");
 
   std::cout << "ziliu_core_tests: OK\n";
   return EXIT_SUCCESS;

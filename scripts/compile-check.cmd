@@ -34,6 +34,8 @@ call :compile "!ROOT!\src\core\src\stub_engine.cpp" core_stub /I"!ROOT!\src\core
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\core\src\ipc_protocol.cpp" core_protocol /I"!ROOT!\src\core\include"
 if errorlevel 1 exit /b !errorlevel!
+call :compile "!ROOT!\src\core\src\settings.cpp" core_settings /I"!ROOT!\src\core\include"
+if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\core\src\session_host.cpp" core_session_host /I"!ROOT!\src\core\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\ipc\src\pipe_client.cpp" ipc_client /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include"
@@ -44,13 +46,13 @@ call :compile "!ROOT!\src\ui\src\candidate_window.cpp" ui_candidate /I"!ROOT!\sr
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\tsf\src\text_service.cpp" tsf_service /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include" /I"!ROOT!\src\tsf\include" /I"!ROOT!\src\ui\include"
 if errorlevel 1 exit /b !errorlevel!
+call :compile "!ROOT!\src\tsf\src\language_bar_button.cpp" tsf_language_bar /I"!ROOT!\src\tsf\include"
+if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\tsf\src\dll_main.cpp" tsf_dll /I"!ROOT!\src\tsf\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\broker\src\broker_main.cpp" broker /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include" /I"!ROOT!\src\broker\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\broker\src\rime_engine.cpp" broker_rime /I"!ROOT!\src\core\include" /I"!ROOT!\src\broker\include" /I"!ROOT!\third_party\librime\src"
-if errorlevel 1 exit /b !errorlevel!
-call :compile "!ROOT!\src\settings\src\settings_main.cpp" settings
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\tools\register\register_main.cpp" register /I"!ROOT!\src\tsf\include"
 if errorlevel 1 exit /b !errorlevel!

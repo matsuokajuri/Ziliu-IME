@@ -10,7 +10,7 @@
 
 namespace ziliu::core::ipc {
 
-inline constexpr std::uint16_t kProtocolVersion = 1;
+inline constexpr std::uint16_t kProtocolVersion = 2;
 inline constexpr std::size_t kMaximumMessageBytes = 64U * 1024U;
 inline constexpr std::size_t kMaximumCandidates = 9;
 
@@ -22,6 +22,9 @@ enum class Command : std::uint16_t {
   kInputLetter = 5,
   kBackspace = 6,
   kSelectCandidate = 7,
+  kPageUp = 8,
+  kPageDown = 9,
+  kSetTraditional = 10,
 };
 
 enum class Status : std::uint16_t {

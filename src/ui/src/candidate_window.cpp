@@ -10,10 +10,14 @@ namespace ziliu::ui {
 namespace {
 
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
-constexpr float kWindowWidth = 420.0F;
+constexpr float kVerticalWindowWidth = 420.0F;
+constexpr float kMinimumHorizontalWindowWidth = 300.0F;
+constexpr float kMaximumHorizontalWindowWidth = 920.0F;
+constexpr float kHorizontalCandidateWidth = 108.0F;
 constexpr float kHorizontalPadding = 14.0F;
 constexpr float kPreeditHeight = 42.0F;
 constexpr float kCandidateHeight = 38.0F;
+constexpr float kHorizontalCandidateHeight = 46.0F;
 constexpr float kCornerRadius = 10.0F;
 
 bool RegisterCandidateWindowClass() {
@@ -58,7 +62,8 @@ bool CandidateWindow::Create(HWND owner) {
   }
 
   window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kCandidateWindowClass, L"",
-                            WS_POPUP, 0, 0, static_cast<int>(kWindowWidth), 64, owner, nullptr,
+                            WS_POPUP, 0, 0, static_cast<int>(kVerticalWindowWidth), 64, owner,
+                            nullptr,
                             GetModuleHandleW(nullptr), this);
   if (window_ == nullptr) {
     return false;
@@ -70,17 +75,31 @@ bool CandidateWindow::Create(HWND owner) {
   return true;
 }
 
-void CandidateWindow::Show(const core::CompositionSnapshot& snapshot, POINT anchor) {
+void CandidateWindow::Show(const core::CompositionSnapshot& snapshot, POINT anchor,
+                           const core::Settings& settings, std::size_t page_offset) {
   if (window_ == nullptr || snapshot.empty()) {
     Hide();
     return;
   }
 
   snapshot_ = snapshot;
-  const auto visible_count = std::max<std::size_t>(snapshot_.candidates.size(), 1);
-  const int height = static_cast<int>(kHorizontalPadding * 2.0F + kPreeditHeight +
-                                      kCandidateHeight * static_cast<float>(visible_count));
-  SetWindowPos(window_, HWND_TOPMOST, anchor.x, anchor.y, static_cast<int>(kWindowWidth), height,
+  settings_ = settings;
+  const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
+                                                  settings_.candidate_count, page_offset);
+  page_offset_ = slice.offset;
+  const auto visible_count = std::max<std::size_t>(slice.count, 1);
+  const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+  window_width_ = horizontal
+                      ? std::clamp(kHorizontalPadding * 2.0F +
+                                       kHorizontalCandidateWidth * static_cast<float>(visible_count),
+                                   kMinimumHorizontalWindowWidth, kMaximumHorizontalWindowWidth)
+                      : kVerticalWindowWidth;
+  const float candidate_area_height =
+      horizontal ? kHorizontalCandidateHeight
+                 : kCandidateHeight * static_cast<float>(visible_count);
+  const int height =
+      static_cast<int>(kHorizontalPadding * 2.0F + kPreeditHeight + candidate_area_height);
+  SetWindowPos(window_, HWND_TOPMOST, anchor.x, anchor.y, static_cast<int>(window_width_), height,
                SWP_NOACTIVATE | SWP_SHOWWINDOW);
   InvalidateRect(window_, nullptr, FALSE);
 }
@@ -191,38 +210,52 @@ void CandidateWindow::Paint() {
     render_target_->DrawTextW(
         snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
         preedit_format_.Get(),
-        D2D1::RectF(kHorizontalPadding, 10.0F, kWindowWidth - kHorizontalPadding,
+        D2D1::RectF(kHorizontalPadding, 10.0F, window_width_ - kHorizontalPadding,
                     kPreeditHeight),
         text_brush_.Get());
     render_target_->DrawLine(
         D2D1::Point2F(kHorizontalPadding, kPreeditHeight),
-        D2D1::Point2F(kWindowWidth - kHorizontalPadding, kPreeditHeight), muted_brush_.Get(),
+        D2D1::Point2F(window_width_ - kHorizontalPadding, kPreeditHeight), muted_brush_.Get(),
         0.5F);
 
-    for (std::size_t index = 0; index < snapshot_.candidates.size(); ++index) {
+    const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
+                                                    settings_.candidate_count, page_offset_);
+    const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+    const float cell_width = horizontal && slice.count != 0
+                                 ? (window_width_ - 16.0F) / static_cast<float>(slice.count)
+                                 : window_width_ - 16.0F;
+    for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
+      const std::size_t candidate_index = slice.offset + visible_index;
+      const float left = horizontal ? 8.0F + static_cast<float>(visible_index) * cell_width : 8.0F;
       const float top = kHorizontalPadding + kPreeditHeight +
-                        static_cast<float>(index) * kCandidateHeight;
-      const D2D1_RECT_F row = D2D1::RectF(8.0F, top - 2.0F, kWindowWidth - 8.0F,
-                                         top + kCandidateHeight - 4.0F);
-      if (index == snapshot_.highlighted_index) {
+                        (horizontal ? 0.0F
+                                    : static_cast<float>(visible_index) * kCandidateHeight);
+      const float right = horizontal ? left + cell_width - 2.0F : window_width_ - 8.0F;
+      const float row_height = horizontal ? kHorizontalCandidateHeight : kCandidateHeight;
+      const D2D1_RECT_F row =
+          D2D1::RectF(left, top - 2.0F, right, top + row_height - 4.0F);
+      if (candidate_index == snapshot_.highlighted_index) {
         render_target_->FillRoundedRectangle(D2D1::RoundedRect(row, kCornerRadius, kCornerRadius),
                                              accent_brush_.Get());
       }
 
-      const std::wstring label = std::to_wstring(index + 1) + L"  " +
-                                 snapshot_.candidates[index].text;
+      const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
+                                 snapshot_.candidates[candidate_index].text;
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
-                                D2D1::RectF(kHorizontalPadding, top, 290.0F,
-                                            top + kCandidateHeight),
+                                D2D1::RectF(horizontal ? left + 8.0F : kHorizontalPadding, top,
+                                            horizontal ? right - 6.0F : 290.0F,
+                                            top + row_height),
                                 text_brush_.Get());
 
-      const auto& annotation = snapshot_.candidates[index].annotation;
-      render_target_->DrawTextW(annotation.c_str(), static_cast<UINT32>(annotation.size()),
-                                annotation_format_.Get(),
-                                D2D1::RectF(300.0F, top + 4.0F, kWindowWidth - kHorizontalPadding,
-                                            top + kCandidateHeight),
-                                muted_brush_.Get());
+      if (!horizontal) {
+        const auto& annotation = snapshot_.candidates[candidate_index].annotation;
+        render_target_->DrawTextW(
+            annotation.c_str(), static_cast<UINT32>(annotation.size()), annotation_format_.Get(),
+            D2D1::RectF(300.0F, top + 4.0F, window_width_ - kHorizontalPadding,
+                        top + kCandidateHeight),
+            muted_brush_.Get());
+      }
     }
 
     if (render_target_->EndDraw() == D2DERR_RECREATE_TARGET) {

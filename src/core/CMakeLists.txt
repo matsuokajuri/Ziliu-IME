@@ -1,5 +1,6 @@
 add_library(ziliu_core STATIC
   src/ipc_protocol.cpp
+  src/settings.cpp
   src/session_host.cpp
   src/stub_engine.cpp)
 

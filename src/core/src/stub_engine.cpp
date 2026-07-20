@@ -43,6 +43,12 @@ class StubEngine final : public Engine {
     return true;
   }
 
+  bool PageUp() override { return false; }
+
+  bool PageDown() override { return false; }
+
+  void SetTraditional(bool enabled) override { traditional_ = enabled; }
+
   std::wstring Select(std::size_t candidate_index) override {
     if (candidate_index >= candidates_.size()) {
       return {};
@@ -73,6 +79,7 @@ class StubEngine final : public Engine {
 
   std::wstring preedit_;
   CandidateList candidates_;
+  bool traditional_ = false;
 };
 
 }  // namespace
@@ -80,4 +87,3 @@ class StubEngine final : public Engine {
 std::unique_ptr<Engine> CreateStubEngine() { return std::make_unique<StubEngine>(); }
 
 }  // namespace ziliu::core
-

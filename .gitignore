@@ -22,6 +22,8 @@
 *.lib
 *.dll
 *.exe
+/src/settings/Generated Files/
+/src/settings/obj/
 
 # Runtime and local state
 *.log

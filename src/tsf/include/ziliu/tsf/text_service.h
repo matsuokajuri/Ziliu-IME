@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <memory>
+#include <string>
 
 namespace ziliu::tsf {
 
@@ -46,9 +47,15 @@ class TextService final : public ITfTextInputProcessorEx,
 
   [[nodiscard]] bool EnsureSession();
   [[nodiscard]] bool ShouldHandleKey(WPARAM wparam) const;
+  [[nodiscard]] bool IsInputModeSwitchKey(WPARAM wparam) const;
+  HRESULT ToggleInputMode(ITfContext* context, BOOL* eaten);
+  HRESULT HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten);
+  HRESULT CommitText(ITfContext* context, std::wstring text, BOOL* eaten);
   HRESULT ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten);
   HRESULT ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context);
   void AbandonSession(ITfContext* context);
+  void RefreshSettings(bool force);
+  void ShowCandidateWindow();
   void StartBroker();
   void ResetRuntimeState();
 

@@ -1,7 +1,9 @@
 #include "ziliu/tsf/text_service.h"
 
 #include "ziliu/core/ipc_protocol.h"
+#include "ziliu/core/settings.h"
 #include "ziliu/ipc/pipe_client.h"
+#include "ziliu/tsf/language_bar_button.h"
 #include "ziliu/tsf/module_state.h"
 #include "ziliu/ui/candidate_window.h"
 
@@ -12,6 +14,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <optional>
@@ -28,9 +32,19 @@ struct TextServiceState {
   core::ipc::Response pending_response;
   core::CompositionSnapshot snapshot;
   ui::CandidateWindow candidate_window;
+  ITfLangBarItemMgr* language_bar_manager = nullptr;
+  LanguageBarButton* language_bar_button = nullptr;
   POINT candidate_anchor{};
   HWND candidate_owner = nullptr;
+  core::Settings settings;
+  std::filesystem::file_time_type settings_write_time{};
+  std::size_t candidate_page_offset = 0;
   bool broker_started = false;
+  bool settings_file_known = false;
+  bool chinese_mode = true;
+  bool switch_key_down = false;
+  bool switch_key_used = false;
+  bool opening_quote = true;
 };
 
 class CompositionEditSession final : public ITfEditSession {
@@ -82,11 +96,68 @@ class CompositionEditSession final : public ITfEditSession {
 
 namespace {
 
-bool HasControlModifier() {
-  return (GetKeyState(VK_CONTROL) & 0x8000) != 0 || (GetKeyState(VK_MENU) & 0x8000) != 0;
+bool HasAltModifier() { return (GetKeyState(VK_MENU) & 0x8000) != 0; }
+
+bool HasControlModifier() { return (GetKeyState(VK_CONTROL) & 0x8000) != 0; }
+
+std::optional<std::filesystem::path> SettingsPath() {
+  std::wstring local_app_data(32768, L'\0');
+  const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data.data(),
+                                               static_cast<DWORD>(local_app_data.size()));
+  if (length == 0 || static_cast<std::size_t>(length) >= local_app_data.size()) {
+    return std::nullopt;
+  }
+  local_app_data.resize(length);
+  return std::filesystem::path(local_app_data) / L"Ziliu" / L"settings.ini";
+}
+
+std::optional<std::string> ReadSettingsFile(const std::filesystem::path& path) {
+  std::ifstream stream(path, std::ios::binary);
+  if (!stream) {
+    return std::nullopt;
+  }
+  return std::string(std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>());
 }
 
 bool IsLetterKey(WPARAM key) { return key >= L'A' && key <= L'Z'; }
+
+bool IsPageKey(WPARAM key, core::PageKeySet key_set, bool next) {
+  if (key_set == core::PageKeySet::kSemicolonApostrophe) {
+    return key == (next ? VK_OEM_7 : VK_OEM_1);
+  }
+  if (key_set == core::PageKeySet::kBrackets) {
+    return key == (next ? VK_OEM_6 : VK_OEM_4);
+  }
+  return key == (next ? VK_OEM_PERIOD : VK_OEM_COMMA);
+}
+
+std::wstring FullWidthPunctuation(WPARAM key, bool* opening_quote) {
+  switch (key) {
+    case VK_OEM_COMMA:
+      return L"，";
+    case VK_OEM_PERIOD:
+      return L"。";
+    case VK_OEM_1:
+      return L"；";
+    case VK_OEM_2:
+      return L"？";
+    case VK_OEM_4:
+      return L"【";
+    case VK_OEM_5:
+      return L"、";
+    case VK_OEM_6:
+      return L"】";
+    case VK_OEM_7: {
+      const bool use_opening = opening_quote == nullptr || *opening_quote;
+      if (opening_quote != nullptr) {
+        *opening_quote = !*opening_quote;
+      }
+      return use_opening ? L"‘" : L"’";
+    }
+    default:
+      return {};
+  }
+}
 
 std::optional<std::filesystem::path> BrokerPath() {
   std::wstring module_path(32768, L'\0');
@@ -97,6 +168,14 @@ std::optional<std::filesystem::path> BrokerPath() {
   }
   module_path.resize(length);
   return std::filesystem::path(module_path).parent_path() / L"ZiliuBroker.exe";
+}
+
+std::optional<std::filesystem::path> SettingsExecutablePath() {
+  const auto broker_path = BrokerPath();
+  if (!broker_path.has_value()) {
+    return std::nullopt;
+  }
+  return broker_path->parent_path() / L"ZiliuSettings.exe";
 }
 
 }  // namespace
@@ -175,6 +254,26 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
     return advise_result;
   }
 
+  ITfLangBarItemMgr* language_bar_manager = nullptr;
+  if (SUCCEEDED(CoCreateInstance(CLSID_TF_LangBarItemMgr, nullptr, CLSCTX_INPROC_SERVER,
+                                 IID_PPV_ARGS(&language_bar_manager)))) {
+    const auto settings_path = SettingsExecutablePath();
+    auto* language_bar_button = new (std::nothrow)
+        LanguageBarButton(settings_path.has_value() ? settings_path->native() : std::wstring{});
+    if (language_bar_button != nullptr &&
+        SUCCEEDED(language_bar_manager->AddItem(language_bar_button))) {
+      state_->language_bar_manager = language_bar_manager;
+      state_->language_bar_button = language_bar_button;
+      state_->language_bar_button->SetChineseMode(state_->chinese_mode);
+    } else {
+      if (language_bar_button != nullptr) {
+        language_bar_button->Release();
+      }
+      language_bar_manager->Release();
+    }
+  }
+
+  RefreshSettings(true);
   StartBroker();
   static_cast<void>(EnsureSession());
   return S_OK;
@@ -191,6 +290,14 @@ STDMETHODIMP TextService::Deactivate() {
     static_cast<void>(state_->client.Exchange(close_request));
   }
   ResetRuntimeState();
+
+  if (state_->language_bar_manager != nullptr && state_->language_bar_button != nullptr) {
+    static_cast<void>(state_->language_bar_manager->RemoveItem(state_->language_bar_button));
+    state_->language_bar_button->Release();
+    state_->language_bar_button = nullptr;
+    state_->language_bar_manager->Release();
+    state_->language_bar_manager = nullptr;
+  }
 
   ITfKeystrokeMgr* keystroke_manager = nullptr;
   if (SUCCEEDED(thread_manager_->QueryInterface(IID_PPV_ARGS(&keystroke_manager)))) {
@@ -245,13 +352,66 @@ bool TextService::EnsureSession() {
   }
   state_->session_id = response->session_id;
   state_->snapshot = response->snapshot;
+  const core::ipc::Request option_request{
+      state_->request_id++, state_->session_id, core::ipc::Command::kSetTraditional,
+      state_->settings.character_set == core::CharacterSet::kTraditional ? 1U : 0U};
+  static_cast<void>(state_->client.Exchange(option_request));
   return true;
+}
+
+void TextService::RefreshSettings(bool force) {
+  const auto path = SettingsPath();
+  if (!path.has_value()) {
+    return;
+  }
+
+  std::error_code time_error;
+  const auto write_time = std::filesystem::last_write_time(*path, time_error);
+  if (time_error) {
+    if (force || state_->settings_file_known) {
+      const bool was_traditional =
+          state_->settings.character_set == core::CharacterSet::kTraditional;
+      state_->settings = {};
+      state_->settings_file_known = false;
+      state_->settings_write_time = {};
+      state_->candidate_page_offset = 0;
+      if (state_->session_id != 0 && was_traditional) {
+        const core::ipc::Request request{state_->request_id++, state_->session_id,
+                                         core::ipc::Command::kSetTraditional, 0U};
+        static_cast<void>(state_->client.Exchange(request));
+      }
+    }
+    return;
+  }
+  if (!force && state_->settings_file_known && write_time == state_->settings_write_time) {
+    return;
+  }
+
+  const auto contents = ReadSettingsFile(*path);
+  if (!contents.has_value()) {
+    return;
+  }
+  const core::CharacterSet previous_character_set = state_->settings.character_set;
+  state_->settings = core::ParseSettings(*contents);
+  state_->settings_write_time = write_time;
+  state_->settings_file_known = true;
+  state_->candidate_page_offset = 0;
+
+  if (state_->session_id != 0 && previous_character_set != state_->settings.character_set) {
+    const core::ipc::Request request{
+        state_->request_id++, state_->session_id, core::ipc::Command::kSetTraditional,
+        state_->settings.character_set == core::CharacterSet::kTraditional ? 1U : 0U};
+    static_cast<void>(state_->client.Exchange(request));
+  }
 }
 
 void TextService::ResetRuntimeState() {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
+  state_->candidate_page_offset = 0;
+  state_->switch_key_down = false;
+  state_->switch_key_used = false;
   state_->candidate_window.Hide();
   state_->broker_started = false;
 }
@@ -266,12 +426,23 @@ void TextService::AbandonSession(ITfContext* context) {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
+  state_->candidate_page_offset = 0;
   state_->candidate_window.Hide();
   state_->broker_started = false;
 }
 
+bool TextService::IsInputModeSwitchKey(WPARAM wparam) const {
+  if (state_->settings.input_mode_switch_key == core::InputModeSwitchKey::kControl) {
+    return wparam == VK_CONTROL || wparam == VK_LCONTROL || wparam == VK_RCONTROL;
+  }
+  return wparam == VK_SHIFT || wparam == VK_LSHIFT || wparam == VK_RSHIFT;
+}
+
 bool TextService::ShouldHandleKey(WPARAM wparam) const {
-  if (HasControlModifier()) {
+  if (IsInputModeSwitchKey(wparam)) {
+    return true;
+  }
+  if (!state_->chinese_mode || HasAltModifier() || HasControlModifier()) {
     return false;
   }
   if (IsLetterKey(wparam)) {
@@ -284,10 +455,31 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
     return !state_->snapshot.candidates.empty();
   }
   if (wparam >= L'1' && wparam <= L'9') {
+    const auto slice = core::MakeCandidatePageSlice(
+        state_->snapshot.candidates.size(), state_->settings.candidate_count,
+        state_->candidate_page_offset);
     const auto index = static_cast<std::size_t>(wparam - L'1');
-    return index < state_->snapshot.candidates.size();
+    return index < slice.count;
+  }
+  if (!state_->snapshot.preedit.empty() &&
+      (IsPageKey(wparam, state_->settings.page_key_set, false) ||
+       IsPageKey(wparam, state_->settings.page_key_set, true))) {
+    return true;
+  }
+  if (state_->snapshot.preedit.empty() &&
+      state_->settings.punctuation_style == core::PunctuationStyle::kFullWidth) {
+    return !FullWidthPunctuation(wparam, nullptr).empty();
   }
   return false;
+}
+
+void TextService::ShowCandidateWindow() {
+  if (state_->snapshot.empty()) {
+    state_->candidate_window.Hide();
+  } else if (state_->candidate_window.Create(state_->candidate_owner)) {
+    state_->candidate_window.Show(state_->snapshot, state_->candidate_anchor, state_->settings,
+                                  state_->candidate_page_offset);
+  }
 }
 
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
@@ -304,7 +496,17 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
-  *eaten = EnsureSession() && ShouldHandleKey(wparam) ? TRUE : FALSE;
+  if (state_->snapshot.empty()) {
+    RefreshSettings(false);
+  }
+  if (state_->switch_key_down && !IsInputModeSwitchKey(wparam)) {
+    state_->switch_key_used = true;
+  }
+  if (!ShouldHandleKey(wparam)) {
+    *eaten = FALSE;
+    return S_OK;
+  }
+  *eaten = IsInputModeSwitchKey(wparam) || EnsureSession() ? TRUE : FALSE;
   return S_OK;
 }
 
@@ -315,15 +517,122 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
     return E_INVALIDARG;
   }
   *eaten = FALSE;
+  if (IsInputModeSwitchKey(wparam)) {
+    state_->switch_key_down = true;
+    state_->switch_key_used = false;
+    *eaten = TRUE;
+    return S_OK;
+  }
+  if (state_->switch_key_down) {
+    state_->switch_key_used = true;
+  }
   if (!EnsureSession() || !ShouldHandleKey(wparam)) {
     return S_OK;
   }
+  if (!state_->snapshot.preedit.empty()) {
+    if (IsPageKey(wparam, state_->settings.page_key_set, false)) {
+      return HandleCandidatePage(context, false, eaten);
+    }
+    if (IsPageKey(wparam, state_->settings.page_key_set, true)) {
+      return HandleCandidatePage(context, true, eaten);
+    }
+  } else if (state_->settings.punctuation_style == core::PunctuationStyle::kFullWidth) {
+    std::wstring punctuation = FullWidthPunctuation(wparam, &state_->opening_quote);
+    if (!punctuation.empty()) {
+      return CommitText(context, std::move(punctuation), eaten);
+    }
+  }
   return ApplyKeyResponse(context, wparam, eaten);
+}
+
+HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten) {
+  if (!state_->snapshot.empty() && state_->session_id != 0) {
+    const core::ipc::Request request{state_->request_id++, state_->session_id,
+                                     core::ipc::Command::kReset, 0};
+    static_cast<void>(state_->client.Exchange(request));
+  }
+  state_->snapshot = {};
+  state_->pending_response = {};
+  state_->candidate_page_offset = 0;
+  state_->candidate_window.Hide();
+  state_->chinese_mode = !state_->chinese_mode;
+  if (state_->language_bar_button != nullptr) {
+    state_->language_bar_button->SetChineseMode(state_->chinese_mode);
+  }
+  static_cast<void>(context);
+  *eaten = TRUE;
+  return S_OK;
+}
+
+HRESULT TextService::HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten) {
+  static_cast<void>(context);
+  const auto slice = core::MakeCandidatePageSlice(
+      state_->snapshot.candidates.size(), state_->settings.candidate_count,
+      state_->candidate_page_offset);
+  if (next && slice.offset + slice.count < state_->snapshot.candidates.size()) {
+    state_->candidate_page_offset = slice.offset + state_->settings.candidate_count;
+    ShowCandidateWindow();
+    *eaten = TRUE;
+    return S_OK;
+  }
+  if (!next && slice.offset != 0) {
+    state_->candidate_page_offset =
+        slice.offset > state_->settings.candidate_count
+            ? slice.offset - state_->settings.candidate_count
+            : 0;
+    ShowCandidateWindow();
+    *eaten = TRUE;
+    return S_OK;
+  }
+
+  const core::ipc::Request request{
+      state_->request_id++, state_->session_id,
+      next ? core::ipc::Command::kPageDown : core::ipc::Command::kPageUp, 0};
+  const auto response = state_->client.Exchange(request);
+  if (response.has_value() && response->status == core::ipc::Status::kOk && response->consumed) {
+    state_->snapshot = response->snapshot;
+    if (next) {
+      state_->candidate_page_offset = 0;
+    } else {
+      state_->candidate_page_offset = core::MakeCandidatePageSlice(
+                                          state_->snapshot.candidates.size(),
+                                          state_->settings.candidate_count,
+                                          state_->snapshot.candidates.size())
+                                          .offset;
+    }
+    ShowCandidateWindow();
+  }
+  *eaten = TRUE;
+  return S_OK;
+}
+
+HRESULT TextService::CommitText(ITfContext* context, std::wstring text, BOOL* eaten) {
+  state_->pending_response = {};
+  state_->pending_response.commit = std::move(text);
+  auto* edit_session = new (std::nothrow) CompositionEditSession(this, context);
+  if (edit_session == nullptr) {
+    return E_OUTOFMEMORY;
+  }
+  HRESULT edit_result = E_FAIL;
+  const HRESULT request_result = context->RequestEditSession(
+      client_id_, edit_session, TF_ES_SYNC | TF_ES_READWRITE, &edit_result);
+  edit_session->Release();
+  if (FAILED(request_result)) {
+    return request_result;
+  }
+  if (FAILED(edit_result)) {
+    return edit_result;
+  }
+  *eaten = TRUE;
+  return S_OK;
 }
 
 HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten) {
   core::ipc::Command command = core::ipc::Command::kInputLetter;
   std::uint32_t value = 0;
+  const auto slice = core::MakeCandidatePageSlice(
+      state_->snapshot.candidates.size(), state_->settings.candidate_count,
+      state_->candidate_page_offset);
   if (IsLetterKey(wparam)) {
     value = static_cast<std::uint32_t>(wparam - L'A' + L'a');
   } else if (wparam == VK_BACK) {
@@ -332,10 +641,15 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
     command = core::ipc::Command::kReset;
   } else if (wparam == VK_SPACE) {
     command = core::ipc::Command::kSelectCandidate;
-    value = static_cast<std::uint32_t>(state_->snapshot.highlighted_index);
+    const bool highlight_is_visible =
+        state_->snapshot.highlighted_index >= slice.offset &&
+        state_->snapshot.highlighted_index < slice.offset + slice.count;
+    value = static_cast<std::uint32_t>(highlight_is_visible
+                                           ? state_->snapshot.highlighted_index
+                                           : slice.offset);
   } else if (wparam >= L'1' && wparam <= L'9') {
     command = core::ipc::Command::kSelectCandidate;
-    value = static_cast<std::uint32_t>(wparam - L'1');
+    value = static_cast<std::uint32_t>(slice.offset + static_cast<std::size_t>(wparam - L'1'));
   } else {
     return S_OK;
   }
@@ -366,11 +680,11 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
   }
 
   state_->snapshot = response->snapshot;
-  if (state_->snapshot.empty()) {
-    state_->candidate_window.Hide();
-  } else if (state_->candidate_window.Create(state_->candidate_owner)) {
-    state_->candidate_window.Show(state_->snapshot, state_->candidate_anchor);
+  if (command == core::ipc::Command::kInputLetter ||
+      command == core::ipc::Command::kBackspace || state_->snapshot.empty()) {
+    state_->candidate_page_offset = 0;
   }
+  ShowCandidateWindow();
   *eaten = TRUE;
   return S_OK;
 }
@@ -424,18 +738,31 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
                                       BOOL* eaten) {
   static_cast<void>(context);
-  static_cast<void>(wparam);
   static_cast<void>(lparam);
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
-  *eaten = FALSE;
+  *eaten = IsInputModeSwitchKey(wparam) && state_->switch_key_down ? TRUE : FALSE;
   return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
                                   BOOL* eaten) {
-  return OnTestKeyUp(context, wparam, lparam, eaten);
+  static_cast<void>(lparam);
+  if (context == nullptr || eaten == nullptr) {
+    return E_INVALIDARG;
+  }
+  *eaten = FALSE;
+  if (!IsInputModeSwitchKey(wparam) || !state_->switch_key_down) {
+    return S_OK;
+  }
+  const bool should_toggle = !state_->switch_key_used;
+  state_->switch_key_down = false;
+  state_->switch_key_used = false;
+  if (!should_toggle) {
+    return S_OK;
+  }
+  return ToggleInputMode(context, eaten);
 }
 
 STDMETHODIMP TextService::OnPreservedKey(ITfContext* context, REFGUID guid, BOOL* eaten) {

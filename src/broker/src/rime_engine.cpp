@@ -22,6 +22,8 @@ namespace ziliu::broker {
 namespace {
 
 constexpr int kRimeBackspace = 0xFF08;
+constexpr int kRimePageUp = 0xFF55;
+constexpr int kRimePageDown = 0xFF56;
 
 std::string ToUtf8(std::wstring_view value) {
   if (value.empty()) {
@@ -139,7 +141,7 @@ class RimeRuntime final {
     for (const auto* overlay : {L"default.custom.yaml", L"rime_ice.custom.yaml"}) {
       std::error_code copy_error;
       std::filesystem::copy_file(shared_data_path / overlay, user_data_path / overlay,
-                                 std::filesystem::copy_options::skip_existing, copy_error);
+                                 std::filesystem::copy_options::overwrite_existing, copy_error);
       if (copy_error) {
         return;
       }
@@ -198,7 +200,8 @@ class RimeRuntime final {
            api_->clear_composition != nullptr && api_->commit_composition != nullptr &&
            api_->get_commit != nullptr && api_->free_commit != nullptr &&
            api_->get_context != nullptr && api_->free_context != nullptr &&
-           api_->select_schema != nullptr && api_->select_candidate_on_current_page != nullptr;
+           api_->select_schema != nullptr && api_->set_option != nullptr &&
+           api_->select_candidate_on_current_page != nullptr;
   }
 
   HMODULE module_ = nullptr;
@@ -224,6 +227,14 @@ class RimeEngine final : public core::Engine {
   }
 
   bool Backspace() override { return api_->process_key(session_id_, kRimeBackspace, 0) != False; }
+
+  bool PageUp() override { return api_->process_key(session_id_, kRimePageUp, 0) != False; }
+
+  bool PageDown() override { return api_->process_key(session_id_, kRimePageDown, 0) != False; }
+
+  void SetTraditional(bool enabled) override {
+    api_->set_option(session_id_, "traditionalization", enabled ? True : False);
+  }
 
   std::wstring Select(std::size_t candidate_index) override {
     if (candidate_index >= core::ipc::kMaximumCandidates ||

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ziliu/core/engine.h"
+#include "ziliu/core/settings.h"
 
 #include <d2d1.h>
 #include <dwrite.h>
@@ -18,7 +19,8 @@ class CandidateWindow final {
   CandidateWindow& operator=(const CandidateWindow&) = delete;
 
   bool Create(HWND owner);
-  void Show(const core::CompositionSnapshot& snapshot, POINT anchor);
+  void Show(const core::CompositionSnapshot& snapshot, POINT anchor,
+            const core::Settings& settings, std::size_t page_offset);
   void Hide();
 
   static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -32,6 +34,9 @@ class CandidateWindow final {
 
   HWND window_ = nullptr;
   core::CompositionSnapshot snapshot_;
+  core::Settings settings_;
+  std::size_t page_offset_ = 0;
+  float window_width_ = 420.0F;
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
   Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> render_target_;

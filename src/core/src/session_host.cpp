@@ -64,6 +64,16 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
     case ipc::Command::kBackspace:
       response.consumed = engine.Backspace();
       break;
+    case ipc::Command::kPageUp:
+      response.consumed = engine.PageUp();
+      break;
+    case ipc::Command::kPageDown:
+      response.consumed = engine.PageDown();
+      break;
+    case ipc::Command::kSetTraditional:
+      engine.SetTraditional(request.value != 0);
+      response.consumed = true;
+      break;
     case ipc::Command::kSelectCandidate:
       response.commit = engine.Select(request.value);
       response.consumed = !response.commit.empty();
