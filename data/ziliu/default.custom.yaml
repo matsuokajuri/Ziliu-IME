@@ -1,0 +1,7 @@
+# 字流只启用雾凇拼音全拼，避免首次部署无关方案。
+# encoding: utf-8
+
+patch:
+  schema_list:
+    - schema: rime_ice
+  menu/page_size: 5

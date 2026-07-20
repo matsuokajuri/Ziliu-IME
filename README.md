@@ -3,8 +3,9 @@
 字流是一款面向 Windows 的自由开源中文输入法。项目坚持五个原则：现代、简洁、高效、
 低占用、纯粹。
 
-当前仓库处于 **0.1 骨架阶段**。它已经固定长期技术栈并建立 TSF、候选窗、后台进程、
-设置程序和输入核心的编译边界；尚未接入 librime，也尚未成为可日常输入中文的版本。
+当前仓库处于 **0.2 输入链路阶段**。TSF、版本化命名管道、Broker、librime、雾凇拼音和
+候选窗已经连通，并由真实引擎测试验证 `zhongguo → 中国` 与 `ziliu → 字流`。候选翻页、
+完整快捷键和常用 Windows 应用兼容性仍待验证，因此尚不是可日常使用的 Alpha。
 
 ## 技术栈
 
@@ -12,7 +13,7 @@
 - Windows Text Services Framework（TSF）
 - Win32、Direct2D、DirectWrite、UI Automation
 - CMake、CTest、Visual Studio 2026
-- librime 输入引擎与雾凇拼音词库（下一阶段接入）
+- librime 1.17.0 输入引擎与固定版本的雾凇拼音词库
 - GPL-3.0-only
 
 项目不使用 Electron、WebView、常驻 .NET、遥测 SDK 或广告组件。
@@ -38,9 +39,13 @@ docs           架构决策、开发和路线图
 普通终端可以直接运行统一脚本，它会定位 Visual Studio、加载 MSVC 环境、配置、构建并测试：
 
 ```powershell
+scripts\fetch-librime-runtime.ps1
 scripts\build-local.cmd Debug
 scripts\build-local.cmd Release
 ```
+
+运行时脚本从 librime 官方 Release 下载固定的 MSVC x64 包并校验 SHA-256。若不运行，项目
+仍可编译和测试 IPC，Broker 会退回只含少量词的确定性 Stub 引擎。
 
 在 Visual Studio Developer PowerShell 中也可使用 CMake presets：
 
@@ -64,9 +69,12 @@ ZiliuRegister.exe uninstall
 
 ## 当前边界
 
-- TSF DLL 完成 COM 生命周期和按键事件接入，但始终放行按键。
-- `ziliu_core` 使用确定性的假引擎验证模块协议。
-- Broker 只提供单实例消息循环，尚未开放 IPC。
+- TSF DLL 仅在 Broker 会话可用时处理字母、退格、Esc、空格和数字选词，并通过 edit
+  session 管理组合文本；IPC 失败时结束当前组合并恢复放行。
+- `ziliu_core` 提供有大小限制的 IPC v1 编解码、会话隔离和确定性 Stub。
+- Broker 使用当前用户 SID ACL 的本机命名管道，独占 librime 和用户词库写入。
+- librime 缺失或不兼容时安全退回 Stub；正常构建使用雾凇拼音并加载字流 overlay。
+- 候选窗已支持定位、选词和上屏，尚未实现翻页与方向键导航。
 - Settings 展示原生 Direct2D 界面骨架，尚未写入配置。
 - 不包含联网、同步、遥测和自动更新代码。
 

@@ -1,0 +1,9 @@
+add_library(ziliu_ipc_client STATIC src/pipe_client.cpp)
+target_include_directories(ziliu_ipc_client PUBLIC include)
+target_link_libraries(ziliu_ipc_client PUBLIC ziliu_core)
+ziliu_configure_target(ziliu_ipc_client)
+
+add_library(ziliu_ipc_server STATIC src/pipe_server.cpp)
+target_include_directories(ziliu_ipc_server PUBLIC include)
+target_link_libraries(ziliu_ipc_server PUBLIC ziliu_core PRIVATE advapi32)
+ziliu_configure_target(ziliu_ipc_server)

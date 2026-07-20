@@ -14,12 +14,13 @@
 
 ## 0.2 能输入“字流”
 
-- Broker 命名管道协议 v1
-- librime 适配层
-- 雾凇拼音数据 overlay
-- TSF composition/edit session
-- 候选定位、选择、翻页和上屏
-- 记事本、Edge、Office、Windows Terminal 冒烟测试
+- [x] Broker 命名管道协议 v1 与当前用户 ACL
+- [x] librime 动态适配层与 Stub 降级路径
+- [x] 雾凇拼音数据 overlay，以及 `ziliu → 字流` 自动测试
+- [x] TSF composition/edit session
+- [x] 候选定位、数字/空格选择和上屏
+- [ ] 候选翻页与方向键导航
+- [ ] 记事本、Edge、Office、Windows Terminal 冒烟测试
 
 ## 0.3 可自用 Alpha
 

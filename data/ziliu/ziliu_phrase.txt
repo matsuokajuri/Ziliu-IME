@@ -1,0 +1,7 @@
+# Rime table
+# coding: utf-8
+#@/db_name ziliu_phrase.txt
+#@/db_type tabledb
+# 字流内置品牌词。字段以 Tab 分隔：词汇、编码、权重。
+
+字流	ziliu	100

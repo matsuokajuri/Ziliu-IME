@@ -1,5 +1,8 @@
 #include "ziliu/core/engine.h"
+#include "ziliu/core/ipc_protocol.h"
+#include "ziliu/core/session_host.h"
 
+#include <cstddef>
 #include <cstdlib>
 #include <iostream>
 #include <string_view>
@@ -41,6 +44,30 @@ int main() {
   engine->Reset();
   Expect(!engine->Backspace(), "backspace should pass through on an empty composition");
   Expect(!engine->ProcessLetter(L'1'), "non-letters should pass through");
+
+  ziliu::core::SessionHost host;
+  const auto created = host.Handle({1, 0, ziliu::core::ipc::Command::kCreateSession, 0});
+  Expect(created.session_id != 0 && host.session_count() == 1,
+         "session host should create an isolated engine");
+  const auto input = host.Handle(
+      {2, created.session_id, ziliu::core::ipc::Command::kInputLetter, L'z'});
+  Expect(input.consumed && input.snapshot.preedit == L"z",
+         "session host should route input to its engine");
+
+  ziliu::core::ipc::Response wire_response;
+  wire_response.request_id = 9;
+  wire_response.session_id = created.session_id;
+  wire_response.consumed = true;
+  wire_response.commit = L"字流";
+  wire_response.snapshot = snapshot;
+  std::vector<std::byte> bytes;
+  Expect(ziliu::core::ipc::EncodeResponse(wire_response, &bytes),
+         "response should encode");
+  ziliu::core::ipc::Response decoded;
+  Expect(ziliu::core::ipc::DecodeResponse(bytes, &decoded), "response should decode");
+  Expect(decoded.commit == wire_response.commit &&
+             decoded.snapshot.candidates == wire_response.snapshot.candidates,
+         "UTF-8 protocol round trip should preserve candidates");
 
   std::cout << "ziliu_core_tests: OK\n";
   return EXIT_SUCCESS;

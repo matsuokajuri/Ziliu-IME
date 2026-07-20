@@ -1,6 +1,7 @@
 # Build output
 /build/
 /out/
+/.cache/
 /.vs/
 /CMakeUserPresets.json
 
@@ -31,4 +32,3 @@
 .codegraph/cache/
 .codegraph/logs/
 .codegraph/*.lock
-

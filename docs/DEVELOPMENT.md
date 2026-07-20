@@ -15,10 +15,15 @@ Installer，给现有实例添加组件 `Microsoft.VisualStudio.Component.VC.Too
 ## 常用命令
 
 ```powershell
+scripts\fetch-librime-runtime.ps1
 scripts\build-local.cmd Debug
 scripts\build-local.cmd Release
 codegraph sync .
 ```
+
+运行时脚本只从 rime/librime 官方 `1.17.0` Release 下载 MSVC x64 包，校验固定
+SHA-256 后解压到被 Git 忽略的 `.cache`。未运行脚本时项目仍可构建，Broker 会使用确定性
+Stub 引擎；运行后重新配置即可把 `rime.dll` 放入构建产物。
 
 如果本机只有 MSVC 编译器和头文件、尚未安装链接库，可先执行严格的逐文件编译检查：
 

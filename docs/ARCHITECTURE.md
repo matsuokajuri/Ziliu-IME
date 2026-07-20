@@ -12,7 +12,7 @@ Windows 应用
   └─ ZiliuTIP.dll             TSF、组合文本、焦点和按键边界
        └─ ZiliuCandidate UI   当前宿主拥有的轻量候选窗
              │
-             └─ 本机命名管道（后续）
+             └─ 本机命名管道 v1
                     │
                     └─ ZiliuBroker.exe
                          ├─ librime
@@ -36,6 +36,7 @@ ZiliuSettings.exe ── 配置文件/受版本控制的 Broker API
 - 使用阻塞消息/IO 等待，空闲时不轮询。
 - 独占 librime 会话和用户词库写入，避免多个宿主进程争用数据库。
 - IPC 采用带版本号的本机命名管道，ACL 限制为当前用户 SID。
+- librime 通过首方动态适配层加载；开发机缺少经过校验的运行时时退回确定性 Stub。
 
 ### ZiliuSettings.exe
 
@@ -66,4 +67,3 @@ ZiliuSettings.exe ── 配置文件/受版本控制的 Broker API
 - 热状态本机 IPC P95：小于 2 ms。
 - 按键到候选刷新 P95：小于 16 ms。
 - 设置程序、更新程序和未来同步程序都不常驻。
-
