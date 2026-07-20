@@ -432,7 +432,8 @@ void TextService::PublishInputMode() {
                                                      &keyboard_open))) {
     VARIANT value{};
     value.vt = VT_I4;
-    value.lVal = 1;
+    // Windows derives the built-in 中/英 mode indicator from this open/close state.
+    value.lVal = state_->chinese_mode ? 1 : 0;
     static_cast<void>(keyboard_open->SetValue(client_id_, &value));
     keyboard_open->Release();
   }
@@ -517,7 +518,9 @@ void TextService::ShowCandidateWindow() {
 }
 
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
-  if (!foreground) {
+  if (foreground) {
+    PublishInputMode();
+  } else {
     state_->candidate_window.Hide();
   }
   return S_OK;
