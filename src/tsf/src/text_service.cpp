@@ -264,6 +264,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
       state_->language_bar_manager = language_bar_manager;
       state_->language_bar_button = language_bar_button;
       state_->language_bar_button->SetChineseMode(state_->chinese_mode);
+      static_cast<void>(state_->language_bar_button->Show(TRUE));
     } else {
       if (language_bar_button != nullptr) {
         language_bar_button->Release();
