@@ -94,10 +94,11 @@ HRESULT RegisterCategories() {
     return result;
   }
 
-  constexpr std::array<const GUID*, 5> categories = {
+  constexpr std::array<const GUID*, 6> categories = {
       &GUID_TFCAT_TIP_KEYBOARD,
       &GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
       &GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
+      &GUID_TFCAT_TIPCAP_COMLESS,
       &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
       &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
   };
@@ -155,6 +156,13 @@ HRESULT Install() {
               << static_cast<unsigned long>(result) << '\n';
   }
   if (SUCCEEDED(result)) {
+    result = RegisterCategories();
+    if (FAILED(result)) {
+      std::cerr << "RegisterCategories failed: 0x" << std::hex
+                << static_cast<unsigned long>(result) << '\n';
+    }
+  }
+  if (SUCCEEDED(result)) {
     result = RegisterProfile(dll_path);
     if (FAILED(result)) {
       std::cerr << "RegisterProfile failed: 0x" << std::hex
@@ -175,13 +183,6 @@ HRESULT Install() {
                 << static_cast<unsigned long>(result) << '\n';
     }
   }
-  if (SUCCEEDED(result)) {
-    result = RegisterCategories();
-    if (FAILED(result)) {
-      std::cerr << "RegisterCategories failed: 0x" << std::hex
-                << static_cast<unsigned long>(result) << '\n';
-    }
-  }
   if (FAILED(result)) {
     const HRESULT install_result = result;
     Uninstall();
@@ -196,10 +197,11 @@ HRESULT Uninstall() {
   ComPtr<ITfCategoryMgr> category_manager;
   if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
                                  IID_PPV_ARGS(category_manager.ReleaseAndGetAddressOf())))) {
-    constexpr std::array<const GUID*, 5> categories = {
+    constexpr std::array<const GUID*, 6> categories = {
         &GUID_TFCAT_TIP_KEYBOARD,
         &GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
         &GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
+        &GUID_TFCAT_TIPCAP_COMLESS,
         &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
         &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
     };
