@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ctffunc.h>
 #include <ctfutb.h>
 #include <msctf.h>
 #include <windows.h>

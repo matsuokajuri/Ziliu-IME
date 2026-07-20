@@ -13,7 +13,9 @@ class CompositionEditSession;
 struct TextServiceState;
 
 class TextService final : public ITfTextInputProcessorEx,
-                          public ITfKeyEventSink {
+                          public ITfKeyEventSink,
+                          public ITfCompartmentEventSink,
+                          public ITfThreadFocusSink {
  public:
   TextService();
 
@@ -40,6 +42,11 @@ class TextService final : public ITfTextInputProcessorEx,
                        BOOL* eaten) override;
   STDMETHODIMP OnPreservedKey(ITfContext* context, REFGUID guid, BOOL* eaten) override;
 
+  STDMETHODIMP OnChange(REFGUID guid) override;
+
+  STDMETHODIMP OnSetThreadFocus() override;
+  STDMETHODIMP OnKillThreadFocus() override;
+
  private:
   friend class CompositionEditSession;
 
@@ -55,6 +62,10 @@ class TextService final : public ITfTextInputProcessorEx,
   HRESULT ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context);
   void AbandonSession(ITfContext* context);
   void RefreshSettings(bool force);
+  HRESULT AdviseInputModeSinks();
+  void UnadviseInputModeSinks();
+  [[nodiscard]] bool ReadPublishedInputMode(bool* chinese_mode) const;
+  void SynchronizeInputMode();
   void PublishInputMode();
   void ShowCandidateWindow();
   void StartBroker();
@@ -64,6 +75,12 @@ class TextService final : public ITfTextInputProcessorEx,
   ITfThreadMgr* thread_manager_ = nullptr;
   TfClientId client_id_ = TF_CLIENTID_NULL;
   DWORD activation_flags_ = 0;
+  ITfSource* open_close_source_ = nullptr;
+  ITfSource* conversion_source_ = nullptr;
+  ITfSource* thread_focus_source_ = nullptr;
+  DWORD open_close_cookie_ = TF_INVALID_COOKIE;
+  DWORD conversion_cookie_ = TF_INVALID_COOKIE;
+  DWORD thread_focus_cookie_ = TF_INVALID_COOKIE;
   std::unique_ptr<TextServiceState> state_;
 };
 

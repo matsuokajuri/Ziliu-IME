@@ -45,6 +45,7 @@ struct TextServiceState {
   bool switch_key_down = false;
   bool switch_key_used = false;
   bool opening_quote = true;
+  bool publishing_input_mode = false;
 };
 
 class CompositionEditSession final : public ITfEditSession {
@@ -202,6 +203,10 @@ STDMETHODIMP TextService::QueryInterface(REFIID interface_id, void** object) {
     *object = static_cast<ITfTextInputProcessorEx*>(this);
   } else if (IsEqualIID(interface_id, IID_ITfKeyEventSink)) {
     *object = static_cast<ITfKeyEventSink*>(this);
+  } else if (IsEqualIID(interface_id, IID_ITfCompartmentEventSink)) {
+    *object = static_cast<ITfCompartmentEventSink*>(this);
+  } else if (IsEqualIID(interface_id, IID_ITfThreadFocusSink)) {
+    *object = static_cast<ITfThreadFocusSink*>(this);
   }
 
   if (*object == nullptr) {
@@ -254,6 +259,12 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
     return advise_result;
   }
 
+  const HRESULT input_mode_sink_result = AdviseInputModeSinks();
+  if (FAILED(input_mode_sink_result)) {
+    Deactivate();
+    return input_mode_sink_result;
+  }
+
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   if (SUCCEEDED(thread_manager_->QueryInterface(IID_PPV_ARGS(&language_bar_manager)))) {
     const auto settings_path = SettingsExecutablePath();
@@ -291,6 +302,7 @@ STDMETHODIMP TextService::Deactivate() {
     static_cast<void>(state_->client.Exchange(close_request));
   }
   ResetRuntimeState();
+  UnadviseInputModeSinks();
 
   if (state_->language_bar_manager != nullptr && state_->language_bar_button != nullptr) {
     static_cast<void>(state_->language_bar_manager->RemoveItem(state_->language_bar_button));
@@ -406,6 +418,127 @@ void TextService::RefreshSettings(bool force) {
   }
 }
 
+HRESULT TextService::AdviseInputModeSinks() {
+  ITfCompartmentMgr* compartment_manager = nullptr;
+  HRESULT result = thread_manager_->QueryInterface(IID_PPV_ARGS(&compartment_manager));
+  if (FAILED(result)) {
+    return result;
+  }
+
+  const auto advise_compartment =
+      [this, compartment_manager](REFGUID guid, ITfSource** source, DWORD* cookie) {
+        ITfCompartment* compartment = nullptr;
+        HRESULT advise_result = compartment_manager->GetCompartment(guid, &compartment);
+        if (SUCCEEDED(advise_result)) {
+          advise_result = compartment->QueryInterface(IID_PPV_ARGS(source));
+        }
+        if (SUCCEEDED(advise_result)) {
+          advise_result = (*source)->AdviseSink(
+              IID_ITfCompartmentEventSink, static_cast<ITfCompartmentEventSink*>(this), cookie);
+        }
+        if (compartment != nullptr) {
+          compartment->Release();
+        }
+        if (FAILED(advise_result) && *source != nullptr) {
+          (*source)->Release();
+          *source = nullptr;
+          *cookie = TF_INVALID_COOKIE;
+        }
+        return advise_result;
+      };
+
+  result = advise_compartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE, &open_close_source_,
+                              &open_close_cookie_);
+  if (SUCCEEDED(result)) {
+    result = advise_compartment(GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION,
+                                &conversion_source_, &conversion_cookie_);
+  }
+  compartment_manager->Release();
+
+  if (SUCCEEDED(result)) {
+    result = thread_manager_->QueryInterface(IID_PPV_ARGS(&thread_focus_source_));
+  }
+  if (SUCCEEDED(result)) {
+    result = thread_focus_source_->AdviseSink(
+        IID_ITfThreadFocusSink, static_cast<ITfThreadFocusSink*>(this), &thread_focus_cookie_);
+  }
+  if (FAILED(result)) {
+    UnadviseInputModeSinks();
+  }
+  return result;
+}
+
+void TextService::UnadviseInputModeSinks() {
+  const auto unadvise = [](ITfSource** source, DWORD* cookie) {
+    if (*source != nullptr) {
+      if (*cookie != TF_INVALID_COOKIE) {
+        static_cast<void>((*source)->UnadviseSink(*cookie));
+      }
+      (*source)->Release();
+      *source = nullptr;
+    }
+    *cookie = TF_INVALID_COOKIE;
+  };
+  unadvise(&thread_focus_source_, &thread_focus_cookie_);
+  unadvise(&conversion_source_, &conversion_cookie_);
+  unadvise(&open_close_source_, &open_close_cookie_);
+}
+
+bool TextService::ReadPublishedInputMode(bool* chinese_mode) const {
+  if (chinese_mode == nullptr || thread_manager_ == nullptr) {
+    return false;
+  }
+
+  ITfCompartmentMgr* compartment_manager = nullptr;
+  if (FAILED(thread_manager_->QueryInterface(IID_PPV_ARGS(&compartment_manager)))) {
+    return false;
+  }
+
+  bool found = false;
+  ITfCompartment* keyboard_open = nullptr;
+  if (SUCCEEDED(compartment_manager->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE,
+                                                     &keyboard_open))) {
+    VARIANT value{};
+    if (SUCCEEDED(keyboard_open->GetValue(&value)) && value.vt == VT_I4) {
+      *chinese_mode = value.lVal != 0;
+      found = true;
+    }
+    VariantClear(&value);
+    keyboard_open->Release();
+  }
+
+  if (!found) {
+    ITfCompartment* conversion = nullptr;
+    if (SUCCEEDED(compartment_manager->GetCompartment(
+            GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION, &conversion))) {
+      VARIANT value{};
+      if (SUCCEEDED(conversion->GetValue(&value)) && value.vt == VT_I4) {
+        *chinese_mode = (value.lVal & TF_CONVERSIONMODE_NATIVE) != 0;
+        found = true;
+      }
+      VariantClear(&value);
+      conversion->Release();
+    }
+  }
+  compartment_manager->Release();
+  return found;
+}
+
+void TextService::SynchronizeInputMode() {
+  bool chinese_mode = state_->chinese_mode;
+  if (!ReadPublishedInputMode(&chinese_mode) || chinese_mode == state_->chinese_mode) {
+    return;
+  }
+  state_->chinese_mode = chinese_mode;
+  state_->snapshot = {};
+  state_->pending_response = {};
+  state_->candidate_page_offset = 0;
+  state_->candidate_window.Hide();
+  if (state_->language_bar_button != nullptr) {
+    state_->language_bar_button->SetChineseMode(chinese_mode);
+  }
+}
+
 void TextService::PublishInputMode() {
   if (thread_manager_ == nullptr || client_id_ == TF_CLIENTID_NULL) {
     return;
@@ -415,6 +548,8 @@ void TextService::PublishInputMode() {
   if (FAILED(thread_manager_->QueryInterface(IID_PPV_ARGS(&compartment_manager)))) {
     return;
   }
+
+  state_->publishing_input_mode = true;
 
   ITfCompartment* input_mode = nullptr;
   if (SUCCEEDED(compartment_manager->GetCompartment(
@@ -438,6 +573,7 @@ void TextService::PublishInputMode() {
     keyboard_open->Release();
   }
   compartment_manager->Release();
+  state_->publishing_input_mode = false;
 }
 
 void TextService::ResetRuntimeState() {
@@ -523,6 +659,27 @@ STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
   } else {
     state_->candidate_window.Hide();
   }
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnChange(REFGUID guid) {
+  if (state_->publishing_input_mode) {
+    return S_OK;
+  }
+  if (IsEqualGUID(guid, GUID_COMPARTMENT_KEYBOARD_OPENCLOSE) ||
+      IsEqualGUID(guid, GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION)) {
+    SynchronizeInputMode();
+  }
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnSetThreadFocus() {
+  PublishInputMode();
+  return S_OK;
+}
+
+STDMETHODIMP TextService::OnKillThreadFocus() {
+  state_->candidate_window.Hide();
   return S_OK;
 }
 

@@ -127,7 +127,9 @@ STDMETHODIMP LanguageBarButton::GetInfo(TF_LANGBARITEMINFO* info) {
   }
   *info = {};
   info->clsidService = kTextServiceClsid;
-  info->guidItem = kInputModeLangBarItemGuid;
+  // Windows 8 and later only surface an IME mode item in the taskbar input
+  // indicator when it uses this system-defined identity.
+  info->guidItem = GUID_LBI_INPUTMODE;
   info->dwStyle = TF_LBI_STYLE_BTN_BUTTON | TF_LBI_STYLE_SHOWNINTRAY;
   info->ulSort = 0;
   constexpr wchar_t description[] = L"字流中英文状态";
