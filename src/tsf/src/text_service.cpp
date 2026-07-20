@@ -27,7 +27,6 @@ struct TextServiceState {
   std::uint64_t session_id = 0;
   core::ipc::Response pending_response;
   core::CompositionSnapshot snapshot;
-  ITfComposition* composition = nullptr;
   ui::CandidateWindow candidate_window;
   POINT candidate_anchor{};
   HWND candidate_owner = nullptr;
@@ -255,13 +254,10 @@ void TextService::ResetRuntimeState() {
   state_->pending_response = {};
   state_->candidate_window.Hide();
   state_->broker_started = false;
-  if (state_->composition != nullptr) {
-    state_->composition->Release();
-    state_->composition = nullptr;
-  }
 }
 
 void TextService::AbandonSession(ITfContext* context) {
+  static_cast<void>(context);
   if (state_->session_id != 0) {
     const core::ipc::Request close_request{state_->request_id++, state_->session_id,
                                            core::ipc::Command::kCloseSession, 0};
@@ -272,22 +268,6 @@ void TextService::AbandonSession(ITfContext* context) {
   state_->pending_response = {};
   state_->candidate_window.Hide();
   state_->broker_started = false;
-  if (state_->composition == nullptr || context == nullptr || client_id_ == TF_CLIENTID_NULL) {
-    return;
-  }
-
-  auto* edit_session = new (std::nothrow) CompositionEditSession(this, context);
-  HRESULT edit_result = E_FAIL;
-  HRESULT request_result = E_OUTOFMEMORY;
-  if (edit_session != nullptr) {
-    request_result = context->RequestEditSession(
-        client_id_, edit_session, TF_ES_SYNC | TF_ES_READWRITE, &edit_result);
-    edit_session->Release();
-  }
-  if (FAILED(request_result) || FAILED(edit_result)) {
-    state_->composition->Release();
-    state_->composition = nullptr;
-  }
 }
 
 bool TextService::ShouldHandleKey(WPARAM wparam) const {
@@ -399,83 +379,26 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
   using Microsoft::WRL::ComPtr;
   const auto& response = state_->pending_response;
   ComPtr<ITfRange> range;
-
-  if (state_->composition != nullptr) {
-    const HRESULT range_result = state_->composition->GetRange(range.GetAddressOf());
-    if (FAILED(range_result)) {
-      return range_result;
-    }
-  } else {
-    TF_SELECTION selection{};
-    ULONG fetched = 0;
-    const HRESULT selection_result =
-        context->GetSelection(edit_cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
-    if (FAILED(selection_result) || fetched != 1 || selection.range == nullptr) {
-      return FAILED(selection_result) ? selection_result : E_FAIL;
-    }
-    range.Attach(selection.range);
+  TF_SELECTION selection{};
+  ULONG fetched = 0;
+  const HRESULT selection_result =
+      context->GetSelection(edit_cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched);
+  if (FAILED(selection_result) || fetched != 1 || selection.range == nullptr) {
+    return FAILED(selection_result) ? selection_result : E_FAIL;
   }
-
-  const std::wstring* text = nullptr;
-  if (!response.commit.empty()) {
-    text = &response.commit;
-  } else {
-    text = &response.snapshot.preedit;
-  }
+  range.Attach(selection.range);
 
   if (!response.commit.empty()) {
-    const HRESULT text_result = range->SetText(edit_cookie, 0, text->data(),
-                                               static_cast<LONG>(text->size()));
-    if (FAILED(text_result)) {
-      return text_result;
-    }
-    if (state_->composition != nullptr) {
-      const HRESULT end_result = state_->composition->EndComposition(edit_cookie);
-      state_->composition->Release();
-      state_->composition = nullptr;
-      if (FAILED(end_result)) {
-        return end_result;
-      }
-    }
-  } else if (response.snapshot.preedit.empty()) {
-    if (state_->composition != nullptr) {
-      const HRESULT text_result = range->SetText(edit_cookie, 0, L"", 0);
-      if (FAILED(text_result)) {
-        return text_result;
-      }
-      const HRESULT end_result = state_->composition->EndComposition(edit_cookie);
-      state_->composition->Release();
-      state_->composition = nullptr;
-      if (FAILED(end_result)) {
-        return end_result;
-      }
-    }
-  } else {
-    if (state_->composition == nullptr) {
-      ComPtr<ITfContextComposition> composition_context;
-      const HRESULT query_result =
-          context->QueryInterface(IID_PPV_ARGS(composition_context.GetAddressOf()));
-      if (FAILED(query_result)) {
-        return query_result;
-      }
-      const HRESULT start_result = composition_context->StartComposition(
-          edit_cookie, range.Get(), nullptr, &state_->composition);
-      if (FAILED(start_result) || state_->composition == nullptr) {
-        return FAILED(start_result) ? start_result : E_FAIL;
-      }
-      range.Reset();
-      const HRESULT range_result = state_->composition->GetRange(range.GetAddressOf());
-      if (FAILED(range_result)) {
-        return range_result;
-      }
-    }
-    const HRESULT text_result = range->SetText(edit_cookie, 0, text->data(),
-                                               static_cast<LONG>(text->size()));
+    const HRESULT text_result = range->SetText(edit_cookie, 0, response.commit.data(),
+                                               static_cast<LONG>(response.commit.size()));
     if (FAILED(text_result)) {
       return text_result;
     }
   }
 
+  // The initial shell keeps preedit exclusively in the candidate window.
+  // Mutating the host document only on commit avoids relying on host-specific
+  // inline-composition behavior while preserving a synchronous TSF insertion.
   if (range != nullptr) {
     ComPtr<ITfContextView> view;
     if (SUCCEEDED(context->GetActiveView(view.GetAddressOf()))) {
@@ -488,11 +411,11 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
     }
     const HRESULT collapse_result = range->Collapse(edit_cookie, TF_ANCHOR_END);
     if (SUCCEEDED(collapse_result)) {
-      TF_SELECTION selection{};
-      selection.range = range.Get();
-      selection.style.ase = TF_AE_NONE;
-      selection.style.fInterimChar = FALSE;
-      static_cast<void>(context->SetSelection(edit_cookie, 1, &selection));
+      TF_SELECTION updated_selection{};
+      updated_selection.range = range.Get();
+      updated_selection.style.ase = TF_AE_NONE;
+      updated_selection.style.fInterimChar = FALSE;
+      static_cast<void>(context->SetSelection(edit_cookie, 1, &updated_selection));
     }
   }
   return S_OK;

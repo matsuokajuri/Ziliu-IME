@@ -42,6 +42,9 @@ int main() {
     Expect(engine->ProcessLetter(letter), "Rime should consume the Ziliu spelling");
   }
   const auto ziliu_snapshot = engine->Snapshot();
+  Expect(!ziliu_snapshot.candidates.empty(), "Ziliu overlay should offer candidates");
+  Expect(ziliu_snapshot.candidates.front().text == L"字流",
+         "Ziliu overlay should rank 字流 first");
   const auto ziliu = std::ranges::find_if(ziliu_snapshot.candidates, [](const auto& candidate) {
     return candidate.text == L"字流";
   });

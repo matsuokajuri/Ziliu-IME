@@ -4,3 +4,4 @@
 patch:
   schema/name: 字流拼音
   custom_phrase/user_dict: ziliu_phrase
+  custom_phrase/initial_quality: 100

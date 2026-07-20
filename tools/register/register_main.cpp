@@ -17,6 +17,7 @@ using Microsoft::WRL::ComPtr;
 
 constexpr wchar_t kProfileDescription[] = L"字流拼音";
 constexpr wchar_t kClsidRoot[] = L"Software\\Classes\\CLSID\\";
+constexpr DWORD kInstallLayoutOrTipUninstall = 0x00000001;
 
 std::wstring GuidToString(REFGUID guid) {
   std::array<wchar_t, 40> buffer{};
@@ -31,13 +32,41 @@ std::filesystem::path ExecutableDirectory() {
   return std::filesystem::path(std::wstring(buffer.data(), length)).parent_path();
 }
 
+HRESULT UpdateUserLayoutOrTip(bool install) {
+  const HMODULE input_module =
+      LoadLibraryExW(L"input.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (input_module == nullptr) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+
+  using InstallLayoutOrTip = BOOL(CALLBACK*)(LPCWSTR, DWORD);
+  const auto install_layout_or_tip = reinterpret_cast<InstallLayoutOrTip>(
+      GetProcAddress(input_module, "InstallLayoutOrTip"));
+  if (install_layout_or_tip == nullptr) {
+    const HRESULT result = HRESULT_FROM_WIN32(GetLastError());
+    FreeLibrary(input_module);
+    return result;
+  }
+
+  const std::wstring profile =
+      L"0x0804:" + GuidToString(ziliu::tsf::kTextServiceClsid) +
+      GuidToString(ziliu::tsf::kSimplifiedChineseProfileGuid);
+  SetLastError(ERROR_SUCCESS);
+  const BOOL succeeded = install_layout_or_tip(
+      profile.c_str(), install ? 0 : kInstallLayoutOrTipUninstall);
+  const DWORD error = GetLastError();
+  FreeLibrary(input_module);
+  return succeeded ? S_OK
+                   : (error == ERROR_SUCCESS ? E_FAIL : HRESULT_FROM_WIN32(error));
+}
+
 HRESULT RegisterComServer(const std::filesystem::path& dll_path) {
   const std::wstring key_path =
       std::wstring(kClsidRoot) + GuidToString(ziliu::tsf::kTextServiceClsid) +
       L"\\InprocServer32";
   HKEY key = nullptr;
   const LSTATUS create_result =
-      RegCreateKeyExW(HKEY_CURRENT_USER, key_path.c_str(), 0, nullptr, REG_OPTION_NON_VOLATILE,
+      RegCreateKeyExW(HKEY_LOCAL_MACHINE, key_path.c_str(), 0, nullptr, REG_OPTION_NON_VOLATILE,
                       KEY_SET_VALUE, nullptr, &key, nullptr);
   if (create_result != ERROR_SUCCESS) {
     return HRESULT_FROM_WIN32(create_result);
@@ -98,6 +127,20 @@ HRESULT RegisterProfile(const std::filesystem::path& dll_path) {
       static_cast<ULONG>(icon_path.size()), 0, nullptr, 0, TRUE, 0);
 }
 
+HRESULT EnableProfileForCurrentUser() {
+  ComPtr<ITfInputProcessorProfiles> profiles;
+  const HRESULT result = CoCreateInstance(
+      CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER,
+      IID_PPV_ARGS(profiles.ReleaseAndGetAddressOf()));
+  return SUCCEEDED(result)
+             ? profiles->EnableLanguageProfile(ziliu::tsf::kTextServiceClsid,
+                                                ziliu::tsf::kSimplifiedChineseLanguageId,
+                                                ziliu::tsf::kSimplifiedChineseProfileGuid, TRUE)
+             : result;
+}
+
+HRESULT Uninstall();
+
 HRESULT Install() {
   const std::filesystem::path dll_path = ExecutableDirectory() / L"ZiliuTIP.dll";
   if (!std::filesystem::exists(dll_path)) {
@@ -106,25 +149,48 @@ HRESULT Install() {
   }
 
   HRESULT result = RegisterComServer(dll_path);
-  if (SUCCEEDED(result)) {
-    result = RegisterCategories();
+  if (FAILED(result)) {
+    std::cerr << "RegisterComServer failed: 0x" << std::hex
+              << static_cast<unsigned long>(result) << '\n';
   }
   if (SUCCEEDED(result)) {
     result = RegisterProfile(dll_path);
+    if (FAILED(result)) {
+      std::cerr << "RegisterProfile failed: 0x" << std::hex
+                << static_cast<unsigned long>(result) << '\n';
+    }
+  }
+  if (SUCCEEDED(result)) {
+    result = EnableProfileForCurrentUser();
+    if (FAILED(result)) {
+      std::cerr << "EnableProfileForCurrentUser failed: 0x" << std::hex
+                << static_cast<unsigned long>(result) << '\n';
+    }
+  }
+  if (SUCCEEDED(result)) {
+    result = UpdateUserLayoutOrTip(true);
+    if (FAILED(result)) {
+      std::cerr << "UpdateUserLayoutOrTip failed: 0x" << std::hex
+                << static_cast<unsigned long>(result) << '\n';
+    }
+  }
+  if (SUCCEEDED(result)) {
+    result = RegisterCategories();
+    if (FAILED(result)) {
+      std::cerr << "RegisterCategories failed: 0x" << std::hex
+                << static_cast<unsigned long>(result) << '\n';
+    }
+  }
+  if (FAILED(result)) {
+    const HRESULT install_result = result;
+    Uninstall();
+    return install_result;
   }
   return result;
 }
 
 HRESULT Uninstall() {
-  ComPtr<ITfInputProcessorProfileMgr> profile_manager;
-  HRESULT result = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
-                                    CLSCTX_INPROC_SERVER,
-                                    IID_PPV_ARGS(profile_manager.ReleaseAndGetAddressOf()));
-  if (SUCCEEDED(result)) {
-    result = profile_manager->UnregisterProfile(ziliu::tsf::kTextServiceClsid,
-                                                ziliu::tsf::kSimplifiedChineseLanguageId,
-                                                ziliu::tsf::kSimplifiedChineseProfileGuid, 0);
-  }
+  const HRESULT user_layout_result = UpdateUserLayoutOrTip(false);
 
   ComPtr<ITfCategoryMgr> category_manager;
   if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
@@ -141,9 +207,22 @@ HRESULT Uninstall() {
     }
   }
 
+  ComPtr<ITfInputProcessorProfileMgr> profile_manager;
+  HRESULT result = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
+                                    CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(profile_manager.ReleaseAndGetAddressOf()));
+  if (SUCCEEDED(result)) {
+    result = profile_manager->UnregisterProfile(ziliu::tsf::kTextServiceClsid,
+                                                ziliu::tsf::kSimplifiedChineseLanguageId,
+                                                ziliu::tsf::kSimplifiedChineseProfileGuid, 0);
+  }
+
   const std::wstring clsid_key =
       std::wstring(kClsidRoot) + GuidToString(ziliu::tsf::kTextServiceClsid);
-  const LSTATUS delete_result = RegDeleteTreeW(HKEY_CURRENT_USER, clsid_key.c_str());
+  const LSTATUS delete_result = RegDeleteTreeW(HKEY_LOCAL_MACHINE, clsid_key.c_str());
+  if (FAILED(user_layout_result)) {
+    return user_layout_result;
+  }
   if (FAILED(result)) {
     return result;
   }
@@ -171,7 +250,8 @@ int wmain(int argument_count, wchar_t** arguments) {
   const HRESULT result = std::wstring_view(arguments[1]) == L"install" ? Install() : Uninstall();
   CoUninitialize();
   if (FAILED(result)) {
-    std::wcerr << L"操作失败: 0x" << std::hex << result << L'\n';
+    std::cerr << "Operation failed: 0x" << std::hex << static_cast<unsigned long>(result)
+              << '\n';
     return 1;
   }
 
