@@ -38,7 +38,8 @@ docs           架构决策、开发和路线图
 普通终端可以直接运行统一脚本，它会定位 Visual Studio、加载 MSVC 环境、配置、构建并测试：
 
 ```powershell
-scripts\build-local.cmd
+scripts\build-local.cmd Debug
+scripts\build-local.cmd Release
 ```
 
 在 Visual Studio Developer PowerShell 中也可使用 CMake presets：
@@ -49,8 +50,9 @@ cmake --build --preset windows-x64-debug
 ctest --preset windows-x64-debug
 ```
 
-脚本构建产物位于 `build/local-x64/bin`；preset 构建产物位于
-`build/windows-x64/bin/Debug`。
+脚本构建产物分别位于 `build/local-x64-Debug/bin` 和
+`build/local-x64-Release/bin`；preset 构建产物位于 `build/windows-x64/bin/Debug`
+或 `build/windows-x64/bin/Release`。省略脚本参数时默认构建 Debug。
 
 开发期注册工具已经能够注册和注销 TSF 配置，但骨架阶段不会自动运行，也不要把它加入
 登录启动项：

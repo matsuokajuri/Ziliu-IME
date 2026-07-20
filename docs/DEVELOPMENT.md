@@ -15,7 +15,8 @@ Installer，给现有实例添加组件 `Microsoft.VisualStudio.Component.VC.Too
 ## 常用命令
 
 ```powershell
-scripts\build-local.cmd
+scripts\build-local.cmd Debug
+scripts\build-local.cmd Release
 codegraph sync .
 ```
 
@@ -25,9 +26,8 @@ codegraph sync .
 scripts\compile-check.cmd
 ```
 
-发布配置：
-
-在 Visual Studio Developer PowerShell 中可使用 `CMakePresets.json` 的 Debug/Release presets。
+省略脚本参数时默认构建 Debug。在 Visual Studio Developer PowerShell 中也可使用
+`CMakePresets.json` 的 Debug/Release presets。
 
 ## 代码规则
 

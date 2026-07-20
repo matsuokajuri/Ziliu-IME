@@ -1,6 +1,18 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
+set "BUILD_CONFIG=%~1"
+if not defined BUILD_CONFIG set "BUILD_CONFIG=Debug"
+if /I not "!BUILD_CONFIG!"=="Debug" if /I not "!BUILD_CONFIG!"=="Release" (
+  echo Usage: %~nx0 [Debug^|Release]
+  exit /b 2
+)
+if not "%~2"=="" (
+  echo Usage: %~nx0 [Debug^|Release]
+  exit /b 2
+)
+set "BUILD_DIR=%~dp0..\build\local-x64-!BUILD_CONFIG!"
+
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
   echo Visual Studio Installer was not found.
@@ -58,12 +70,12 @@ if not exist "!VC_TOOLS!\lib\x64\msvcrt.lib" (
   exit /b 1
 )
 
-cmake --fresh -S "%~dp0.." -B "%~dp0..\build\local-x64" -G "NMake Makefiles" ^
-  -DZILIU_BUILD_TESTS=ON -DZILIU_ENABLE_RIME=OFF
+cmake --fresh -S "%~dp0.." -B "!BUILD_DIR!" -G "NMake Makefiles" ^
+  -DCMAKE_BUILD_TYPE=!BUILD_CONFIG! -DZILIU_BUILD_TESTS=ON -DZILIU_ENABLE_RIME=OFF
 if errorlevel 1 exit /b %errorlevel%
 
-cmake --build "%~dp0..\build\local-x64"
+cmake --build "!BUILD_DIR!"
 if errorlevel 1 exit /b %errorlevel%
 
-ctest --test-dir "%~dp0..\build\local-x64" --output-on-failure
+ctest --test-dir "!BUILD_DIR!" --output-on-failure
 exit /b %errorlevel%

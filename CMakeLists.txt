@@ -15,6 +15,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if(MSVC)
+  # A TIP is loaded into arbitrary client processes. Keep first-party binaries
+  # independent of a separately installed Visual C++ Redistributable.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 option(ZILIU_BUILD_TESTS "Build Ziliu unit tests" ON)
 option(ZILIU_ENABLE_RIME "Build the librime adapter when the dependency is available" OFF)
 
@@ -37,4 +43,3 @@ if(ZILIU_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
-
