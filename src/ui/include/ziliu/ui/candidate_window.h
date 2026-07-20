@@ -38,6 +38,7 @@ class CandidateWindow final {
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> text_brush_;
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> muted_brush_;
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> accent_brush_;
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> preedit_format_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> candidate_format_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> annotation_format_;
 };

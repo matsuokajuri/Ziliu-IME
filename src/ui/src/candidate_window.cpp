@@ -12,6 +12,7 @@ namespace {
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr float kWindowWidth = 420.0F;
 constexpr float kHorizontalPadding = 14.0F;
+constexpr float kPreeditHeight = 42.0F;
 constexpr float kCandidateHeight = 38.0F;
 constexpr float kCornerRadius = 10.0F;
 
@@ -77,7 +78,7 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot, POINT anch
 
   snapshot_ = snapshot;
   const auto visible_count = std::max<std::size_t>(snapshot_.candidates.size(), 1);
-  const int height = static_cast<int>(kHorizontalPadding * 2.0F +
+  const int height = static_cast<int>(kHorizontalPadding * 2.0F + kPreeditHeight +
                                       kCandidateHeight * static_cast<float>(visible_count));
   SetWindowPos(window_, HWND_TOPMOST, anchor.x, anchor.y, static_cast<int>(kWindowWidth), height,
                SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -162,6 +163,10 @@ bool CandidateWindow::EnsureDeviceResources() {
   }
 
   if (FAILED(dwrite_factory_->CreateTextFormat(
+          L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18.0F, L"zh-CN",
+          preedit_format_.ReleaseAndGetAddressOf())) ||
+      FAILED(dwrite_factory_->CreateTextFormat(
           L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 17.0F, L"zh-CN",
           candidate_format_.ReleaseAndGetAddressOf())) ||
@@ -183,8 +188,20 @@ void CandidateWindow::Paint() {
     render_target_->BeginDraw();
     render_target_->Clear(D2D1::ColorF(0xFAFAFA));
 
+    render_target_->DrawTextW(
+        snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
+        preedit_format_.Get(),
+        D2D1::RectF(kHorizontalPadding, 10.0F, kWindowWidth - kHorizontalPadding,
+                    kPreeditHeight),
+        text_brush_.Get());
+    render_target_->DrawLine(
+        D2D1::Point2F(kHorizontalPadding, kPreeditHeight),
+        D2D1::Point2F(kWindowWidth - kHorizontalPadding, kPreeditHeight), muted_brush_.Get(),
+        0.5F);
+
     for (std::size_t index = 0; index < snapshot_.candidates.size(); ++index) {
-      const float top = kHorizontalPadding + static_cast<float>(index) * kCandidateHeight;
+      const float top = kHorizontalPadding + kPreeditHeight +
+                        static_cast<float>(index) * kCandidateHeight;
       const D2D1_RECT_F row = D2D1::RectF(8.0F, top - 2.0F, kWindowWidth - 8.0F,
                                          top + kCandidateHeight - 4.0F);
       if (index == snapshot_.highlighted_index) {
@@ -217,6 +234,7 @@ void CandidateWindow::Paint() {
 }
 
 void CandidateWindow::DiscardDeviceResources() {
+  preedit_format_.Reset();
   candidate_format_.Reset();
   annotation_format_.Reset();
   accent_brush_.Reset();
@@ -226,4 +244,3 @@ void CandidateWindow::DiscardDeviceResources() {
 }
 
 }  // namespace ziliu::ui
-
