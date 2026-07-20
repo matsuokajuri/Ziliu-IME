@@ -55,6 +55,7 @@ class TextService final : public ITfTextInputProcessorEx,
   HRESULT ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context);
   void AbandonSession(ITfContext* context);
   void RefreshSettings(bool force);
+  void PublishInputMode();
   void ShowCandidateWindow();
   void StartBroker();
   void ResetRuntimeState();

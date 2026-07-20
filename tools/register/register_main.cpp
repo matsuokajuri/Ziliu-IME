@@ -94,9 +94,10 @@ HRESULT RegisterCategories() {
     return result;
   }
 
-  constexpr std::array<const GUID*, 4> categories = {
+  constexpr std::array<const GUID*, 5> categories = {
       &GUID_TFCAT_TIP_KEYBOARD,
       &GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+      &GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
       &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
       &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
   };
@@ -195,9 +196,10 @@ HRESULT Uninstall() {
   ComPtr<ITfCategoryMgr> category_manager;
   if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
                                  IID_PPV_ARGS(category_manager.ReleaseAndGetAddressOf())))) {
-    constexpr std::array<const GUID*, 4> categories = {
+    constexpr std::array<const GUID*, 5> categories = {
         &GUID_TFCAT_TIP_KEYBOARD,
         &GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
+        &GUID_TFCAT_TIPCAP_INPUTMODECOMPARTMENT,
         &GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT,
         &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
     };

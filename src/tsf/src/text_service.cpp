@@ -255,8 +255,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
   }
 
   ITfLangBarItemMgr* language_bar_manager = nullptr;
-  if (SUCCEEDED(CoCreateInstance(CLSID_TF_LangBarItemMgr, nullptr, CLSCTX_INPROC_SERVER,
-                                 IID_PPV_ARGS(&language_bar_manager)))) {
+  if (SUCCEEDED(thread_manager_->QueryInterface(IID_PPV_ARGS(&language_bar_manager)))) {
     const auto settings_path = SettingsExecutablePath();
     auto* language_bar_button = new (std::nothrow)
         LanguageBarButton(settings_path.has_value() ? settings_path->native() : std::wstring{});
@@ -274,6 +273,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
   }
 
   RefreshSettings(true);
+  PublishInputMode();
   StartBroker();
   static_cast<void>(EnsureSession());
   return S_OK;
@@ -403,6 +403,39 @@ void TextService::RefreshSettings(bool force) {
         state_->settings.character_set == core::CharacterSet::kTraditional ? 1U : 0U};
     static_cast<void>(state_->client.Exchange(request));
   }
+}
+
+void TextService::PublishInputMode() {
+  if (thread_manager_ == nullptr || client_id_ == TF_CLIENTID_NULL) {
+    return;
+  }
+
+  ITfCompartmentMgr* compartment_manager = nullptr;
+  if (FAILED(thread_manager_->QueryInterface(IID_PPV_ARGS(&compartment_manager)))) {
+    return;
+  }
+
+  ITfCompartment* input_mode = nullptr;
+  if (SUCCEEDED(compartment_manager->GetCompartment(
+          GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION, &input_mode))) {
+    VARIANT value{};
+    value.vt = VT_I4;
+    value.lVal = state_->chinese_mode ? TF_CONVERSIONMODE_NATIVE
+                                      : TF_CONVERSIONMODE_ALPHANUMERIC;
+    static_cast<void>(input_mode->SetValue(client_id_, &value));
+    input_mode->Release();
+  }
+
+  ITfCompartment* keyboard_open = nullptr;
+  if (SUCCEEDED(compartment_manager->GetCompartment(GUID_COMPARTMENT_KEYBOARD_OPENCLOSE,
+                                                     &keyboard_open))) {
+    VARIANT value{};
+    value.vt = VT_I4;
+    value.lVal = 1;
+    static_cast<void>(keyboard_open->SetValue(client_id_, &value));
+    keyboard_open->Release();
+  }
+  compartment_manager->Release();
 }
 
 void TextService::ResetRuntimeState() {
@@ -556,6 +589,7 @@ HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten) {
   state_->candidate_page_offset = 0;
   state_->candidate_window.Hide();
   state_->chinese_mode = !state_->chinese_mode;
+  PublishInputMode();
   if (state_->language_bar_button != nullptr) {
     state_->language_bar_button->SetChineseMode(state_->chinese_mode);
   }
