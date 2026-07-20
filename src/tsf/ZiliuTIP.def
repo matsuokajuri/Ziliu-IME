@@ -1,0 +1,5 @@
+LIBRARY "ZiliuTIP"
+EXPORTS
+  DllCanUnloadNow PRIVATE
+  DllGetClassObject PRIVATE
+

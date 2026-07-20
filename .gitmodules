@@ -1,0 +1,8 @@
+[submodule "third_party/librime"]
+	path = third_party/librime
+	url = https://github.com/rime/librime.git
+	branch = master
+[submodule "third_party/rime-ice"]
+	path = third_party/rime-ice
+	url = https://github.com/iDvel/rime-ice.git
+	branch = main

@@ -1,0 +1,6 @@
+# 字流对雾凇拼音的最小覆盖层。
+# encoding: utf-8
+
+patch:
+  schema/name: 字流拼音
+

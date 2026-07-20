@@ -1,0 +1,34 @@
+# Build output
+/build/
+/out/
+/.vs/
+/CMakeUserPresets.json
+
+# Visual Studio
+*.VC.db
+*.VC.VC.opendb
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Compiler output
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+
+# Runtime and local state
+*.log
+*.userdb/
+/artifacts/
+
+# CodeGraph is intentionally versioned only through its project metadata.
+.codegraph/cache/
+.codegraph/logs/
+.codegraph/*.lock
+

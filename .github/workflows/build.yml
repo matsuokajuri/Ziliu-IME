@@ -1,0 +1,27 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/ci
+          -G "Visual Studio 17 2022" -A x64
+          -DZILIU_BUILD_TESTS=ON
+          -DZILIU_ENABLE_RIME=OFF
+
+      - name: Build
+        run: cmake --build build/ci --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build/ci -C Release --output-on-failure
+
