@@ -157,33 +157,15 @@ LaunchOptions ParseLaunchOptions() {
 
 class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
  public:
-  explicit ZiliuSettingsApp(LaunchOptions options) : options_(options) {
-    // Runtime-loaded views do not have an App.xaml to install the standard WinUI styles.
-    ResourceDictionary resources;
-    resources.MergedDictionaries().Append(XamlControlsResources());
-    Resources(resources);
-  }
+  explicit ZiliuSettingsApp(LaunchOptions options) : options_(options) {}
 
   void OnLaunched(LaunchActivatedEventArgs const&) {
     window_ = Window();
     window_.Title(L"字流 Ziliu 设置");
-    try {
-      window_.SystemBackdrop(MicaBackdrop());
-    } catch (...) {
-      // Mica is optional and must not prevent the settings surface from opening.
-    }
     if (options_.quick_menu) {
-      try {
-        BuildQuickMenu();
-      } catch (...) {
-        BuildQuickMenuFallback();
-      }
+      BuildQuickMenuFallback();
     } else {
-      try {
-        BuildSettingsWindow();
-      } catch (...) {
-        BuildSettingsWindowFallback();
-      }
+      BuildSettingsWindowFallback();
     }
     window_.Activate();
     try {
