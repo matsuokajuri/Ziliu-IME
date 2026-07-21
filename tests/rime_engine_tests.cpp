@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -18,6 +20,30 @@ void Expect(bool condition, std::string_view message) {
 
 int main() {
   auto engine = ziliu::broker::CreateEngine();
+
+  for (const wchar_t letter : std::wstring_view(L"shi")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume a paging test letter");
+  }
+  const auto first_page = engine->Snapshot();
+  Expect(first_page.candidates.size() > 1, "shi should offer multiple candidates");
+  const auto candidate_texts = [](const auto& snapshot) {
+    std::vector<std::wstring> texts;
+    texts.reserve(snapshot.candidates.size());
+    for (const auto& candidate : snapshot.candidates) {
+      texts.push_back(candidate.text);
+    }
+    return texts;
+  };
+  Expect(engine->PageDown(), "Rime should consume PageDown when more candidates exist");
+  const auto second_page = engine->Snapshot();
+  Expect(!second_page.candidates.empty(), "PageDown should retain candidate results");
+  Expect(candidate_texts(second_page) != candidate_texts(first_page),
+         "PageDown should advance to a different candidate page");
+  Expect(engine->PageUp(), "Rime should consume PageUp on the second page");
+  Expect(candidate_texts(engine->Snapshot()) == candidate_texts(first_page),
+         "PageUp should return to the first candidate page");
+  engine->Reset();
+
   for (const wchar_t letter : std::wstring_view(L"zhongguo")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume a pinyin letter");
   }

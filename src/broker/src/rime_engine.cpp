@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -22,8 +23,6 @@ namespace ziliu::broker {
 namespace {
 
 constexpr int kRimeBackspace = 0xFF08;
-constexpr int kRimePageUp = 0xFF55;
-constexpr int kRimePageDown = 0xFF56;
 
 std::string ToUtf8(std::wstring_view value) {
   if (value.empty()) {
@@ -201,7 +200,8 @@ class RimeRuntime final {
            api_->get_commit != nullptr && api_->free_commit != nullptr &&
            api_->get_context != nullptr && api_->free_context != nullptr &&
            api_->select_schema != nullptr && api_->set_option != nullptr &&
-           api_->select_candidate_on_current_page != nullptr;
+           api_->select_candidate != nullptr && api_->candidate_list_from_index != nullptr &&
+           api_->candidate_list_next != nullptr && api_->candidate_list_end != nullptr;
   }
 
   HMODULE module_ = nullptr;
@@ -215,7 +215,10 @@ class RimeEngine final : public core::Engine {
   RimeEngine(RimeApi* api, RimeSessionId session_id) : api_(api), session_id_(session_id) {}
   ~RimeEngine() override { api_->destroy_session(session_id_); }
 
-  void Reset() override { api_->clear_composition(session_id_); }
+  void Reset() override {
+    candidate_offset_ = 0;
+    api_->clear_composition(session_id_);
+  }
 
   bool ProcessLetter(wchar_t letter) override {
     if (letter < L'A' || (letter > L'Z' && letter < L'a') || letter > L'z') {
@@ -223,22 +226,52 @@ class RimeEngine final : public core::Engine {
     }
     const int keycode = static_cast<int>(letter >= L'A' && letter <= L'Z' ? letter - L'A' + L'a'
                                                                           : letter);
-    return api_->process_key(session_id_, keycode, 0) != False;
+    const bool consumed = api_->process_key(session_id_, keycode, 0) != False;
+    if (consumed) {
+      candidate_offset_ = 0;
+    }
+    return consumed;
   }
 
-  bool Backspace() override { return api_->process_key(session_id_, kRimeBackspace, 0) != False; }
+  bool Backspace() override {
+    const bool consumed = api_->process_key(session_id_, kRimeBackspace, 0) != False;
+    if (consumed) {
+      candidate_offset_ = 0;
+    }
+    return consumed;
+  }
 
-  bool PageUp() override { return api_->process_key(session_id_, kRimePageUp, 0) != False; }
+  bool PageUp() override {
+    if (candidate_offset_ == 0) {
+      return false;
+    }
+    candidate_offset_ = std::max(candidate_offset_ - static_cast<int>(core::ipc::kMaximumCandidates),
+                                 0);
+    return true;
+  }
 
-  bool PageDown() override { return api_->process_key(session_id_, kRimePageDown, 0) != False; }
+  bool PageDown() override {
+    constexpr int page_size = static_cast<int>(core::ipc::kMaximumCandidates);
+    if (candidate_offset_ > std::numeric_limits<int>::max() - page_size) {
+      return false;
+    }
+    const int next_offset = candidate_offset_ + page_size;
+    if (!HasCandidateAt(next_offset)) {
+      return false;
+    }
+    candidate_offset_ = next_offset;
+    return true;
+  }
 
   void SetTraditional(bool enabled) override {
+    candidate_offset_ = 0;
     api_->set_option(session_id_, "traditionalization", enabled ? True : False);
   }
 
   std::wstring Select(std::size_t candidate_index) override {
     if (candidate_index >= core::ipc::kMaximumCandidates ||
-        !api_->select_candidate_on_current_page(session_id_, candidate_index)) {
+        !api_->select_candidate(session_id_,
+                                static_cast<std::size_t>(candidate_offset_) + candidate_index)) {
       return {};
     }
     static_cast<void>(api_->commit_composition(session_id_));
@@ -248,6 +281,7 @@ class RimeEngine final : public core::Engine {
     }
     std::wstring result = FromUtf8(commit.text);
     api_->free_commit(&commit);
+    candidate_offset_ = 0;
     return result;
   }
 
@@ -258,31 +292,42 @@ class RimeEngine final : public core::Engine {
       return snapshot;
     }
     snapshot.preedit = FromUtf8(context.composition.preedit);
-    snapshot.highlighted_index =
-        context.menu.highlighted_candidate_index < 0
-            ? 0
-            : static_cast<std::size_t>(context.menu.highlighted_candidate_index);
-    const int candidate_count =
-        std::clamp(context.menu.num_candidates, 0,
-                   static_cast<int>(core::ipc::kMaximumCandidates));
-    snapshot.candidates.reserve(static_cast<std::size_t>(candidate_count));
-    for (int index = 0; index < candidate_count; ++index) {
-      const auto& candidate = context.menu.candidates[index];
-      snapshot.candidates.push_back(core::Candidate{
-          FromUtf8(candidate.text), FromUtf8(candidate.comment),
-          1.0 - static_cast<double>(index) / static_cast<double>(candidate_count + 1)});
-    }
+    const bool has_menu = context.menu.num_candidates > 0;
     api_->free_context(&context);
-    if (!snapshot.candidates.empty() &&
-        snapshot.highlighted_index >= snapshot.candidates.size()) {
-      snapshot.highlighted_index = 0;
+
+    if (has_menu) {
+      RimeCandidateListIterator iterator{};
+      if (api_->candidate_list_from_index(session_id_, &iterator, candidate_offset_)) {
+        snapshot.candidates.reserve(core::ipc::kMaximumCandidates);
+        while (snapshot.candidates.size() < core::ipc::kMaximumCandidates &&
+               api_->candidate_list_next(&iterator)) {
+          const auto& candidate = iterator.candidate;
+          const std::size_t visible_index = snapshot.candidates.size();
+          snapshot.candidates.push_back(core::Candidate{
+              FromUtf8(candidate.text), FromUtf8(candidate.comment),
+              1.0 - static_cast<double>(visible_index) /
+                        static_cast<double>(core::ipc::kMaximumCandidates + 1)});
+        }
+        api_->candidate_list_end(&iterator);
+      }
     }
     return snapshot;
   }
 
  private:
+  [[nodiscard]] bool HasCandidateAt(int candidate_index) const {
+    RimeCandidateListIterator iterator{};
+    if (!api_->candidate_list_from_index(session_id_, &iterator, candidate_index)) {
+      return false;
+    }
+    const bool found = api_->candidate_list_next(&iterator) != False;
+    api_->candidate_list_end(&iterator);
+    return found;
+  }
+
   RimeApi* api_;
   RimeSessionId session_id_;
+  int candidate_offset_ = 0;
 };
 
 std::unique_ptr<core::Engine> TryCreateRimeEngine() {
