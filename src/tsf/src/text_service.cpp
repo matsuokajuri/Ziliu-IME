@@ -369,6 +369,10 @@ bool TextService::EnsureSession() {
       state_->request_id++, state_->session_id, core::ipc::Command::kSetTraditional,
       state_->settings.character_set == core::CharacterSet::kTraditional ? 1U : 0U};
   static_cast<void>(state_->client.Exchange(option_request));
+  const core::ipc::Request page_size_request{
+      state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
+      static_cast<std::uint32_t>(state_->settings.candidate_count)};
+  static_cast<void>(state_->client.Exchange(page_size_request));
   return true;
 }
 
@@ -384,6 +388,7 @@ void TextService::RefreshSettings(bool force) {
     if (force || state_->settings_file_known) {
       const bool was_traditional =
           state_->settings.character_set == core::CharacterSet::kTraditional;
+      const std::size_t previous_candidate_count = state_->settings.candidate_count;
       state_->settings = {};
       state_->settings_file_known = false;
       state_->settings_write_time = {};
@@ -391,6 +396,13 @@ void TextService::RefreshSettings(bool force) {
       if (state_->session_id != 0 && was_traditional) {
         const core::ipc::Request request{state_->request_id++, state_->session_id,
                                          core::ipc::Command::kSetTraditional, 0U};
+        static_cast<void>(state_->client.Exchange(request));
+      }
+      if (state_->session_id != 0 &&
+          previous_candidate_count != state_->settings.candidate_count) {
+        const core::ipc::Request request{
+            state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
+            static_cast<std::uint32_t>(state_->settings.candidate_count)};
         static_cast<void>(state_->client.Exchange(request));
       }
     }
@@ -405,6 +417,7 @@ void TextService::RefreshSettings(bool force) {
     return;
   }
   const core::CharacterSet previous_character_set = state_->settings.character_set;
+  const std::size_t previous_candidate_count = state_->settings.candidate_count;
   state_->settings = core::ParseSettings(*contents);
   state_->settings_write_time = write_time;
   state_->settings_file_known = true;
@@ -414,6 +427,12 @@ void TextService::RefreshSettings(bool force) {
     const core::ipc::Request request{
         state_->request_id++, state_->session_id, core::ipc::Command::kSetTraditional,
         state_->settings.character_set == core::CharacterSet::kTraditional ? 1U : 0U};
+    static_cast<void>(state_->client.Exchange(request));
+  }
+  if (state_->session_id != 0 && previous_candidate_count != state_->settings.candidate_count) {
+    const core::ipc::Request request{
+        state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
+        static_cast<std::uint32_t>(state_->settings.candidate_count)};
     static_cast<void>(state_->client.Exchange(request));
   }
 }

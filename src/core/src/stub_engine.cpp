@@ -47,6 +47,10 @@ class StubEngine final : public Engine {
 
   bool PageDown() override { return false; }
 
+  void SetCandidatePageSize(std::size_t page_size) override {
+    static_cast<void>(page_size);
+  }
+
   void SetTraditional(bool enabled) override { traditional_ = enabled; }
 
   std::wstring Select(std::size_t candidate_index) override {

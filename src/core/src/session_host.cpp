@@ -70,6 +70,14 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
     case ipc::Command::kPageDown:
       response.consumed = engine.PageDown();
       break;
+    case ipc::Command::kSetCandidatePageSize:
+      if (request.value == 0 || request.value > ipc::kMaximumCandidates) {
+        response.status = ipc::Status::kInvalidRequest;
+        return response;
+      }
+      engine.SetCandidatePageSize(request.value);
+      response.consumed = true;
+      break;
     case ipc::Command::kSetTraditional:
       engine.SetTraditional(request.value != 0);
       response.consumed = true;

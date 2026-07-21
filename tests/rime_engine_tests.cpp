@@ -20,12 +20,13 @@ void Expect(bool condition, std::string_view message) {
 
 int main() {
   auto engine = ziliu::broker::CreateEngine();
+  engine->SetCandidatePageSize(7);
 
   for (const wchar_t letter : std::wstring_view(L"shi")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume a paging test letter");
   }
   const auto first_page = engine->Snapshot();
-  Expect(first_page.candidates.size() > 1, "shi should offer multiple candidates");
+  Expect(first_page.candidates.size() == 7, "Rime should honor the configured candidate page size");
   const auto candidate_texts = [](const auto& snapshot) {
     std::vector<std::wstring> texts;
     texts.reserve(snapshot.candidates.size());

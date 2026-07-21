@@ -193,6 +193,10 @@ bool IsKnownCommand(Command command) {
     case Command::kInputLetter:
     case Command::kBackspace:
     case Command::kSelectCandidate:
+    case Command::kPageUp:
+    case Command::kPageDown:
+    case Command::kSetTraditional:
+    case Command::kSetCandidatePageSize:
       return true;
   }
   return false;
