@@ -121,6 +121,7 @@ MainWindow::MainWindow() {
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
     QuickMenuRoot().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     InitializeSettingsControls();
+    InitializeNavigation();
     AppWindow().Closing(
         [this](Microsoft::UI::Windowing::AppWindow const&,
                Microsoft::UI::Windowing::AppWindowClosingEventArgs const&) {
@@ -153,7 +154,7 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   if (!quick_menu) {
     ExtendsContentIntoTitleBar(true);
     SetTitleBar(SettingsTitleBar());
-    SetWindowPos(window_handle, nullptr, 0, 0, scaled(860), scaled(780),
+    SetWindowPos(window_handle, nullptr, 0, 0, scaled(1100), scaled(820),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     return;
   }
@@ -199,16 +200,60 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
 }
 
 void MainWindow::InitializeSettingsControls() {
+  CharacterSetCombo().SelectedIndex(settings_.character_set ==
+                                            ziliu::core::CharacterSet::kTraditional
+                                        ? 1
+                                        : 0);
+  PunctuationCombo().SelectedIndex(settings_.punctuation_style ==
+                                           ziliu::core::PunctuationStyle::kFullWidth
+                                       ? 1
+                                       : 0);
+  DefaultInputModeCombo().SelectedIndex(settings_.default_input_mode ==
+                                                ziliu::core::DefaultInputMode::kEnglish
+                                            ? 1
+                                            : 0);
+  InitialismToggle().IsOn(settings_.initialism_spelling);
+  SpellingCorrectionToggle().IsOn(settings_.spelling_correction);
+  AutoPairToggle().IsOn(settings_.auto_pair_punctuation);
+  SmartNumericPunctuationToggle().IsOn(settings_.smart_numeric_punctuation);
+
+  const auto set_checked = [](Microsoft::UI::Xaml::Controls::CheckBox const& control,
+                              bool checked) {
+    control.IsChecked(winrt::box_value(checked).as<winrt::Windows::Foundation::IReference<bool>>());
+  };
+  set_checked(CorrectionGnNgCheck(), settings_.correction_gn_ng);
+  set_checked(CorrectionMgNgCheck(), settings_.correction_mg_ng);
+  set_checked(CorrectionIouIuCheck(), settings_.correction_iou_iu);
+  set_checked(CorrectionUeiUiCheck(), settings_.correction_uei_ui);
+  set_checked(CorrectionUenUnCheck(), settings_.correction_uen_un);
+  set_checked(FuzzyZZhCheck(), settings_.fuzzy_z_zh);
+  set_checked(FuzzyCChCheck(), settings_.fuzzy_c_ch);
+  set_checked(FuzzySShCheck(), settings_.fuzzy_s_sh);
+  set_checked(FuzzyLNCheck(), settings_.fuzzy_l_n);
+  set_checked(FuzzyFHCheck(), settings_.fuzzy_f_h);
+  set_checked(FuzzyRLCheck(), settings_.fuzzy_r_l);
+  set_checked(FuzzyAnAngCheck(), settings_.fuzzy_an_ang);
+  set_checked(FuzzyEnEngCheck(), settings_.fuzzy_en_eng);
+  set_checked(FuzzyInIngCheck(), settings_.fuzzy_in_ing);
+  set_checked(FuzzyIanIangCheck(), settings_.fuzzy_ian_iang);
+  set_checked(FuzzyUanUangCheck(), settings_.fuzzy_uan_uang);
+
+  ThemeCombo().SelectedIndex(static_cast<int>(settings_.theme_mode));
   LayoutCombo().SelectedIndex(settings_.candidate_layout ==
                                       ziliu::core::CandidateLayout::kHorizontal
-                                  ? 1
-                                  : 0);
+                                  ? 0
+                                  : 1);
   CandidateCountCombo().SelectedIndex(static_cast<int>(settings_.candidate_count) - 3);
+  CandidatePageModeCombo().SelectedIndex(settings_.candidate_page_mode ==
+                                                 ziliu::core::CandidatePageMode::kMultiLine
+                                             ? 1
+                                             : 0);
+  CandidateColorCombo().SelectedIndex(static_cast<int>(settings_.candidate_color_scheme));
+  CandidateFontCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_family));
+  CandidateFontSizeCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_size) - 14);
+  CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
   SwitchKeyCombo().SelectedIndex(
       settings_.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kControl ? 1 : 0);
-  PunctuationToggle().IsOn(settings_.punctuation_style ==
-                           ziliu::core::PunctuationStyle::kFullWidth);
-  AutoPairToggle().IsOn(settings_.auto_pair_punctuation);
   int page_key_index = 0;
   if (settings_.page_key_set == ziliu::core::PageKeySet::kSemicolonApostrophe) {
     page_key_index = 1;
@@ -216,6 +261,80 @@ void MainWindow::InitializeSettingsControls() {
     page_key_index = 2;
   }
   PageKeyCombo().SelectedIndex(page_key_index);
+  ApplyThemeFromControls();
+}
+
+void MainWindow::InitializeNavigation() {
+  SettingsNavigation().SelectionChanged(
+      [this](winrt::Windows::Foundation::IInspectable const&,
+             Microsoft::UI::Xaml::Controls::NavigationViewSelectionChangedEventArgs const& args) {
+        const auto item = args.SelectedItemContainer();
+        if (item != nullptr) {
+          ShowSettingsPage(winrt::unbox_value_or<winrt::hstring>(item.Tag(), L"common"));
+        }
+      });
+  CorrectionSettingsButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"correction"); });
+  FuzzySettingsButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"fuzzy"); });
+  PunctuationSettingsButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"punctuation"); });
+  CorrectionBackButton().Click([this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
+  FuzzyBackButton().Click([this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
+  PunctuationBackButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
+  ThemeCombo().SelectionChanged([this](auto const&, auto const&) { ApplyThemeFromControls(); });
+  ResetAppearanceButton().Click([this](auto const&, auto const&) {
+    ThemeCombo().SelectedIndex(0);
+    LayoutCombo().SelectedIndex(1);
+    CandidateCountCombo().SelectedIndex(2);
+    CandidatePageModeCombo().SelectedIndex(0);
+    CandidateColorCombo().SelectedIndex(0);
+    CandidateFontCombo().SelectedIndex(0);
+    CandidateFontSizeCombo().SelectedIndex(3);
+    CandidateScaleToggle().IsOn(true);
+  });
+}
+
+void MainWindow::ShowSettingsPage(std::wstring_view page) {
+  const auto collapsed = Microsoft::UI::Xaml::Visibility::Collapsed;
+  CommonPage().Visibility(collapsed);
+  CorrectionPage().Visibility(collapsed);
+  FuzzyPage().Visibility(collapsed);
+  PunctuationPage().Visibility(collapsed);
+  AppearancePage().Visibility(collapsed);
+  DictionaryPage().Visibility(collapsed);
+  KeysPage().Visibility(collapsed);
+  AdvancedPage().Visibility(collapsed);
+
+  const auto visible = Microsoft::UI::Xaml::Visibility::Visible;
+  if (page == L"appearance") {
+    AppearancePage().Visibility(visible);
+  } else if (page == L"dictionary") {
+    DictionaryPage().Visibility(visible);
+  } else if (page == L"keys") {
+    KeysPage().Visibility(visible);
+  } else if (page == L"advanced") {
+    AdvancedPage().Visibility(visible);
+  } else if (page == L"correction") {
+    CorrectionPage().Visibility(visible);
+  } else if (page == L"fuzzy") {
+    FuzzyPage().Visibility(visible);
+  } else if (page == L"punctuation") {
+    PunctuationPage().Visibility(visible);
+  } else {
+    CommonPage().Visibility(visible);
+  }
+}
+
+void MainWindow::ApplyThemeFromControls() {
+  Microsoft::UI::Xaml::ElementTheme theme = Microsoft::UI::Xaml::ElementTheme::Default;
+  if (ThemeCombo().SelectedIndex() == 1) {
+    theme = Microsoft::UI::Xaml::ElementTheme::Light;
+  } else if (ThemeCombo().SelectedIndex() == 2) {
+    theme = Microsoft::UI::Xaml::ElementTheme::Dark;
+  }
+  RootGrid().RequestedTheme(theme);
 }
 
 void MainWindow::InitializeQuickMenuControls() {
@@ -239,17 +358,57 @@ void MainWindow::InitializeQuickMenuControls() {
 }
 
 void MainWindow::SaveFromControls() {
-  settings_.candidate_layout = LayoutCombo().SelectedIndex() == 1
+  settings_.character_set = CharacterSetCombo().SelectedIndex() == 1
+                                ? ziliu::core::CharacterSet::kTraditional
+                                : ziliu::core::CharacterSet::kSimplified;
+  settings_.punctuation_style = PunctuationCombo().SelectedIndex() == 0
+                                    ? ziliu::core::PunctuationStyle::kHalfWidth
+                                    : ziliu::core::PunctuationStyle::kFullWidth;
+  settings_.default_input_mode = DefaultInputModeCombo().SelectedIndex() == 1
+                                     ? ziliu::core::DefaultInputMode::kEnglish
+                                     : ziliu::core::DefaultInputMode::kChinese;
+  settings_.initialism_spelling = InitialismToggle().IsOn();
+  settings_.spelling_correction = SpellingCorrectionToggle().IsOn();
+  settings_.auto_pair_punctuation = AutoPairToggle().IsOn();
+  settings_.smart_numeric_punctuation = SmartNumericPunctuationToggle().IsOn();
+  const auto is_checked = [](Microsoft::UI::Xaml::Controls::CheckBox const& control) {
+    const auto checked = control.IsChecked();
+    return checked != nullptr && checked.Value();
+  };
+  settings_.correction_gn_ng = is_checked(CorrectionGnNgCheck());
+  settings_.correction_mg_ng = is_checked(CorrectionMgNgCheck());
+  settings_.correction_iou_iu = is_checked(CorrectionIouIuCheck());
+  settings_.correction_uei_ui = is_checked(CorrectionUeiUiCheck());
+  settings_.correction_uen_un = is_checked(CorrectionUenUnCheck());
+  settings_.fuzzy_z_zh = is_checked(FuzzyZZhCheck());
+  settings_.fuzzy_c_ch = is_checked(FuzzyCChCheck());
+  settings_.fuzzy_s_sh = is_checked(FuzzySShCheck());
+  settings_.fuzzy_l_n = is_checked(FuzzyLNCheck());
+  settings_.fuzzy_f_h = is_checked(FuzzyFHCheck());
+  settings_.fuzzy_r_l = is_checked(FuzzyRLCheck());
+  settings_.fuzzy_an_ang = is_checked(FuzzyAnAngCheck());
+  settings_.fuzzy_en_eng = is_checked(FuzzyEnEngCheck());
+  settings_.fuzzy_in_ing = is_checked(FuzzyInIngCheck());
+  settings_.fuzzy_ian_iang = is_checked(FuzzyIanIangCheck());
+  settings_.fuzzy_uan_uang = is_checked(FuzzyUanUangCheck());
+  settings_.theme_mode = static_cast<ziliu::core::ThemeMode>(ThemeCombo().SelectedIndex());
+  settings_.candidate_layout = LayoutCombo().SelectedIndex() == 0
                                    ? ziliu::core::CandidateLayout::kHorizontal
                                    : ziliu::core::CandidateLayout::kVertical;
   settings_.candidate_count = static_cast<std::size_t>(CandidateCountCombo().SelectedIndex() + 3);
+  settings_.candidate_page_mode = CandidatePageModeCombo().SelectedIndex() == 1
+                                      ? ziliu::core::CandidatePageMode::kMultiLine
+                                      : ziliu::core::CandidatePageMode::kSingleLine;
+  settings_.candidate_color_scheme = static_cast<ziliu::core::CandidateColorScheme>(
+      CandidateColorCombo().SelectedIndex());
+  settings_.candidate_font_family = static_cast<ziliu::core::CandidateFontFamily>(
+      CandidateFontCombo().SelectedIndex());
+  settings_.candidate_font_size =
+      static_cast<std::size_t>(CandidateFontSizeCombo().SelectedIndex() + 14);
+  settings_.candidate_scale_with_text = CandidateScaleToggle().IsOn();
   settings_.input_mode_switch_key =
       SwitchKeyCombo().SelectedIndex() == 1 ? ziliu::core::InputModeSwitchKey::kControl
                                             : ziliu::core::InputModeSwitchKey::kShift;
-  settings_.punctuation_style = PunctuationToggle().IsOn()
-                                    ? ziliu::core::PunctuationStyle::kFullWidth
-                                    : ziliu::core::PunctuationStyle::kHalfWidth;
-  settings_.auto_pair_punctuation = AutoPairToggle().IsOn();
   if (PageKeyCombo().SelectedIndex() == 1) {
     settings_.page_key_set = ziliu::core::PageKeySet::kSemicolonApostrophe;
   } else if (PageKeyCombo().SelectedIndex() == 2) {

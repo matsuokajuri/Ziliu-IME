@@ -81,7 +81,10 @@ int main() {
              defaults.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kShift &&
              defaults.punctuation_style == ziliu::core::PunctuationStyle::kFullWidth &&
              defaults.auto_pair_punctuation &&
-             defaults.page_key_set == ziliu::core::PageKeySet::kCommaPeriod,
+             defaults.page_key_set == ziliu::core::PageKeySet::kCommaPeriod &&
+             defaults.default_input_mode == ziliu::core::DefaultInputMode::kChinese &&
+             defaults.theme_mode == ziliu::core::ThemeMode::kSystem &&
+             defaults.candidate_page_mode == ziliu::core::CandidatePageMode::kSingleLine,
          "settings defaults should match the first-run experience");
 
   const auto parsed_settings = ziliu::core::ParseSettings(
@@ -91,7 +94,16 @@ int main() {
       "punctuation_style=half_width\n"
       "auto_pair_punctuation=false\n"
       "page_keys=brackets\n"
-      "character_set=traditional\n");
+      "character_set=traditional\n"
+      "default_input_mode=english\n"
+      "fuzzy_z_zh=true\n"
+      "smart_numeric_punctuation=false\n"
+      "theme_mode=dark\n"
+      "candidate_page_mode=multi_line\n"
+      "candidate_font_family=microsoft_yahei\n"
+      "candidate_color_scheme=blue\n"
+      "candidate_font_size=20\n"
+      "candidate_scale_with_text=false\n");
   Expect(parsed_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal &&
              parsed_settings.candidate_count == 7 &&
              parsed_settings.input_mode_switch_key ==
@@ -99,7 +111,18 @@ int main() {
              parsed_settings.punctuation_style == ziliu::core::PunctuationStyle::kHalfWidth &&
              !parsed_settings.auto_pair_punctuation &&
              parsed_settings.page_key_set == ziliu::core::PageKeySet::kBrackets &&
-             parsed_settings.character_set == ziliu::core::CharacterSet::kTraditional,
+             parsed_settings.character_set == ziliu::core::CharacterSet::kTraditional &&
+             parsed_settings.default_input_mode == ziliu::core::DefaultInputMode::kEnglish &&
+             parsed_settings.fuzzy_z_zh && !parsed_settings.smart_numeric_punctuation &&
+             parsed_settings.theme_mode == ziliu::core::ThemeMode::kDark &&
+             parsed_settings.candidate_page_mode ==
+                 ziliu::core::CandidatePageMode::kMultiLine &&
+             parsed_settings.candidate_font_family ==
+                 ziliu::core::CandidateFontFamily::kMicrosoftYaHei &&
+             parsed_settings.candidate_color_scheme ==
+                 ziliu::core::CandidateColorScheme::kBlue &&
+             parsed_settings.candidate_font_size == 20 &&
+             !parsed_settings.candidate_scale_with_text,
          "settings parser should preserve all supported choices");
   Expect(ziliu::core::ParseSettings(ziliu::core::SerializeSettings(parsed_settings)) ==
              parsed_settings,
@@ -107,6 +130,9 @@ int main() {
   Expect(ziliu::core::ParseSettings("candidate_count=99\n").candidate_count ==
              ziliu::core::kMaximumCandidateCount,
          "candidate count should be clamped to the supported range");
+  Expect(ziliu::core::ParseSettings("candidate_font_size=99\n").candidate_font_size ==
+             ziliu::core::kMaximumCandidateFontSize,
+         "candidate font size should be clamped to the supported range");
   Expect(ziliu::core::MakeCandidatePageSlice(9, 5, 0) ==
              ziliu::core::CandidatePageSlice{0, 5} &&
              ziliu::core::MakeCandidatePageSlice(9, 5, 5) ==

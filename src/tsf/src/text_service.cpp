@@ -487,6 +487,8 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
   }
 
   RefreshSettings(true);
+  state_->chinese_mode =
+      state_->settings.default_input_mode == core::DefaultInputMode::kChinese;
   PublishInputMode();
   StartBroker();
   static_cast<void>(EnsureSession());

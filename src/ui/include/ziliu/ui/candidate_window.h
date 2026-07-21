@@ -41,6 +41,8 @@ class CandidateWindow final {
   float window_width_ = 420.0F;
   float dpi_scale_ = 1.0F;
   std::vector<float> candidate_widths_;
+  std::vector<float> candidate_lefts_;
+  std::vector<float> candidate_tops_;
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
   Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> render_target_;

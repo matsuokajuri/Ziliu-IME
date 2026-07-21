@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <mutex>
 #include <numeric>
 #include <string>
@@ -114,8 +115,16 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
     return;
   }
 
+  const bool appearance_changed =
+      settings_.theme_mode != settings.theme_mode ||
+      settings_.candidate_color_scheme != settings.candidate_color_scheme ||
+      settings_.candidate_font_family != settings.candidate_font_family ||
+      settings_.candidate_font_size != settings.candidate_font_size;
   snapshot_ = snapshot;
   settings_ = settings;
+  if (appearance_changed) {
+    DiscardDeviceResources();
+  }
   const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
                                                   settings_.candidate_count, page_offset);
   page_offset_ = slice.offset;
@@ -143,6 +152,9 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       kMaximumHorizontalWindowWidth, static_cast<float>(work_width) / dpi_scale_);
 
   candidate_widths_.clear();
+  candidate_lefts_.clear();
+  candidate_tops_.clear();
+  std::size_t horizontal_rows = 1;
   if (horizontal) {
     if (EnsureDeviceResources()) {
       for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
@@ -169,16 +181,48 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       candidate_widths_.assign(visible_count, kMinimumHorizontalCandidateWidth);
     }
     constexpr float outer_width = 16.0F;
-    FitCandidateWidths(&candidate_widths_, maximum_window_width - outer_width);
-    window_width_ = std::clamp(
-        outer_width + std::accumulate(candidate_widths_.begin(), candidate_widths_.end(), 0.0F),
-        std::min(kMinimumHorizontalWindowWidth, maximum_window_width), maximum_window_width);
+    const bool multiline = settings_.candidate_page_mode == core::CandidatePageMode::kMultiLine &&
+                           candidate_widths_.size() > 1;
+    horizontal_rows = multiline ? 2 : 1;
+    const std::size_t columns =
+        multiline ? (candidate_widths_.size() + 1) / 2 : candidate_widths_.size();
+    float widest_row = 0.0F;
+    for (std::size_t row = 0; row < horizontal_rows; ++row) {
+      const std::size_t begin = row * columns;
+      const std::size_t end = std::min(begin + columns, candidate_widths_.size());
+      if (begin >= end) {
+        continue;
+      }
+      std::vector<float> row_widths(candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin),
+                                    candidate_widths_.begin() + static_cast<std::ptrdiff_t>(end));
+      FitCandidateWidths(&row_widths, maximum_window_width - outer_width);
+      std::copy(row_widths.begin(), row_widths.end(),
+                candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin));
+      widest_row = std::max(
+          widest_row, std::accumulate(row_widths.begin(), row_widths.end(), 0.0F));
+    }
+    window_width_ = std::clamp(outer_width + widest_row,
+                               std::min(kMinimumHorizontalWindowWidth, maximum_window_width),
+                               maximum_window_width);
+    for (std::size_t row = 0; row < horizontal_rows; ++row) {
+      float left = 8.0F;
+      const std::size_t begin = row * columns;
+      const std::size_t end = std::min(begin + columns, candidate_widths_.size());
+      for (std::size_t index = begin; index < end; ++index) {
+        candidate_lefts_.push_back(left);
+        candidate_tops_.push_back(kHorizontalPreeditHeight + 4.0F +
+                                  static_cast<float>(row) * kHorizontalCandidateHeight);
+        left += candidate_widths_[index];
+      }
+    }
   } else {
     window_width_ = std::min(kVerticalWindowWidth, static_cast<float>(work_width) / dpi_scale_);
   }
 
   const float height_dip = horizontal
-                               ? kHorizontalWindowHeight
+                               ? kHorizontalWindowHeight +
+                                     static_cast<float>(horizontal_rows - 1) *
+                                         kHorizontalCandidateHeight
                                : kHorizontalPadding * 2.0F + kPreeditHeight +
                                      kCandidateHeight * static_cast<float>(visible_count);
   int width = ToPixels(window_width_, dpi_scale_);
@@ -268,27 +312,51 @@ bool CandidateWindow::EnsureDeviceResources() {
     return false;
   }
 
-  if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(0x202124),
+  std::uint32_t text_color = 0x202124;
+  std::uint32_t muted_color = 0x73767A;
+  std::uint32_t accent_color = 0xE7F0FF;
+  if (settings_.theme_mode == core::ThemeMode::kDark) {
+    text_color = 0xF5F6F7;
+    muted_color = 0xAEB4BC;
+    accent_color = 0x36445A;
+  }
+  if (settings_.candidate_color_scheme == core::CandidateColorScheme::kBlue) {
+    accent_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x294A78 : 0xDCEBFF;
+  } else if (settings_.candidate_color_scheme == core::CandidateColorScheme::kGraphite) {
+    accent_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x474747 : 0xE2E2E2;
+  }
+
+  if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(text_color),
                                                    text_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(0x73767A),
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(muted_color),
                                                    muted_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(0xE7F0FF),
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(accent_color),
                                                    accent_brush_.ReleaseAndGetAddressOf()))) {
     DiscardDeviceResources();
     return false;
   }
 
+  const wchar_t* font_family = L"Source Han Sans SC";
+  if (settings_.candidate_font_family == core::CandidateFontFamily::kMicrosoftYaHei) {
+    font_family = L"Microsoft YaHei UI";
+  } else if (settings_.candidate_font_family == core::CandidateFontFamily::kSystem) {
+    font_family = L"Segoe UI Variable Text";
+  }
+  const float font_size = static_cast<float>(std::clamp(
+      settings_.candidate_font_size, core::kMinimumCandidateFontSize,
+      core::kMaximumCandidateFontSize));
   if (FAILED(dwrite_factory_->CreateTextFormat(
-          L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 18.0F, L"zh-CN",
+          font_family, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size + 1.0F, L"zh-CN",
           preedit_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 17.0F, L"zh-CN",
+          font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"zh-CN",
           candidate_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          L"Segoe UI Variable Text", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0F, L"zh-CN",
+          font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+          std::max(font_size - 5.0F, 10.0F), L"zh-CN",
           annotation_format_.ReleaseAndGetAddressOf()))) {
     DiscardDeviceResources();
     return false;
@@ -306,7 +374,15 @@ void CandidateWindow::Paint() {
 
   if (EnsureDeviceResources()) {
     render_target_->BeginDraw();
-    render_target_->Clear(D2D1::ColorF(0xFAFAFA));
+    std::uint32_t background_color = settings_.theme_mode == core::ThemeMode::kDark
+                                         ? 0x202124
+                                         : 0xFAFAFA;
+    if (settings_.candidate_color_scheme == core::CandidateColorScheme::kBlue) {
+      background_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x172033 : 0xF7FAFF;
+    } else if (settings_.candidate_color_scheme == core::CandidateColorScheme::kGraphite) {
+      background_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x242424 : 0xF4F4F4;
+    }
+    render_target_->Clear(D2D1::ColorF(background_color));
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
     const float preedit_bottom = horizontal ? kHorizontalPreeditHeight : kPreeditHeight;
@@ -323,17 +399,18 @@ void CandidateWindow::Paint() {
 
     const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
                                                     settings_.candidate_count, page_offset_);
-    float horizontal_left = 8.0F;
     for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
       const std::size_t candidate_index = slice.offset + visible_index;
       const float cell_width = horizontal && visible_index < candidate_widths_.size()
                                    ? candidate_widths_[visible_index]
                                    : window_width_ - 16.0F;
-      const float left = horizontal ? horizontal_left : 8.0F;
-      const float top = (horizontal ? kHorizontalPreeditHeight + 4.0F
-                                    : kHorizontalPadding + kPreeditHeight) +
-                        (horizontal ? 0.0F
-                                    : static_cast<float>(visible_index) * kCandidateHeight);
+      const float left = horizontal && visible_index < candidate_lefts_.size()
+                             ? candidate_lefts_[visible_index]
+                             : 8.0F;
+      const float top = horizontal && visible_index < candidate_tops_.size()
+                            ? candidate_tops_[visible_index]
+                            : kHorizontalPadding + kPreeditHeight +
+                                  static_cast<float>(visible_index) * kCandidateHeight;
       const float right = horizontal ? left + cell_width - 2.0F : window_width_ - 8.0F;
       const float row_height = horizontal ? kHorizontalCandidateHeight : kCandidateHeight;
       const D2D1_RECT_F row =
@@ -351,10 +428,6 @@ void CandidateWindow::Paint() {
                                             horizontal ? right - 6.0F : 290.0F,
                                             top + row_height),
                                 text_brush_.Get());
-
-      if (horizontal) {
-        horizontal_left += cell_width;
-      }
 
       if (!horizontal) {
         const auto& annotation = snapshot_.candidates[candidate_index].annotation;

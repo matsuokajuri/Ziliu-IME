@@ -32,6 +32,34 @@ enum class CharacterSet {
   kTraditional,
 };
 
+enum class DefaultInputMode {
+  kChinese,
+  kEnglish,
+};
+
+enum class ThemeMode {
+  kSystem,
+  kLight,
+  kDark,
+};
+
+enum class CandidatePageMode {
+  kSingleLine,
+  kMultiLine,
+};
+
+enum class CandidateFontFamily {
+  kSourceHanSans,
+  kMicrosoftYaHei,
+  kSystem,
+};
+
+enum class CandidateColorScheme {
+  kSystem,
+  kBlue,
+  kGraphite,
+};
+
 struct Settings {
   CandidateLayout candidate_layout = CandidateLayout::kVertical;
   std::size_t candidate_count = 5;
@@ -40,6 +68,32 @@ struct Settings {
   bool auto_pair_punctuation = true;
   PageKeySet page_key_set = PageKeySet::kCommaPeriod;
   CharacterSet character_set = CharacterSet::kSimplified;
+  DefaultInputMode default_input_mode = DefaultInputMode::kChinese;
+  bool initialism_spelling = true;
+  bool spelling_correction = true;
+  bool correction_gn_ng = true;
+  bool correction_mg_ng = true;
+  bool correction_iou_iu = true;
+  bool correction_uei_ui = true;
+  bool correction_uen_un = true;
+  bool fuzzy_z_zh = false;
+  bool fuzzy_c_ch = false;
+  bool fuzzy_s_sh = false;
+  bool fuzzy_l_n = false;
+  bool fuzzy_f_h = false;
+  bool fuzzy_r_l = false;
+  bool fuzzy_an_ang = false;
+  bool fuzzy_en_eng = false;
+  bool fuzzy_in_ing = false;
+  bool fuzzy_ian_iang = false;
+  bool fuzzy_uan_uang = false;
+  bool smart_numeric_punctuation = true;
+  ThemeMode theme_mode = ThemeMode::kSystem;
+  CandidatePageMode candidate_page_mode = CandidatePageMode::kSingleLine;
+  CandidateFontFamily candidate_font_family = CandidateFontFamily::kSourceHanSans;
+  CandidateColorScheme candidate_color_scheme = CandidateColorScheme::kSystem;
+  std::size_t candidate_font_size = 17;
+  bool candidate_scale_with_text = true;
 
   bool operator==(const Settings&) const = default;
 };
@@ -53,6 +107,8 @@ struct CandidatePageSlice {
 
 inline constexpr std::size_t kMinimumCandidateCount = 3;
 inline constexpr std::size_t kMaximumCandidateCount = 9;
+inline constexpr std::size_t kMinimumCandidateFontSize = 14;
+inline constexpr std::size_t kMaximumCandidateFontSize = 24;
 
 [[nodiscard]] Settings ParseSettings(std::string_view text);
 [[nodiscard]] std::string SerializeSettings(const Settings& settings);
