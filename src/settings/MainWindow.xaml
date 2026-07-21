@@ -30,7 +30,15 @@
         </Grid.Resources>
 
         <Grid x:Name="SettingsRoot">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <Grid
+                x:Name="SettingsTitleBar"
+                Height="32"
+                HorizontalAlignment="Stretch" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                 <StackPanel
                     MaxWidth="820"
                     Padding="40,32,40,40"

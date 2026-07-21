@@ -180,11 +180,6 @@ HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
   if (settings_executable_.empty()) {
     return S_OK;
   }
-  const ULONGLONG now = GetTickCount64();
-  if (last_menu_open_tick_ != 0 && now - last_menu_open_tick_ < 750) {
-    return S_OK;
-  }
-  last_menu_open_tick_ = now;
   const std::wstring arguments =
       L"--quick-menu --x " + std::to_wstring(x) + L" --y " + std::to_wstring(y);
   const HINSTANCE result = ShellExecuteW(nullptr, L"open", settings_executable_.c_str(),

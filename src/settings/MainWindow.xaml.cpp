@@ -146,6 +146,8 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   };
 
   if (!quick_menu) {
+    ExtendsContentIntoTitleBar(true);
+    SetTitleBar(SettingsTitleBar());
     SetWindowPos(window_handle, nullptr, 0, 0, scaled(860), scaled(780),
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     return;
