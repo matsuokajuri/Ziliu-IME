@@ -123,6 +123,16 @@ MainWindow::MainWindow() {
     InitializeSettingsControls();
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
+  if (options.quick_menu) {
+    Activated(
+        [this](winrt::Windows::Foundation::IInspectable const&,
+               Microsoft::UI::Xaml::WindowActivatedEventArgs const& args) {
+          if (args.WindowActivationState() ==
+              Microsoft::UI::Xaml::WindowActivationState::Deactivated) {
+            Close();
+          }
+        });
+  }
 }
 
 void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
@@ -147,6 +157,11 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
              static_cast<LONG_PTR>(WS_SYSMENU));
   style |= WS_POPUP;
   SetWindowLongPtrW(window_handle, GWL_STYLE, style);
+
+  LONG_PTR extended_style = GetWindowLongPtrW(window_handle, GWL_EXSTYLE);
+  extended_style &= ~static_cast<LONG_PTR>(WS_EX_APPWINDOW);
+  extended_style |= WS_EX_TOOLWINDOW;
+  SetWindowLongPtrW(window_handle, GWL_EXSTYLE, extended_style);
 
   const int width = scaled(360);
   const int height = scaled(276);
