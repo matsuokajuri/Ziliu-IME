@@ -22,6 +22,24 @@ struct CompositionSnapshot {
   std::size_t highlighted_index = 0;
 
   [[nodiscard]] bool empty() const noexcept { return preedit.empty(); }
+  [[nodiscard]] std::wstring plain_text() const {
+    std::wstring result;
+    result.reserve(preedit.size());
+    for (const wchar_t character : preedit) {
+      if (character != L' ' && character != L'\t' && character != L'\r' &&
+          character != L'\n') {
+        result.push_back(character);
+      }
+    }
+    return result;
+  }
+};
+
+struct SelectionResult {
+  bool consumed = false;
+  std::wstring commit;
+
+  bool operator==(const SelectionResult&) const = default;
 };
 
 class Engine {
@@ -35,7 +53,7 @@ class Engine {
   virtual bool PageDown() = 0;
   virtual void SetCandidatePageSize(std::size_t page_size) = 0;
   virtual void SetTraditional(bool enabled) = 0;
-  virtual std::wstring Select(std::size_t candidate_index) = 0;
+  virtual SelectionResult Select(std::size_t candidate_index) = 0;
   [[nodiscard]] virtual CompositionSnapshot Snapshot() const = 0;
 };
 

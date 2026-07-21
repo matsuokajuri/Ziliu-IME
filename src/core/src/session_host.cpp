@@ -82,10 +82,12 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
       engine.SetTraditional(request.value != 0);
       response.consumed = true;
       break;
-    case ipc::Command::kSelectCandidate:
-      response.commit = engine.Select(request.value);
-      response.consumed = !response.commit.empty();
+    case ipc::Command::kSelectCandidate: {
+      auto selection = engine.Select(request.value);
+      response.consumed = selection.consumed;
+      response.commit = std::move(selection.commit);
       break;
+    }
     case ipc::Command::kPing:
     case ipc::Command::kCreateSession:
       break;

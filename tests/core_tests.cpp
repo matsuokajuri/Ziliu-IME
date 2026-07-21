@@ -34,9 +34,14 @@ int main() {
   Expect(!snapshot.candidates.empty(), "ziliu should have candidates");
   Expect(snapshot.candidates.front().text == L"字流", "字流 should be the first candidate");
 
-  const auto committed = engine->Select(0);
-  Expect(committed == L"字流", "select should return the committed candidate");
+  const auto selected = engine->Select(0);
+  Expect(selected == ziliu::core::SelectionResult{true, L"字流"},
+         "select should return the committed candidate");
   Expect(engine->Snapshot().empty(), "selection should clear the composition");
+
+  const ziliu::core::CompositionSnapshot spaced_preedit{L"你 hao", {}, 0};
+  Expect(spaced_preedit.plain_text() == L"你hao",
+         "plain preedit text should retain selections and remove segmentation spaces");
 
   Type(*engine, L"nihao");
   Expect(engine->Backspace(), "backspace should consume an existing letter");

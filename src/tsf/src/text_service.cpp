@@ -31,7 +31,6 @@ struct TextServiceState {
   std::uint64_t session_id = 0;
   core::ipc::Response pending_response;
   core::CompositionSnapshot snapshot;
-  std::wstring typed_input;
   ui::CandidateWindow candidate_window;
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   LanguageBarButton* language_bar_button = nullptr;
@@ -754,7 +753,6 @@ void TextService::SynchronizeInputMode() {
   state_->chinese_mode = chinese_mode;
   state_->snapshot = {};
   state_->pending_response = {};
-  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
@@ -804,7 +802,6 @@ void TextService::ResetRuntimeState() {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
-  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->switch_key_down = false;
@@ -823,7 +820,6 @@ void TextService::AbandonSession(ITfContext* context) {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
-  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
@@ -1019,7 +1015,6 @@ void TextService::ResetCompositionState() {
   }
   state_->snapshot = {};
   state_->pending_response = {};
-  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
@@ -1094,7 +1089,7 @@ HRESULT TextService::CommitPendingInput(ITfContext* context, BOOL* eaten) {
   if (context == nullptr || eaten == nullptr) {
     return E_INVALIDARG;
   }
-  std::wstring typed_input = state_->typed_input;
+  std::wstring typed_input = state_->snapshot.plain_text();
   ResetCompositionState();
   if (typed_input.empty()) {
     *eaten = TRUE;
@@ -1157,15 +1152,6 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
   }
 
   state_->snapshot = response->snapshot;
-  if (command == core::ipc::Command::kInputLetter) {
-    state_->typed_input.push_back(static_cast<wchar_t>(value));
-  } else if (command == core::ipc::Command::kBackspace && !state_->typed_input.empty()) {
-    state_->typed_input.pop_back();
-  }
-  if (command == core::ipc::Command::kReset ||
-      command == core::ipc::Command::kSelectCandidate || state_->snapshot.empty()) {
-    state_->typed_input.clear();
-  }
   if (command == core::ipc::Command::kInputLetter ||
       command == core::ipc::Command::kBackspace || state_->snapshot.empty()) {
     state_->candidate_page_offset = 0;

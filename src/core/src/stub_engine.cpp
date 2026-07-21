@@ -53,14 +53,14 @@ class StubEngine final : public Engine {
 
   void SetTraditional(bool enabled) override { traditional_ = enabled; }
 
-  std::wstring Select(std::size_t candidate_index) override {
+  SelectionResult Select(std::size_t candidate_index) override {
     if (candidate_index >= candidates_.size()) {
       return {};
     }
 
     std::wstring result = candidates_[candidate_index].text;
     Reset();
-    return result;
+    return SelectionResult{true, std::move(result)};
   }
 
   [[nodiscard]] CompositionSnapshot Snapshot() const override {

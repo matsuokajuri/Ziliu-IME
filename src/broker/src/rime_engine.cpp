@@ -272,21 +272,37 @@ class RimeEngine final : public core::Engine {
     api_->set_option(session_id_, "traditionalization", enabled ? True : False);
   }
 
-  std::wstring Select(std::size_t candidate_index) override {
+  core::SelectionResult Select(std::size_t candidate_index) override {
     if (candidate_index >= candidate_page_size_ ||
         !api_->select_candidate(session_id_,
                                 static_cast<std::size_t>(candidate_offset_) + candidate_index)) {
       return {};
     }
-    static_cast<void>(api_->commit_composition(session_id_));
+    candidate_offset_ = 0;
+
     RIME_STRUCT(RimeCommit, commit);
+    if (api_->get_commit(session_id_, &commit)) {
+      std::wstring result = FromUtf8(commit.text);
+      api_->free_commit(&commit);
+      return core::SelectionResult{true, std::move(result)};
+    }
+
+    RIME_STRUCT(RimeContext, context);
+    const bool has_context = api_->get_context(session_id_, &context);
+    const bool selection_is_complete =
+        has_context && context.composition.length > 0 && context.menu.num_candidates == 0;
+    if (has_context) {
+      api_->free_context(&context);
+    }
+    if (!selection_is_complete || !api_->commit_composition(session_id_)) {
+      return core::SelectionResult{true, {}};
+    }
     if (!api_->get_commit(session_id_, &commit)) {
-      return {};
+      return core::SelectionResult{true, {}};
     }
     std::wstring result = FromUtf8(commit.text);
     api_->free_commit(&commit);
-    candidate_offset_ = 0;
-    return result;
+    return core::SelectionResult{true, std::move(result)};
   }
 
   [[nodiscard]] core::CompositionSnapshot Snapshot() const override {

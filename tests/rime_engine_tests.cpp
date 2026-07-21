@@ -62,8 +62,40 @@ int main() {
   }
 
   const auto candidate_index = static_cast<std::size_t>(china - snapshot.candidates.begin());
-  Expect(engine->Select(candidate_index) == L"中国", "Rime should commit the selected candidate");
+  Expect(engine->Select(candidate_index) == ziliu::core::SelectionResult{true, L"中国"},
+         "Rime should commit the selected candidate");
   Expect(engine->Snapshot().empty(), "Rime commit should clear the composition");
+
+  for (const wchar_t letter : std::wstring_view(L"zhongguo")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume partial-selection input");
+  }
+  bool selected_first_character = false;
+  for (int page = 0; page < 16 && !selected_first_character; ++page) {
+    const auto selection_page = engine->Snapshot();
+    const auto first_character =
+        std::ranges::find_if(selection_page.candidates, [](const auto& candidate) {
+          return candidate.text == L"中";
+        });
+    if (first_character != selection_page.candidates.end()) {
+      const auto first_character_index =
+          static_cast<std::size_t>(first_character - selection_page.candidates.begin());
+      const auto partial_selection = engine->Select(first_character_index);
+      Expect(partial_selection.consumed, "Rime should consume a single-character selection");
+      Expect(partial_selection.commit.empty(),
+             "Selecting the first character should not commit the remaining first choices");
+      const auto remaining = engine->Snapshot();
+      Expect(!remaining.empty(), "Partial selection should keep the remaining composition active");
+      Expect(remaining.plain_text().starts_with(L"中"),
+             "Partial selection should retain the chosen first character in preedit");
+      selected_first_character = true;
+      break;
+    }
+    if (!engine->PageDown()) {
+      break;
+    }
+  }
+  Expect(selected_first_character, "Rime Ice should offer 中 as a partial candidate for zhongguo");
+  engine->Reset();
 
   for (const wchar_t letter : std::wstring_view(L"ziliu")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume the Ziliu spelling");
@@ -77,7 +109,7 @@ int main() {
   });
   Expect(ziliu != ziliu_snapshot.candidates.end(), "Ziliu overlay should offer 字流 for ziliu");
   Expect(engine->Select(static_cast<std::size_t>(ziliu - ziliu_snapshot.candidates.begin())) ==
-             L"字流",
+             ziliu::core::SelectionResult{true, L"字流"},
          "Ziliu overlay should commit 字流");
   std::cout << "ziliu_rime_engine_tests: OK\n";
   return EXIT_SUCCESS;
