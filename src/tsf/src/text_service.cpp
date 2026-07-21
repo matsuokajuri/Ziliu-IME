@@ -101,6 +101,8 @@ bool HasAltModifier() { return (GetKeyState(VK_MENU) & 0x8000) != 0; }
 
 bool HasControlModifier() { return (GetKeyState(VK_CONTROL) & 0x8000) != 0; }
 
+bool HasShiftModifier() { return (GetKeyState(VK_SHIFT) & 0x8000) != 0; }
+
 std::optional<std::filesystem::path> SettingsPath() {
   std::wstring local_app_data(32768, L'\0');
   const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data.data(),
@@ -132,16 +134,146 @@ bool IsPageKey(WPARAM key, core::PageKeySet key_set, bool next) {
   return key == (next ? VK_OEM_PERIOD : VK_OEM_COMMA);
 }
 
-std::wstring FullWidthPunctuation(WPARAM key, bool* opening_quote) {
+std::wstring HalfWidthPunctuation(WPARAM key, bool shifted) {
+  if (shifted) {
+    switch (key) {
+      case L'0':
+        return L")";
+      case L'1':
+        return L"!";
+      case L'2':
+        return L"@";
+      case L'3':
+        return L"#";
+      case L'4':
+        return L"$";
+      case L'5':
+        return L"%";
+      case L'6':
+        return L"^";
+      case L'7':
+        return L"&";
+      case L'8':
+        return L"*";
+      case L'9':
+        return L"(";
+      case VK_OEM_1:
+        return L":";
+      case VK_OEM_2:
+        return L"?";
+      case VK_OEM_3:
+        return L"~";
+      case VK_OEM_4:
+        return L"{";
+      case VK_OEM_5:
+        return L"|";
+      case VK_OEM_6:
+        return L"}";
+      case VK_OEM_7:
+        return L"\"";
+      case VK_OEM_COMMA:
+        return L"<";
+      case VK_OEM_MINUS:
+        return L"_";
+      case VK_OEM_PERIOD:
+        return L">";
+      case VK_OEM_PLUS:
+        return L"+";
+      default:
+        return {};
+    }
+  }
+
   switch (key) {
+    case VK_OEM_1:
+      return L";";
+    case VK_OEM_2:
+      return L"/";
+    case VK_OEM_3:
+      return L"`";
+    case VK_OEM_4:
+      return L"[";
+    case VK_OEM_5:
+      return L"\\";
+    case VK_OEM_6:
+      return L"]";
+    case VK_OEM_7:
+      return L"'";
     case VK_OEM_COMMA:
-      return L"，";
+      return L",";
+    case VK_OEM_MINUS:
+      return L"-";
     case VK_OEM_PERIOD:
-      return L"。";
+      return L".";
+    case VK_OEM_PLUS:
+      return L"=";
+    default:
+      return {};
+  }
+}
+
+std::wstring FullWidthPunctuation(WPARAM key, bool shifted, bool* opening_quote) {
+  if (shifted) {
+    switch (key) {
+      case L'0':
+        return L"）";
+      case L'1':
+        return L"！";
+      case L'2':
+        return L"＠";
+      case L'3':
+        return L"＃";
+      case L'4':
+        return L"￥";
+      case L'5':
+        return L"％";
+      case L'6':
+        return L"……";
+      case L'7':
+        return L"＆";
+      case L'8':
+        return L"＊";
+      case L'9':
+        return L"（";
+      case VK_OEM_1:
+        return L"：";
+      case VK_OEM_2:
+        return L"？";
+      case VK_OEM_3:
+        return L"～";
+      case VK_OEM_4:
+        return L"｛";
+      case VK_OEM_5:
+        return L"｜";
+      case VK_OEM_6:
+        return L"｝";
+      case VK_OEM_7: {
+        const bool use_opening = opening_quote == nullptr || *opening_quote;
+        if (opening_quote != nullptr) {
+          *opening_quote = !*opening_quote;
+        }
+        return use_opening ? L"“" : L"”";
+      }
+      case VK_OEM_COMMA:
+        return L"《";
+      case VK_OEM_MINUS:
+        return L"——";
+      case VK_OEM_PERIOD:
+        return L"》";
+      case VK_OEM_PLUS:
+        return L"＋";
+      default:
+        return {};
+    }
+  }
+
+  switch (key) {
     case VK_OEM_1:
       return L"；";
     case VK_OEM_2:
-      return L"？";
+      return L"／";
+    case VK_OEM_3:
+      return L"·";
     case VK_OEM_4:
       return L"【";
     case VK_OEM_5:
@@ -155,9 +287,25 @@ std::wstring FullWidthPunctuation(WPARAM key, bool* opening_quote) {
       }
       return use_opening ? L"‘" : L"’";
     }
+    case VK_OEM_COMMA:
+      return L"，";
+    case VK_OEM_MINUS:
+      return L"－";
+    case VK_OEM_PERIOD:
+      return L"。";
+    case VK_OEM_PLUS:
+      return L"＝";
     default:
       return {};
   }
+}
+
+std::wstring Punctuation(WPARAM key, bool shifted, core::PunctuationStyle style,
+                         bool* opening_quote) {
+  if (style == core::PunctuationStyle::kHalfWidth) {
+    return HalfWidthPunctuation(key, shifted);
+  }
+  return FullWidthPunctuation(key, shifted, opening_quote);
 }
 
 std::optional<std::filesystem::path> BrokerPath() {
@@ -644,23 +792,23 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
   if (wparam == VK_SPACE) {
     return !state_->snapshot.candidates.empty();
   }
-  if (wparam >= L'1' && wparam <= L'9') {
+  const bool shifted = HasShiftModifier() ||
+                       (state_->settings.input_mode_switch_key ==
+                            core::InputModeSwitchKey::kShift &&
+                        state_->switch_key_down);
+  if (!shifted && wparam >= L'1' && wparam <= L'9') {
     const auto slice = core::MakeCandidatePageSlice(
         state_->snapshot.candidates.size(), state_->settings.candidate_count,
         state_->candidate_page_offset);
     const auto index = static_cast<std::size_t>(wparam - L'1');
     return index < slice.count;
   }
-  if (!state_->snapshot.preedit.empty() &&
+  if (!shifted && !state_->snapshot.preedit.empty() &&
       (IsPageKey(wparam, state_->settings.page_key_set, false) ||
        IsPageKey(wparam, state_->settings.page_key_set, true))) {
     return true;
   }
-  if (state_->snapshot.preedit.empty() &&
-      state_->settings.punctuation_style == core::PunctuationStyle::kFullWidth) {
-    return !FullWidthPunctuation(wparam, nullptr).empty();
-  }
-  return false;
+  return !Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty();
 }
 
 void TextService::ShowCandidateWindow() {
@@ -742,18 +890,28 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
   if (!EnsureSession() || !ShouldHandleKey(wparam)) {
     return S_OK;
   }
-  if (!state_->snapshot.preedit.empty()) {
+  const bool shifted = HasShiftModifier() ||
+                       (state_->settings.input_mode_switch_key ==
+                            core::InputModeSwitchKey::kShift &&
+                        state_->switch_key_down);
+  if (!shifted && !state_->snapshot.preedit.empty()) {
     if (IsPageKey(wparam, state_->settings.page_key_set, false)) {
       return HandleCandidatePage(context, false, eaten);
     }
     if (IsPageKey(wparam, state_->settings.page_key_set, true)) {
       return HandleCandidatePage(context, true, eaten);
     }
-  } else if (state_->settings.punctuation_style == core::PunctuationStyle::kFullWidth) {
-    std::wstring punctuation = FullWidthPunctuation(wparam, &state_->opening_quote);
-    if (!punctuation.empty()) {
-      return CommitText(context, std::move(punctuation), eaten);
+  }
+  if (!Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty()) {
+    if (!state_->snapshot.preedit.empty()) {
+      const HRESULT composition_result = ApplyKeyResponse(context, VK_SPACE, eaten);
+      if (FAILED(composition_result) || *eaten == FALSE) {
+        return composition_result;
+      }
     }
+    std::wstring punctuation = Punctuation(wparam, shifted, state_->settings.punctuation_style,
+                                           &state_->opening_quote);
+    return CommitText(context, std::move(punctuation), eaten);
   }
   return ApplyKeyResponse(context, wparam, eaten);
 }
