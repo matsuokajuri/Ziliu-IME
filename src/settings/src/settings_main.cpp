@@ -11,6 +11,7 @@
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/base.h>
 
@@ -136,7 +137,12 @@ LaunchOptions ParseLaunchOptions() {
 
 class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
  public:
-  explicit ZiliuSettingsApp(LaunchOptions options) : options_(options) {}
+  explicit ZiliuSettingsApp(LaunchOptions options) : options_(options) {
+    // Runtime-loaded views do not have an App.xaml to install the standard WinUI styles.
+    ResourceDictionary resources;
+    resources.MergedDictionaries().Append(XamlControlsResources());
+    Resources(resources);
+  }
 
   void OnLaunched(LaunchActivatedEventArgs const&) {
     window_ = Window();
