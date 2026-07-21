@@ -31,6 +31,7 @@ struct TextServiceState {
   std::uint64_t session_id = 0;
   core::ipc::Response pending_response;
   core::CompositionSnapshot snapshot;
+  std::wstring typed_input;
   ui::CandidateWindow candidate_window;
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   LanguageBarButton* language_bar_button = nullptr;
@@ -470,7 +471,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
     auto* language_bar_button = new (std::nothrow) LanguageBarButton(
         settings_path.has_value() ? settings_path->native() : std::wstring{}, [this]() {
           BOOL eaten = FALSE;
-          return ToggleInputMode(nullptr, &eaten);
+          return ToggleInputMode(nullptr, &eaten, false);
         });
     if (language_bar_button != nullptr &&
         SUCCEEDED(language_bar_manager->AddItem(language_bar_button))) {
@@ -753,6 +754,7 @@ void TextService::SynchronizeInputMode() {
   state_->chinese_mode = chinese_mode;
   state_->snapshot = {};
   state_->pending_response = {};
+  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
@@ -802,6 +804,7 @@ void TextService::ResetRuntimeState() {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
+  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->switch_key_down = false;
@@ -820,6 +823,7 @@ void TextService::AbandonSession(ITfContext* context) {
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
+  state_->typed_input.clear();
   state_->candidate_page_offset = 0;
   state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
@@ -848,6 +852,9 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
   }
   if (wparam == VK_SPACE) {
     return !state_->snapshot.candidates.empty();
+  }
+  if (wparam == VK_RETURN) {
+    return !state_->snapshot.preedit.empty();
   }
   const bool shifted = HasShiftModifier() ||
                        (state_->settings.input_mode_switch_key ==
@@ -959,6 +966,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
       return HandleCandidatePage(context, true, eaten);
     }
   }
+  if (wparam == VK_RETURN && !state_->snapshot.preedit.empty()) {
+    return CommitPendingInput(context, eaten);
+  }
   const std::wstring paired_punctuation =
       state_->settings.auto_pair_punctuation
           ? PairedPunctuation(wparam, shifted, state_->settings.punctuation_style)
@@ -981,17 +991,16 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
   return ApplyKeyResponse(context, wparam, eaten);
 }
 
-HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten) {
-  if (!state_->snapshot.empty() && state_->session_id != 0) {
-    const core::ipc::Request request{state_->request_id++, state_->session_id,
-                                     core::ipc::Command::kReset, 0};
-    static_cast<void>(state_->client.Exchange(request));
+HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten,
+                                     bool commit_pending_input) {
+  if (commit_pending_input && state_->chinese_mode && !state_->snapshot.empty()) {
+    const HRESULT commit_result = CommitPendingInput(context, eaten);
+    if (FAILED(commit_result)) {
+      return commit_result;
+    }
+  } else {
+    ResetCompositionState();
   }
-  state_->snapshot = {};
-  state_->pending_response = {};
-  state_->candidate_page_offset = 0;
-  state_->pending_caret_back = 0;
-  state_->candidate_window.Hide();
   state_->chinese_mode = !state_->chinese_mode;
   PublishInputMode();
   if (state_->language_bar_button != nullptr) {
@@ -1000,6 +1009,20 @@ HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten) {
   static_cast<void>(context);
   *eaten = TRUE;
   return S_OK;
+}
+
+void TextService::ResetCompositionState() {
+  if (!state_->snapshot.empty() && state_->session_id != 0) {
+    const core::ipc::Request request{state_->request_id++, state_->session_id,
+                                     core::ipc::Command::kReset, 0};
+    static_cast<void>(state_->client.Exchange(request));
+  }
+  state_->snapshot = {};
+  state_->pending_response = {};
+  state_->typed_input.clear();
+  state_->candidate_page_offset = 0;
+  state_->pending_caret_back = 0;
+  state_->candidate_window.Hide();
 }
 
 HRESULT TextService::HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten) {
@@ -1067,6 +1090,19 @@ HRESULT TextService::CommitText(ITfContext* context, std::wstring text, BOOL* ea
   return S_OK;
 }
 
+HRESULT TextService::CommitPendingInput(ITfContext* context, BOOL* eaten) {
+  if (context == nullptr || eaten == nullptr) {
+    return E_INVALIDARG;
+  }
+  std::wstring typed_input = state_->typed_input;
+  ResetCompositionState();
+  if (typed_input.empty()) {
+    *eaten = TRUE;
+    return S_OK;
+  }
+  return CommitText(context, std::move(typed_input), eaten);
+}
+
 HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten) {
   core::ipc::Command command = core::ipc::Command::kInputLetter;
   std::uint32_t value = 0;
@@ -1121,6 +1157,15 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
   }
 
   state_->snapshot = response->snapshot;
+  if (command == core::ipc::Command::kInputLetter) {
+    state_->typed_input.push_back(static_cast<wchar_t>(value));
+  } else if (command == core::ipc::Command::kBackspace && !state_->typed_input.empty()) {
+    state_->typed_input.pop_back();
+  }
+  if (command == core::ipc::Command::kReset ||
+      command == core::ipc::Command::kSelectCandidate || state_->snapshot.empty()) {
+    state_->typed_input.clear();
+  }
   if (command == core::ipc::Command::kInputLetter ||
       command == core::ipc::Command::kBackspace || state_->snapshot.empty()) {
     state_->candidate_page_offset = 0;
@@ -1213,7 +1258,7 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lpa
   if (!should_toggle) {
     return S_OK;
   }
-  return ToggleInputMode(context, eaten);
+  return ToggleInputMode(context, eaten, true);
 }
 
 STDMETHODIMP TextService::OnPreservedKey(ITfContext* context, REFGUID guid, BOOL* eaten) {

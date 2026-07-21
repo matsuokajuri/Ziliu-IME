@@ -56,8 +56,9 @@ class TextService final : public ITfTextInputProcessorEx,
   [[nodiscard]] bool EnsureSession();
   [[nodiscard]] bool ShouldHandleKey(WPARAM wparam) const;
   [[nodiscard]] bool IsInputModeSwitchKey(WPARAM wparam) const;
-  HRESULT ToggleInputMode(ITfContext* context, BOOL* eaten);
+  HRESULT ToggleInputMode(ITfContext* context, BOOL* eaten, bool commit_pending_input);
   HRESULT HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten);
+  HRESULT CommitPendingInput(ITfContext* context, BOOL* eaten);
   HRESULT CommitText(ITfContext* context, std::wstring text, BOOL* eaten,
                      std::size_t caret_back = 0);
   HRESULT ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten);
@@ -70,6 +71,7 @@ class TextService final : public ITfTextInputProcessorEx,
   void SynchronizeInputMode();
   void PublishInputMode();
   void ShowCandidateWindow();
+  void ResetCompositionState();
   void StartBroker();
   void ResetRuntimeState();
 
