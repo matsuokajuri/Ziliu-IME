@@ -132,7 +132,8 @@ STDMETHODIMP LanguageBarButton::GetInfo(TF_LANGBARITEMINFO* info) {
   // Windows 8 and later only surface an IME mode item in the taskbar input
   // indicator when it uses this system-defined identity.
   info->guidItem = GUID_LBI_INPUTMODE;
-  info->dwStyle = TF_LBI_STYLE_BTN_BUTTON | TF_LBI_STYLE_SHOWNINTRAY;
+  info->dwStyle =
+      TF_LBI_STYLE_BTN_BUTTON | TF_LBI_STYLE_BTN_MENU | TF_LBI_STYLE_SHOWNINTRAY;
   info->ulSort = 0;
   constexpr wchar_t description[] = L"字流中英文状态";
   static_assert(std::size(description) <= TF_LBI_DESC_MAXLEN);
@@ -172,6 +173,18 @@ STDMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT point, const REC
   }
   const LONG x = area != nullptr ? area->left + (area->right - area->left) / 2 : point.x;
   const LONG y = area != nullptr ? area->top : point.y;
+  return OpenQuickMenu(x, y);
+}
+
+HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
+  if (settings_executable_.empty()) {
+    return S_OK;
+  }
+  const ULONGLONG now = GetTickCount64();
+  if (last_menu_open_tick_ != 0 && now - last_menu_open_tick_ < 750) {
+    return S_OK;
+  }
+  last_menu_open_tick_ = now;
   const std::wstring arguments =
       L"--quick-menu --x " + std::to_wstring(x) + L" --y " + std::to_wstring(y);
   const HINSTANCE result = ShellExecuteW(nullptr, L"open", settings_executable_.c_str(),
@@ -180,13 +193,19 @@ STDMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT point, const REC
 }
 
 STDMETHODIMP LanguageBarButton::InitMenu(ITfMenu* menu) {
-  static_cast<void>(menu);
-  return E_NOTIMPL;
+  if (menu == nullptr) {
+    return E_INVALIDARG;
+  }
+  POINT cursor{};
+  if (!GetCursorPos(&cursor)) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+  return OpenQuickMenu(cursor.x, cursor.y);
 }
 
 STDMETHODIMP LanguageBarButton::OnMenuSelect(UINT identifier) {
   static_cast<void>(identifier);
-  return E_NOTIMPL;
+  return S_OK;
 }
 
 STDMETHODIMP LanguageBarButton::GetIcon(HICON* icon) {
