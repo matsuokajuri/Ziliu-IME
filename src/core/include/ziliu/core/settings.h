@@ -37,6 +37,7 @@ struct Settings {
   std::size_t candidate_count = 5;
   InputModeSwitchKey input_mode_switch_key = InputModeSwitchKey::kShift;
   PunctuationStyle punctuation_style = PunctuationStyle::kFullWidth;
+  bool auto_pair_punctuation = true;
   PageKeySet page_key_set = PageKeySet::kCommaPeriod;
   CharacterSet character_set = CharacterSet::kSimplified;
 

@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <string>
 
@@ -57,7 +58,8 @@ class TextService final : public ITfTextInputProcessorEx,
   [[nodiscard]] bool IsInputModeSwitchKey(WPARAM wparam) const;
   HRESULT ToggleInputMode(ITfContext* context, BOOL* eaten);
   HRESULT HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten);
-  HRESULT CommitText(ITfContext* context, std::wstring text, BOOL* eaten);
+  HRESULT CommitText(ITfContext* context, std::wstring text, BOOL* eaten,
+                     std::size_t caret_back = 0);
   HRESULT ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten);
   HRESULT ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context);
   void AbandonSession(ITfContext* context);

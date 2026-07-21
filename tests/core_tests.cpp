@@ -75,6 +75,7 @@ int main() {
              defaults.candidate_count == 5 &&
              defaults.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kShift &&
              defaults.punctuation_style == ziliu::core::PunctuationStyle::kFullWidth &&
+             defaults.auto_pair_punctuation &&
              defaults.page_key_set == ziliu::core::PageKeySet::kCommaPeriod,
          "settings defaults should match the first-run experience");
 
@@ -83,6 +84,7 @@ int main() {
       "candidate_count=7\n"
       "input_mode_switch_key=control\n"
       "punctuation_style=half_width\n"
+      "auto_pair_punctuation=false\n"
       "page_keys=brackets\n"
       "character_set=traditional\n");
   Expect(parsed_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal &&
@@ -90,6 +92,7 @@ int main() {
              parsed_settings.input_mode_switch_key ==
                  ziliu::core::InputModeSwitchKey::kControl &&
              parsed_settings.punctuation_style == ziliu::core::PunctuationStyle::kHalfWidth &&
+             !parsed_settings.auto_pair_punctuation &&
              parsed_settings.page_key_set == ziliu::core::PageKeySet::kBrackets &&
              parsed_settings.character_set == ziliu::core::CharacterSet::kTraditional,
          "settings parser should preserve all supported choices");

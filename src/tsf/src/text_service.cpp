@@ -39,6 +39,7 @@ struct TextServiceState {
   core::Settings settings;
   std::filesystem::file_time_type settings_write_time{};
   std::size_t candidate_page_offset = 0;
+  std::size_t pending_caret_back = 0;
   bool broker_started = false;
   bool settings_file_known = false;
   bool chinese_mode = true;
@@ -306,6 +307,56 @@ std::wstring Punctuation(WPARAM key, bool shifted, core::PunctuationStyle style,
     return HalfWidthPunctuation(key, shifted);
   }
   return FullWidthPunctuation(key, shifted, opening_quote);
+}
+
+std::wstring PairedPunctuation(WPARAM key, bool shifted, core::PunctuationStyle style) {
+  if (style == core::PunctuationStyle::kHalfWidth) {
+    if (shifted) {
+      switch (key) {
+        case L'9':
+          return L"()";
+        case VK_OEM_4:
+          return L"{}";
+        case VK_OEM_7:
+          return L"\"\"";
+        case VK_OEM_COMMA:
+          return L"<>";
+        default:
+          return {};
+      }
+    }
+    switch (key) {
+      case VK_OEM_4:
+        return L"[]";
+      case VK_OEM_7:
+        return L"''";
+      default:
+        return {};
+    }
+  }
+
+  if (shifted) {
+    switch (key) {
+      case L'9':
+        return L"（）";
+      case VK_OEM_4:
+        return L"｛｝";
+      case VK_OEM_7:
+        return L"“”";
+      case VK_OEM_COMMA:
+        return L"《》";
+      default:
+        return {};
+    }
+  }
+  switch (key) {
+    case VK_OEM_4:
+      return L"【】";
+    case VK_OEM_7:
+      return L"‘’";
+    default:
+      return {};
+  }
 }
 
 std::optional<std::filesystem::path> BrokerPath() {
@@ -700,6 +751,7 @@ void TextService::SynchronizeInputMode() {
   state_->snapshot = {};
   state_->pending_response = {};
   state_->candidate_page_offset = 0;
+  state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
   if (state_->language_bar_button != nullptr) {
     state_->language_bar_button->SetChineseMode(chinese_mode);
@@ -748,6 +800,7 @@ void TextService::ResetRuntimeState() {
   state_->snapshot = {};
   state_->pending_response = {};
   state_->candidate_page_offset = 0;
+  state_->pending_caret_back = 0;
   state_->switch_key_down = false;
   state_->switch_key_used = false;
   state_->candidate_window.Hide();
@@ -765,6 +818,7 @@ void TextService::AbandonSession(ITfContext* context) {
   state_->snapshot = {};
   state_->pending_response = {};
   state_->candidate_page_offset = 0;
+  state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
   state_->broker_started = false;
 }
@@ -902,12 +956,20 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
       return HandleCandidatePage(context, true, eaten);
     }
   }
-  if (!Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty()) {
+  const std::wstring paired_punctuation =
+      state_->settings.auto_pair_punctuation
+          ? PairedPunctuation(wparam, shifted, state_->settings.punctuation_style)
+          : std::wstring{};
+  if (!paired_punctuation.empty() ||
+      !Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty()) {
     if (!state_->snapshot.preedit.empty()) {
       const HRESULT composition_result = ApplyKeyResponse(context, VK_SPACE, eaten);
       if (FAILED(composition_result) || *eaten == FALSE) {
         return composition_result;
       }
+    }
+    if (!paired_punctuation.empty()) {
+      return CommitText(context, paired_punctuation, eaten, 1);
     }
     std::wstring punctuation = Punctuation(wparam, shifted, state_->settings.punctuation_style,
                                            &state_->opening_quote);
@@ -925,6 +987,7 @@ HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten) {
   state_->snapshot = {};
   state_->pending_response = {};
   state_->candidate_page_offset = 0;
+  state_->pending_caret_back = 0;
   state_->candidate_window.Hide();
   state_->chinese_mode = !state_->chinese_mode;
   PublishInputMode();
@@ -978,9 +1041,11 @@ HRESULT TextService::HandleCandidatePage(ITfContext* context, bool next, BOOL* e
   return S_OK;
 }
 
-HRESULT TextService::CommitText(ITfContext* context, std::wstring text, BOOL* eaten) {
+HRESULT TextService::CommitText(ITfContext* context, std::wstring text, BOOL* eaten,
+                                std::size_t caret_back) {
   state_->pending_response = {};
   state_->pending_response.commit = std::move(text);
+  state_->pending_caret_back = caret_back;
   auto* edit_session = new (std::nothrow) CompositionEditSession(this, context);
   if (edit_session == nullptr) {
     return E_OUTOFMEMORY;
@@ -1037,6 +1102,7 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
   }
 
   state_->pending_response = *response;
+  state_->pending_caret_back = 0;
   auto* edit_session = new (std::nothrow) CompositionEditSession(this, context);
   if (edit_session == nullptr) {
     AbandonSession(context);
@@ -1097,6 +1163,15 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
     }
     const HRESULT collapse_result = range->Collapse(edit_cookie, TF_ANCHOR_END);
     if (SUCCEEDED(collapse_result)) {
+      if (state_->pending_caret_back != 0) {
+        LONG shifted = 0;
+        const HRESULT shift_result =
+            range->ShiftStart(edit_cookie, -static_cast<LONG>(state_->pending_caret_back), &shifted,
+                              nullptr);
+        if (SUCCEEDED(shift_result) && shifted != 0) {
+          static_cast<void>(range->Collapse(edit_cookie, TF_ANCHOR_START));
+        }
+      }
       TF_SELECTION updated_selection{};
       updated_selection.range = range.Get();
       updated_selection.style.ase = TF_AE_NONE;
@@ -1104,6 +1179,7 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
       static_cast<void>(context->SetSelection(edit_cookie, 1, &updated_selection));
     }
   }
+  state_->pending_caret_back = 0;
   return S_OK;
 }
 

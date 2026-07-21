@@ -61,6 +61,12 @@ Settings ParseSettings(std::string_view text) {
       } else if (value == "half_width") {
         settings.punctuation_style = PunctuationStyle::kHalfWidth;
       }
+    } else if (key == "auto_pair_punctuation") {
+      if (value == "true") {
+        settings.auto_pair_punctuation = true;
+      } else if (value == "false") {
+        settings.auto_pair_punctuation = false;
+      }
     } else if (key == "page_keys") {
       if (value == "comma_period") {
         settings.page_key_set = PageKeySet::kCommaPeriod;
@@ -104,7 +110,9 @@ std::string SerializeSettings(const Settings& settings) {
   return std::string("version=1\n") + "candidate_layout=" + layout + "\n" +
          "candidate_count=" + std::to_string(candidate_count) + "\n" +
          "input_mode_switch_key=" + switch_key + "\n" +
-         "punctuation_style=" + punctuation + "\n" + "page_keys=" + page_keys + "\n" +
+         "punctuation_style=" + punctuation + "\n" + "auto_pair_punctuation=" +
+         (settings.auto_pair_punctuation ? "true" : "false") + "\n" + "page_keys=" +
+         page_keys + "\n" +
          "character_set=" + character_set + "\n";
 }
 

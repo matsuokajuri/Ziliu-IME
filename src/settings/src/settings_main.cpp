@@ -223,6 +223,14 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
     punctuation_toggle_.Margin(Thickness{0.0, 20.0, 0.0, 4.0});
     content.Children().Append(punctuation_toggle_);
 
+    auto_pair_punctuation_toggle_ = ToggleSwitch();
+    auto_pair_punctuation_toggle_.Header(box_value(L"自动补全成对符号"));
+    auto_pair_punctuation_toggle_.OnContent(box_value(L"开启"));
+    auto_pair_punctuation_toggle_.OffContent(box_value(L"关闭"));
+    auto_pair_punctuation_toggle_.IsOn(settings_.auto_pair_punctuation);
+    auto_pair_punctuation_toggle_.Margin(Thickness{0.0, 12.0, 0.0, 4.0});
+    content.Children().Append(auto_pair_punctuation_toggle_);
+
     content.Children().Append(CreateLabel(L"候选词翻页按键"));
     int page_key_index = 0;
     if (settings_.page_key_set == ziliu::core::PageKeySet::kSemicolonApostrophe) {
@@ -305,6 +313,7 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
     settings_.punctuation_style = punctuation_toggle_.IsOn()
                                       ? ziliu::core::PunctuationStyle::kFullWidth
                                       : ziliu::core::PunctuationStyle::kHalfWidth;
+    settings_.auto_pair_punctuation = auto_pair_punctuation_toggle_.IsOn();
     if (page_key_combo_.SelectedIndex() == 1) {
       settings_.page_key_set = ziliu::core::PageKeySet::kSemicolonApostrophe;
     } else if (page_key_combo_.SelectedIndex() == 2) {
@@ -323,6 +332,7 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
   ComboBox candidate_count_{nullptr};
   ComboBox switch_key_combo_{nullptr};
   ToggleSwitch punctuation_toggle_{nullptr};
+  ToggleSwitch auto_pair_punctuation_toggle_{nullptr};
   ComboBox page_key_combo_{nullptr};
   ToggleSwitch character_set_toggle_{nullptr};
   TextBlock save_status_{nullptr};
