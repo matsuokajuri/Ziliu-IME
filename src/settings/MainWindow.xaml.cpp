@@ -170,8 +170,8 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   extended_style |= WS_EX_TOOLWINDOW;
   SetWindowLongPtrW(window_handle, GWL_EXSTYLE, extended_style);
 
-  const int width = scaled(360);
-  const int height = scaled(276);
+  const int width = scaled(344);
+  const int height = scaled(260);
   const POINT anchor{anchor_x, anchor_y};
   const HMONITOR monitor = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
   MONITORINFO monitor_info{sizeof(monitor_info)};
@@ -189,6 +189,13 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
                     : std::min(anchor_y + scaled(36), work_bottom - height);
   SetWindowPos(window_handle, HWND_TOP, x, y, width, height,
                SWP_FRAMECHANGED | SWP_NOACTIVATE);
+
+  const int corner_diameter = scaled(20);
+  HRGN window_region =
+      CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter);
+  if (window_region != nullptr && SetWindowRgn(window_handle, window_region, FALSE) == 0) {
+    DeleteObject(window_region);
+  }
 }
 
 void MainWindow::InitializeSettingsControls() {

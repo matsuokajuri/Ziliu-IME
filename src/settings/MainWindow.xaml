@@ -216,7 +216,6 @@
 
         <Grid x:Name="QuickMenuRoot" Visibility="Collapsed">
             <Border
-                Margin="8"
                 Padding="18"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
