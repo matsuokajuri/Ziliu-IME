@@ -14,16 +14,32 @@
 
     <Grid Background="{ThemeResource LayerFillColorDefaultBrush}">
         <Grid.Resources>
+            <Style x:Key="ZiliuTitleTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource ZiliuContentFontFamily}" />
+                <Setter Property="FontWeight" Value="Normal" />
+            </Style>
+            <Style x:Key="ZiliuSubtitleTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource ZiliuContentFontFamily}" />
+                <Setter Property="FontWeight" Value="Normal" />
+            </Style>
+            <Style x:Key="ZiliuBodyTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource ZiliuContentFontFamily}" />
+                <Setter Property="FontWeight" Value="Normal" />
+            </Style>
+            <Style x:Key="ZiliuCaptionTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontFamily" Value="{StaticResource ZiliuContentFontFamily}" />
+                <Setter Property="FontWeight" Value="Normal" />
+            </Style>
             <Style x:Key="SettingsCardStyle" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="1" />
                 <Setter Property="CornerRadius" Value="10" />
             </Style>
-            <Style x:Key="SectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+            <Style x:Key="SectionTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource ZiliuSubtitleTextBlockStyle}">
                 <Setter Property="Margin" Value="0,24,0,10" />
             </Style>
-            <Style x:Key="RowDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Style x:Key="RowDescriptionStyle" TargetType="TextBlock" BasedOn="{StaticResource ZiliuCaptionTextBlockStyle}">
                 <Setter Property="Opacity" Value="0.66" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
@@ -59,10 +75,10 @@
                                 Glyph="&#xE765;" />
                         </Border>
                         <StackPanel Grid.Column="1" Margin="16,0,0,0" Spacing="3">
-                            <TextBlock Text="字流设置" Style="{StaticResource TitleTextBlockStyle}" />
+                            <TextBlock Text="字流设置" Style="{StaticResource ZiliuTitleTextBlockStyle}" />
                             <TextBlock
                                 Text="调整候选窗口、输入行为和翻页方式"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{StaticResource ZiliuCaptionTextBlockStyle}"
                                 Opacity="0.66" />
                         </StackPanel>
                     </Grid>
@@ -77,7 +93,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="候选词排列" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="候选词排列" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                         <TextBlock Text="选择纵向列表或横向排列" Style="{StaticResource RowDescriptionStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="LayoutCombo" Grid.Column="1" MinWidth="220" VerticalAlignment="Center">
@@ -94,7 +110,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="每页候选词数量" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="每页候选词数量" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                         <TextBlock Text="控制候选窗口一次显示的词条数量" Style="{StaticResource RowDescriptionStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="CandidateCountCombo" Grid.Column="1" MinWidth="220" VerticalAlignment="Center">
@@ -121,7 +137,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="中英文切换按键" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="中英文切换按键" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                         <TextBlock Text="单独按下该按键时切换输入模式" Style="{StaticResource RowDescriptionStyle}" />
                                     </StackPanel>
                                     <ComboBox x:Name="SwitchKeyCombo" Grid.Column="1" MinWidth="220" VerticalAlignment="Center">
@@ -138,7 +154,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="中文标点" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="中文标点" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                         <TextBlock Text="选择中文模式下使用全角或半角标点" Style="{StaticResource RowDescriptionStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch
@@ -158,7 +174,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="自动补全成对符号" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock Text="自动补全成对符号" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                         <TextBlock Text="输入左引号、左括号或左书名号时自动补全右侧符号" Style="{StaticResource RowDescriptionStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch
@@ -182,7 +198,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="3" VerticalAlignment="Center">
-                                    <TextBlock Text="上一页 / 下一页" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Text="上一页 / 下一页" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                     <TextBlock Text="选择候选窗口的成对翻页按键" Style="{StaticResource RowDescriptionStyle}" />
                                 </StackPanel>
                                 <ComboBox x:Name="PageKeyCombo" Grid.Column="1" MinWidth="220" VerticalAlignment="Center">
@@ -194,14 +210,6 @@
                         </Border>
                     </Border>
 
-                    <InfoBar x:Name="SaveStatus" Margin="0,20,0,0" IsClosable="True" IsOpen="False" />
-                    <Button
-                        x:Name="SaveButton"
-                        Margin="0,16,0,0"
-                        Padding="24,8"
-                        HorizontalAlignment="Left"
-                        Content="保存设置"
-                        Style="{StaticResource AccentButtonStyle}" />
                 </StackPanel>
             </ScrollViewer>
         </Grid>
@@ -231,10 +239,10 @@
                                 Glyph="&#xE765;" />
                         </Border>
                         <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="字流 Ziliu" Style="{StaticResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="字流 Ziliu" Style="{StaticResource ZiliuSubtitleTextBlockStyle}" />
                             <TextBlock
                                 Text="左键切换中英文 · 右键打开菜单"
-                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Style="{StaticResource ZiliuCaptionTextBlockStyle}"
                                 Opacity="0.62" />
                         </StackPanel>
                     </Grid>
@@ -251,10 +259,10 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel Spacing="2" VerticalAlignment="Center">
-                                <TextBlock Text="简繁转换" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="简繁转换" Style="{StaticResource ZiliuBodyTextBlockStyle}" />
                                 <TextBlock
                                     Text="切换候选词的简体或繁体输出"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Style="{StaticResource ZiliuCaptionTextBlockStyle}"
                                     Opacity="0.66" />
                             </StackPanel>
                             <ToggleSwitch

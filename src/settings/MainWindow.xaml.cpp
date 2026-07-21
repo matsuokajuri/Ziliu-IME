@@ -121,6 +121,11 @@ MainWindow::MainWindow() {
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
     QuickMenuRoot().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     InitializeSettingsControls();
+    AppWindow().Closing(
+        [this](Microsoft::UI::Windowing::AppWindow const&,
+               Microsoft::UI::Windowing::AppWindowClosingEventArgs const&) {
+          SaveFromControls();
+        });
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
   if (options.quick_menu) {
@@ -204,11 +209,6 @@ void MainWindow::InitializeSettingsControls() {
     page_key_index = 2;
   }
   PageKeyCombo().SelectedIndex(page_key_index);
-  SaveButton().Click(
-      [this](winrt::Windows::Foundation::IInspectable const&,
-             Microsoft::UI::Xaml::RoutedEventArgs const&) {
-        SaveFromControls();
-      });
 }
 
 void MainWindow::InitializeQuickMenuControls() {
@@ -251,13 +251,7 @@ void MainWindow::SaveFromControls() {
     settings_.page_key_set = ziliu::core::PageKeySet::kCommaPeriod;
   }
 
-  const bool saved = SaveSettings(settings_);
-  SaveStatus().Severity(saved ? Microsoft::UI::Xaml::Controls::InfoBarSeverity::Success
-                              : Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
-  SaveStatus().Title(saved ? L"设置已保存" : L"保存失败");
-  SaveStatus().Message(saved ? L"新输入会立即使用这些设置。"
-                             : L"请检查本地配置目录权限后重试。");
-  SaveStatus().IsOpen(true);
+  static_cast<void>(SaveSettings(settings_));
 }
 
 }  // namespace winrt::ZiliuSettings::implementation
