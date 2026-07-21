@@ -34,7 +34,7 @@ struct TextServiceState {
   ui::CandidateWindow candidate_window;
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   LanguageBarButton* language_bar_button = nullptr;
-  POINT candidate_anchor{};
+  RECT candidate_anchor{};
   HWND candidate_owner = nullptr;
   core::Settings settings;
   std::filesystem::file_time_type settings_write_time{};
@@ -914,7 +914,7 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
       RECT text_rectangle{};
       BOOL clipped = FALSE;
       if (SUCCEEDED(view->GetTextExt(edit_cookie, range.Get(), &text_rectangle, &clipped))) {
-        state_->candidate_anchor = POINT{text_rectangle.left, text_rectangle.bottom + 2};
+        state_->candidate_anchor = text_rectangle;
       }
       static_cast<void>(view->GetWnd(&state_->candidate_owner));
     }

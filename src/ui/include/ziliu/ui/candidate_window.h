@@ -8,6 +8,8 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include <vector>
+
 namespace ziliu::ui {
 
 class CandidateWindow final {
@@ -19,7 +21,7 @@ class CandidateWindow final {
   CandidateWindow& operator=(const CandidateWindow&) = delete;
 
   bool Create(HWND owner);
-  void Show(const core::CompositionSnapshot& snapshot, POINT anchor,
+  void Show(const core::CompositionSnapshot& snapshot, const RECT& text_rectangle,
             const core::Settings& settings, std::size_t page_offset);
   void Hide();
 
@@ -37,6 +39,8 @@ class CandidateWindow final {
   core::Settings settings_;
   std::size_t page_offset_ = 0;
   float window_width_ = 420.0F;
+  float dpi_scale_ = 1.0F;
+  std::vector<float> candidate_widths_;
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
   Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> render_target_;
