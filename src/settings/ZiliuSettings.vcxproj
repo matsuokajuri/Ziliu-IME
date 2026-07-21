@@ -81,6 +81,16 @@
     <Manifest Include="app.manifest" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Views\SettingsView.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Views\SettingsView.xaml</TargetPath>
+    </None>
+    <None Include="Views\QuickMenuView.xaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>Views\QuickMenuView.xaml</TargetPath>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
     <PackageReference Include="Microsoft.Windows.CppWinRT" Version="3.0.260715.1" />
   </ItemGroup>
