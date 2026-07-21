@@ -108,6 +108,26 @@ T FindViewElement(FrameworkElement const& root, std::wstring_view name) {
   return element;
 }
 
+ComboBox CreateFallbackCombo(std::wstring_view header,
+                             std::initializer_list<std::wstring_view> items) {
+  ComboBox combo;
+  combo.Header(box_value(header));
+  combo.HorizontalAlignment(HorizontalAlignment::Stretch);
+  for (const std::wstring_view item_text : items) {
+    ComboBoxItem item;
+    item.Content(box_value(item_text));
+    combo.Items().Append(item);
+  }
+  return combo;
+}
+
+TextBlock CreateFallbackHeading(std::wstring_view text, double font_size) {
+  TextBlock heading;
+  heading.Text(text);
+  heading.FontSize(font_size);
+  return heading;
+}
+
 struct LaunchOptions {
   bool quick_menu = false;
   int anchor_x = 0;
@@ -147,14 +167,30 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
   void OnLaunched(LaunchActivatedEventArgs const&) {
     window_ = Window();
     window_.Title(L"字流 Ziliu 设置");
-    window_.SystemBackdrop(MicaBackdrop());
+    try {
+      window_.SystemBackdrop(MicaBackdrop());
+    } catch (...) {
+      // Mica is optional and must not prevent the settings surface from opening.
+    }
     if (options_.quick_menu) {
-      BuildQuickMenu();
+      try {
+        BuildQuickMenu();
+      } catch (...) {
+        BuildQuickMenuFallback();
+      }
     } else {
-      BuildSettingsWindow();
+      try {
+        BuildSettingsWindow();
+      } catch (...) {
+        BuildSettingsWindowFallback();
+      }
     }
     window_.Activate();
-    ConfigureNativeWindow();
+    try {
+      ConfigureNativeWindow();
+    } catch (...) {
+      // Native popup sizing is optional; an activated WinUI window is still usable without it.
+    }
   }
 
  private:
@@ -250,6 +286,118 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
       window_.Close();
     });
     window_.Content(view);
+  }
+
+  void BuildQuickMenuFallback() {
+    settings_ = LoadSettings();
+
+    StackPanel content;
+    content.Padding(Thickness{22.0, 20.0, 22.0, 20.0});
+    content.Spacing(14.0);
+    content.Children().Append(CreateFallbackHeading(L"字流 Ziliu", 22.0));
+
+    TextBlock hint;
+    hint.Text(L"左键切换中英文 · 右键打开菜单");
+    hint.Opacity(0.66);
+    content.Children().Append(hint);
+
+    character_set_toggle_ = ToggleSwitch();
+    character_set_toggle_.Header(box_value(L"简繁转换"));
+    character_set_toggle_.OnContent(box_value(L"繁体"));
+    character_set_toggle_.OffContent(box_value(L"简体"));
+    character_set_toggle_.IsOn(settings_.character_set ==
+                               ziliu::core::CharacterSet::kTraditional);
+    character_set_toggle_.Toggled([this](IInspectable const&, RoutedEventArgs const&) {
+      settings_.character_set = character_set_toggle_.IsOn()
+                                    ? ziliu::core::CharacterSet::kTraditional
+                                    : ziliu::core::CharacterSet::kSimplified;
+      static_cast<void>(SaveSettings(settings_));
+    });
+    content.Children().Append(character_set_toggle_);
+
+    Button open_settings;
+    open_settings.Content(box_value(L"打开完整设置"));
+    open_settings.HorizontalAlignment(HorizontalAlignment::Stretch);
+    open_settings.HorizontalContentAlignment(HorizontalAlignment::Center);
+    open_settings.Click([this](IInspectable const&, RoutedEventArgs const&) {
+      const std::filesystem::path executable = ExecutableDirectory() / L"ZiliuSettings.exe";
+      ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+      window_.Close();
+    });
+    content.Children().Append(open_settings);
+    window_.Content(content);
+  }
+
+  void BuildSettingsWindowFallback() {
+    settings_ = LoadSettings();
+
+    StackPanel content;
+    content.Padding(Thickness{40.0, 32.0, 40.0, 40.0});
+    content.Spacing(16.0);
+    content.Children().Append(CreateFallbackHeading(L"字流设置", 28.0));
+
+    TextBlock hint;
+    hint.Text(L"调整候选窗口、输入行为和翻页方式");
+    hint.Opacity(0.66);
+    content.Children().Append(hint);
+
+    layout_combo_ = CreateFallbackCombo(L"候选词排列", {L"竖排", L"横排"});
+    layout_combo_.SelectedIndex(settings_.candidate_layout ==
+                                        ziliu::core::CandidateLayout::kHorizontal
+                                    ? 1
+                                    : 0);
+    content.Children().Append(layout_combo_);
+
+    candidate_count_ =
+        CreateFallbackCombo(L"每页候选词数量", {L"3", L"4", L"5", L"6", L"7", L"8", L"9"});
+    candidate_count_.SelectedIndex(static_cast<int>(settings_.candidate_count) - 3);
+    content.Children().Append(candidate_count_);
+
+    switch_key_combo_ = CreateFallbackCombo(L"中英文切换按键", {L"Shift", L"Ctrl"});
+    switch_key_combo_.SelectedIndex(
+        settings_.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kControl ? 1 : 0);
+    content.Children().Append(switch_key_combo_);
+
+    punctuation_toggle_ = ToggleSwitch();
+    punctuation_toggle_.Header(box_value(L"中文标点"));
+    punctuation_toggle_.OnContent(box_value(L"全角"));
+    punctuation_toggle_.OffContent(box_value(L"半角"));
+    punctuation_toggle_.IsOn(settings_.punctuation_style ==
+                             ziliu::core::PunctuationStyle::kFullWidth);
+    content.Children().Append(punctuation_toggle_);
+
+    auto_pair_punctuation_toggle_ = ToggleSwitch();
+    auto_pair_punctuation_toggle_.Header(box_value(L"自动补全成对符号"));
+    auto_pair_punctuation_toggle_.OnContent(box_value(L"开启"));
+    auto_pair_punctuation_toggle_.OffContent(box_value(L"关闭"));
+    auto_pair_punctuation_toggle_.IsOn(settings_.auto_pair_punctuation);
+    content.Children().Append(auto_pair_punctuation_toggle_);
+
+    page_key_combo_ = CreateFallbackCombo(L"上一页 / 下一页", {L"， / 。", L"； / ‘", L"【 / 】"});
+    int page_key_index = 0;
+    if (settings_.page_key_set == ziliu::core::PageKeySet::kSemicolonApostrophe) {
+      page_key_index = 1;
+    } else if (settings_.page_key_set == ziliu::core::PageKeySet::kBrackets) {
+      page_key_index = 2;
+    }
+    page_key_combo_.SelectedIndex(page_key_index);
+    content.Children().Append(page_key_combo_);
+
+    save_status_ = InfoBar();
+    save_status_.IsOpen(false);
+    save_status_.IsClosable(true);
+    content.Children().Append(save_status_);
+
+    Button save_button;
+    save_button.Content(box_value(L"保存设置"));
+    save_button.HorizontalAlignment(HorizontalAlignment::Left);
+    save_button.Click(
+        [this](IInspectable const&, RoutedEventArgs const&) { SaveFromControls(); });
+    content.Children().Append(save_button);
+
+    ScrollViewer scroll;
+    scroll.Content(content);
+    window_.Content(scroll);
   }
 
   void SaveFromControls() {
