@@ -9,8 +9,10 @@
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.h>
+#include <winrt/Microsoft.UI.Xaml.Media.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Text.h>
 #include <winrt/base.h>
 
 #include <algorithm>
@@ -27,6 +29,7 @@ using namespace winrt;
 using namespace Microsoft::UI;
 using namespace Microsoft::UI::Xaml;
 using namespace Microsoft::UI::Xaml::Controls;
+using namespace Microsoft::UI::Xaml::Media;
 
 std::optional<std::filesystem::path> SettingsFilePath() {
   std::wstring local_app_data(32768, L'\0');
@@ -73,17 +76,20 @@ bool SaveSettings(const ziliu::core::Settings& settings) {
   return stream.good();
 }
 
-TextBlock CreateLabel(std::wstring_view text) {
-  TextBlock label;
-  label.Text(text);
-  label.FontSize(14.0);
-  label.Margin(Thickness{0.0, 16.0, 0.0, 6.0});
-  return label;
+template <typename T>
+T ThemeResource(std::wstring_view key) {
+  const auto resources = Application::Current().Resources();
+  const auto boxed_key = box_value(hstring(key));
+  if (!resources.HasKey(boxed_key)) {
+    return nullptr;
+  }
+  return resources.Lookup(boxed_key).try_as<T>();
 }
 
 ComboBox CreateCombo(std::initializer_list<std::wstring_view> items, int selected_index) {
   ComboBox combo;
-  combo.HorizontalAlignment(HorizontalAlignment::Stretch);
+  combo.MinWidth(220.0);
+  combo.HorizontalAlignment(HorizontalAlignment::Right);
   for (const std::wstring_view item_text : items) {
     ComboBoxItem item;
     item.Content(box_value(item_text));
@@ -91,6 +97,81 @@ ComboBox CreateCombo(std::initializer_list<std::wstring_view> items, int selecte
   }
   combo.SelectedIndex(selected_index);
   return combo;
+}
+
+TextBlock CreateSectionTitle(std::wstring_view text) {
+  TextBlock title;
+  title.Text(text);
+  title.FontSize(20.0);
+  title.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+  title.Margin(Thickness{0.0, 20.0, 0.0, 10.0});
+  return title;
+}
+
+Border CreateCard() {
+  Border card;
+  card.CornerRadius(CornerRadius{10.0});
+  card.BorderThickness(Thickness{1.0});
+  if (const auto background = ThemeResource<Brush>(L"CardBackgroundFillColorDefaultBrush")) {
+    card.Background(background);
+  }
+  if (const auto border = ThemeResource<Brush>(L"CardStrokeColorDefaultBrush")) {
+    card.BorderBrush(border);
+  }
+  return card;
+}
+
+void AppendSettingsRow(StackPanel const& rows, std::wstring_view title_text,
+                       std::wstring_view description_text, FrameworkElement const& control) {
+  if (rows.Children().Size() != 0) {
+    Border divider;
+    divider.Height(1.0);
+    divider.Margin(Thickness{18.0, 0.0, 18.0, 0.0});
+    if (const auto brush = ThemeResource<Brush>(L"DividerStrokeColorDefaultBrush")) {
+      divider.Background(brush);
+    }
+    rows.Children().Append(divider);
+  }
+
+  Grid row;
+  ColumnDefinition text_column;
+  text_column.Width(GridLength{1.0, GridUnitType::Star});
+  row.ColumnDefinitions().Append(text_column);
+  ColumnDefinition control_column;
+  control_column.Width(GridLength{1.0, GridUnitType::Auto});
+  row.ColumnDefinitions().Append(control_column);
+
+  StackPanel labels;
+  labels.Spacing(3.0);
+  labels.VerticalAlignment(VerticalAlignment::Center);
+  TextBlock title;
+  title.Text(title_text);
+  title.FontSize(15.0);
+  title.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+  labels.Children().Append(title);
+  TextBlock description;
+  description.Text(description_text);
+  description.FontSize(12.0);
+  description.Opacity(0.66);
+  description.TextWrapping(TextWrapping::Wrap);
+  labels.Children().Append(description);
+  row.Children().Append(labels);
+
+  control.VerticalAlignment(VerticalAlignment::Center);
+  control.Margin(Thickness{24.0, 0.0, 0.0, 0.0});
+  Grid::SetColumn(control, 1);
+  row.Children().Append(control);
+
+  Border row_container;
+  row_container.Padding(Thickness{18.0, 15.0, 18.0, 15.0});
+  row_container.Child(row);
+  rows.Children().Append(row_container);
+}
+
+void ApplyAccentStyle(Button const& button) {
+  if (const auto style = ThemeResource<Style>(L"AccentButtonStyle")) {
+    button.Style(style);
+  }
 }
 
 struct LaunchOptions {
@@ -128,6 +209,7 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
   void OnLaunched(LaunchActivatedEventArgs const&) {
     window_ = Window();
     window_.Title(L"字流 Ziliu 设置");
+    window_.SystemBackdrop(MicaBackdrop());
     if (options_.quick_menu) {
       BuildQuickMenu();
     } else {
@@ -146,8 +228,8 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
       return MulDiv(value, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
     };
     if (options_.quick_menu) {
-      const int width = scaled(286);
-      const int height = scaled(190);
+      const int width = scaled(348);
+      const int height = scaled(272);
       LONG_PTR style = GetWindowLongPtrW(window_handle, GWL_STYLE);
       style &= ~(static_cast<LONG_PTR>(WS_CAPTION) | static_cast<LONG_PTR>(WS_THICKFRAME) |
                  static_cast<LONG_PTR>(WS_MINIMIZEBOX) |
@@ -172,7 +254,7 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
       SetWindowPos(window_handle, HWND_TOP, x, y, width, height,
                    SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     } else {
-      SetWindowPos(window_handle, nullptr, 0, 0, scaled(760), scaled(720),
+      SetWindowPos(window_handle, nullptr, 0, 0, scaled(860), scaled(780),
                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
   }
@@ -180,58 +262,107 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
   void BuildSettingsWindow() {
     settings_ = LoadSettings();
 
+    Grid root;
+    if (const auto background = ThemeResource<Brush>(L"LayerFillColorDefaultBrush")) {
+      root.Background(background);
+    }
+
     StackPanel content;
-    content.Padding(Thickness{36.0, 30.0, 36.0, 36.0});
-    content.Spacing(2.0);
+    content.Padding(Thickness{40.0, 32.0, 40.0, 40.0});
+    content.MaxWidth(820.0);
+    content.HorizontalAlignment(HorizontalAlignment::Center);
+
+    Grid header;
+    ColumnDefinition icon_column;
+    icon_column.Width(GridLength{1.0, GridUnitType::Auto});
+    header.ColumnDefinitions().Append(icon_column);
+    ColumnDefinition title_column;
+    title_column.Width(GridLength{1.0, GridUnitType::Star});
+    header.ColumnDefinitions().Append(title_column);
+
+    Border emblem;
+    emblem.Width(52.0);
+    emblem.Height(52.0);
+    emblem.CornerRadius(CornerRadius{13.0});
+    emblem.VerticalAlignment(VerticalAlignment::Center);
+    if (const auto accent = ThemeResource<Brush>(L"AccentFillColorDefaultBrush")) {
+      emblem.Background(accent);
+    }
+    FontIcon emblem_icon;
+    emblem_icon.Glyph(L"\uE765");
+    emblem_icon.FontSize(25.0);
+    if (const auto foreground = ThemeResource<Brush>(L"TextOnAccentFillColorPrimaryBrush")) {
+      emblem_icon.Foreground(foreground);
+    }
+    emblem.Child(emblem_icon);
+    header.Children().Append(emblem);
+
+    StackPanel heading;
+    heading.Spacing(3.0);
+    heading.Margin(Thickness{16.0, 0.0, 0.0, 0.0});
+    Grid::SetColumn(heading, 1);
 
     TextBlock title;
-    title.Text(L"字流 Ziliu");
-    title.FontSize(30.0);
-    content.Children().Append(title);
+    title.Text(L"字流设置");
+    title.FontSize(28.0);
+    title.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+    heading.Children().Append(title);
 
     TextBlock subtitle;
-    subtitle.Text(L"纯粹、轻量的中文输入体验");
-    subtitle.Opacity(0.68);
-    subtitle.Margin(Thickness{0.0, 4.0, 0.0, 18.0});
-    content.Children().Append(subtitle);
+    subtitle.Text(L"调整候选窗口、输入行为和翻页方式");
+    subtitle.FontSize(13.0);
+    subtitle.Opacity(0.66);
+    heading.Children().Append(subtitle);
+    header.Children().Append(heading);
+    content.Children().Append(header);
 
-    content.Children().Append(CreateLabel(L"候选词排列"));
+    content.Children().Append(CreateSectionTitle(L"候选窗口"));
+    StackPanel candidate_rows;
     layout_combo_ = CreateCombo({L"竖排", L"横排"},
                                 settings_.candidate_layout ==
                                         ziliu::core::CandidateLayout::kHorizontal
                                     ? 1
                                     : 0);
-    content.Children().Append(layout_combo_);
-
-    content.Children().Append(CreateLabel(L"每页候选词数量"));
+    AppendSettingsRow(candidate_rows, L"候选词排列", L"选择纵向列表或横向排列", layout_combo_);
     candidate_count_ = CreateCombo({L"3", L"4", L"5", L"6", L"7", L"8", L"9"},
                                    static_cast<int>(settings_.candidate_count) - 3);
-    content.Children().Append(candidate_count_);
+    AppendSettingsRow(candidate_rows, L"每页候选词数量", L"控制候选窗口一次显示的词条数量",
+                      candidate_count_);
+    Border candidate_card = CreateCard();
+    candidate_card.Child(candidate_rows);
+    content.Children().Append(candidate_card);
 
-    content.Children().Append(CreateLabel(L"中英文切换按键"));
+    content.Children().Append(CreateSectionTitle(L"输入行为"));
+    StackPanel input_rows;
     switch_key_combo_ = CreateCombo(
         {L"Shift", L"Ctrl"},
         settings_.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kControl ? 1 : 0);
-    content.Children().Append(switch_key_combo_);
+    AppendSettingsRow(input_rows, L"中英文切换按键", L"单独按下该按键时切换输入模式",
+                      switch_key_combo_);
 
     punctuation_toggle_ = ToggleSwitch();
-    punctuation_toggle_.Header(box_value(L"中文模式使用全角标点"));
     punctuation_toggle_.OnContent(box_value(L"全角"));
     punctuation_toggle_.OffContent(box_value(L"半角"));
     punctuation_toggle_.IsOn(settings_.punctuation_style ==
                              ziliu::core::PunctuationStyle::kFullWidth);
-    punctuation_toggle_.Margin(Thickness{0.0, 20.0, 0.0, 4.0});
-    content.Children().Append(punctuation_toggle_);
+    punctuation_toggle_.MinWidth(120.0);
+    AppendSettingsRow(input_rows, L"中文标点", L"选择中文模式下使用全角或半角标点",
+                      punctuation_toggle_);
 
     auto_pair_punctuation_toggle_ = ToggleSwitch();
-    auto_pair_punctuation_toggle_.Header(box_value(L"自动补全成对符号"));
     auto_pair_punctuation_toggle_.OnContent(box_value(L"开启"));
     auto_pair_punctuation_toggle_.OffContent(box_value(L"关闭"));
     auto_pair_punctuation_toggle_.IsOn(settings_.auto_pair_punctuation);
-    auto_pair_punctuation_toggle_.Margin(Thickness{0.0, 12.0, 0.0, 4.0});
-    content.Children().Append(auto_pair_punctuation_toggle_);
+    auto_pair_punctuation_toggle_.MinWidth(120.0);
+    AppendSettingsRow(input_rows, L"自动补全成对符号",
+                      L"输入左引号、左括号或左书名号时自动补全右侧符号",
+                      auto_pair_punctuation_toggle_);
+    Border input_card = CreateCard();
+    input_card.Child(input_rows);
+    content.Children().Append(input_card);
 
-    content.Children().Append(CreateLabel(L"候选词翻页按键"));
+    content.Children().Append(CreateSectionTitle(L"候选翻页"));
+    StackPanel paging_rows;
     int page_key_index = 0;
     if (settings_.page_key_set == ziliu::core::PageKeySet::kSemicolonApostrophe) {
       page_key_index = 1;
@@ -239,54 +370,122 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
       page_key_index = 2;
     }
     page_key_combo_ = CreateCombo({L"， / 。", L"； / ‘", L"【 / 】"}, page_key_index);
-    content.Children().Append(page_key_combo_);
+    AppendSettingsRow(paging_rows, L"上一页 / 下一页", L"选择候选窗口的成对翻页按键",
+                      page_key_combo_);
+    Border paging_card = CreateCard();
+    paging_card.Child(paging_rows);
+    content.Children().Append(paging_card);
+
+    save_status_ = InfoBar();
+    save_status_.IsOpen(false);
+    save_status_.IsClosable(true);
+    save_status_.Margin(Thickness{0.0, 20.0, 0.0, 0.0});
+    content.Children().Append(save_status_);
 
     Button save_button;
     save_button.Content(box_value(L"保存设置"));
     save_button.HorizontalAlignment(HorizontalAlignment::Left);
-    save_button.Margin(Thickness{0.0, 28.0, 0.0, 0.0});
+    save_button.Margin(Thickness{0.0, 16.0, 0.0, 0.0});
+    save_button.Padding(Thickness{24.0, 8.0, 24.0, 8.0});
+    ApplyAccentStyle(save_button);
     save_button.Click([this](IInspectable const&, RoutedEventArgs const&) { SaveFromControls(); });
     content.Children().Append(save_button);
 
-    save_status_ = TextBlock();
-    save_status_.Opacity(0.72);
-    save_status_.Margin(Thickness{0.0, 12.0, 0.0, 0.0});
-    content.Children().Append(save_status_);
-
     ScrollViewer scroll;
     scroll.Content(content);
-    window_.Content(scroll);
+    root.Children().Append(scroll);
+    window_.Content(root);
   }
 
   void BuildQuickMenu() {
     settings_ = LoadSettings();
 
+    Grid root;
+    if (const auto background = ThemeResource<Brush>(L"LayerFillColorDefaultBrush")) {
+      root.Background(background);
+    }
+
     StackPanel content;
-    content.Padding(Thickness{20.0, 18.0, 20.0, 18.0});
-    content.Spacing(12.0);
+    content.Padding(Thickness{18.0});
+    content.Spacing(14.0);
+
+    Grid heading;
+    ColumnDefinition icon_column;
+    icon_column.Width(GridLength{1.0, GridUnitType::Auto});
+    heading.ColumnDefinitions().Append(icon_column);
+    ColumnDefinition text_column;
+    text_column.Width(GridLength{1.0, GridUnitType::Star});
+    heading.ColumnDefinitions().Append(text_column);
+
+    Border emblem;
+    emblem.Width(38.0);
+    emblem.Height(38.0);
+    emblem.CornerRadius(CornerRadius{9.0});
+    if (const auto accent = ThemeResource<Brush>(L"AccentFillColorDefaultBrush")) {
+      emblem.Background(accent);
+    }
+    FontIcon emblem_icon;
+    emblem_icon.Glyph(L"\uE765");
+    emblem_icon.FontSize(19.0);
+    if (const auto foreground = ThemeResource<Brush>(L"TextOnAccentFillColorPrimaryBrush")) {
+      emblem_icon.Foreground(foreground);
+    }
+    emblem.Child(emblem_icon);
+    heading.Children().Append(emblem);
+
+    StackPanel heading_text;
+    heading_text.Margin(Thickness{12.0, 0.0, 0.0, 0.0});
+    heading_text.VerticalAlignment(VerticalAlignment::Center);
+    Grid::SetColumn(heading_text, 1);
 
     TextBlock title;
-    title.Text(L"字流输入法");
+    title.Text(L"字流 Ziliu");
     title.FontSize(18.0);
-    content.Children().Append(title);
+    title.FontWeight(Windows::UI::Text::FontWeights::SemiBold());
+    heading_text.Children().Append(title);
+    TextBlock hint;
+    hint.Text(L"左键切换中英文 · 右键打开菜单");
+    hint.FontSize(11.0);
+    hint.Opacity(0.62);
+    heading_text.Children().Append(hint);
+    heading.Children().Append(heading_text);
+    content.Children().Append(heading);
 
     character_set_toggle_ = ToggleSwitch();
-    character_set_toggle_.Header(box_value(L"简繁转换"));
     character_set_toggle_.OffContent(box_value(L"简体"));
     character_set_toggle_.OnContent(box_value(L"繁体"));
     character_set_toggle_.IsOn(settings_.character_set ==
                                ziliu::core::CharacterSet::kTraditional);
+    character_set_toggle_.MinWidth(120.0);
     character_set_toggle_.Toggled([this](IInspectable const&, RoutedEventArgs const&) {
       settings_.character_set = character_set_toggle_.IsOn()
                                     ? ziliu::core::CharacterSet::kTraditional
                                     : ziliu::core::CharacterSet::kSimplified;
       static_cast<void>(SaveSettings(settings_));
     });
-    content.Children().Append(character_set_toggle_);
+    StackPanel character_rows;
+    AppendSettingsRow(character_rows, L"简繁转换", L"切换候选词的简体或繁体输出",
+                      character_set_toggle_);
+    Border character_card = CreateCard();
+    character_card.Child(character_rows);
+    content.Children().Append(character_card);
 
     Button open_settings;
-    open_settings.Content(box_value(L"打开设置"));
+    StackPanel open_settings_content;
+    open_settings_content.Orientation(Orientation::Horizontal);
+    open_settings_content.Spacing(8.0);
+    FontIcon settings_icon;
+    settings_icon.Glyph(L"\uE713");
+    settings_icon.FontSize(16.0);
+    open_settings_content.Children().Append(settings_icon);
+    TextBlock settings_text;
+    settings_text.Text(L"打开完整设置");
+    open_settings_content.Children().Append(settings_text);
+    open_settings.Content(open_settings_content);
     open_settings.HorizontalAlignment(HorizontalAlignment::Stretch);
+    open_settings.HorizontalContentAlignment(HorizontalAlignment::Center);
+    open_settings.Padding(Thickness{14.0, 8.0, 14.0, 8.0});
+    ApplyAccentStyle(open_settings);
     open_settings.Click([this](IInspectable const&, RoutedEventArgs const&) {
       std::wstring executable(32768, L'\0');
       const DWORD length =
@@ -299,7 +498,11 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
     });
     content.Children().Append(open_settings);
 
-    window_.Content(content);
+    Border surface = CreateCard();
+    surface.Margin(Thickness{8.0});
+    surface.Child(content);
+    root.Children().Append(surface);
+    window_.Content(root);
   }
 
   void SaveFromControls() {
@@ -321,8 +524,12 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
     } else {
       settings_.page_key_set = ziliu::core::PageKeySet::kCommaPeriod;
     }
-    save_status_.Text(SaveSettings(settings_) ? L"已保存，新输入会立即使用这些设置。"
-                                              : L"保存失败，请检查本地配置目录权限。");
+    const bool saved = SaveSettings(settings_);
+    save_status_.Severity(saved ? InfoBarSeverity::Success : InfoBarSeverity::Error);
+    save_status_.Title(saved ? L"设置已保存" : L"保存失败");
+    save_status_.Message(saved ? L"新输入会立即使用这些设置。"
+                               : L"请检查本地配置目录权限后重试。");
+    save_status_.IsOpen(true);
   }
 
   LaunchOptions options_;
@@ -335,7 +542,7 @@ class ZiliuSettingsApp : public ApplicationT<ZiliuSettingsApp> {
   ToggleSwitch auto_pair_punctuation_toggle_{nullptr};
   ComboBox page_key_combo_{nullptr};
   ToggleSwitch character_set_toggle_{nullptr};
-  TextBlock save_status_{nullptr};
+  InfoBar save_status_{nullptr};
 };
 
 }  // namespace

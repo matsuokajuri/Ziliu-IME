@@ -80,8 +80,10 @@ HICON CreateModeIcon(bool chinese_mode) {
 
 }  // namespace
 
-LanguageBarButton::LanguageBarButton(std::wstring settings_executable)
-    : settings_executable_(std::move(settings_executable)) {
+LanguageBarButton::LanguageBarButton(std::wstring settings_executable,
+                                     std::function<HRESULT()> toggle_input_mode)
+    : settings_executable_(std::move(settings_executable)),
+      toggle_input_mode_(std::move(toggle_input_mode)) {
   AddModuleReference();
 }
 
@@ -156,15 +158,19 @@ STDMETHODIMP LanguageBarButton::GetTooltipString(BSTR* tooltip) {
   if (tooltip == nullptr) {
     return E_INVALIDARG;
   }
-  *tooltip = SysAllocString(chinese_mode_ ? L"字流：中文输入" : L"字流：英文输入");
+  *tooltip = SysAllocString(chinese_mode_ ? L"字流：中文输入（左键切换，右键菜单）"
+                                         : L"字流：英文输入（左键切换，右键菜单）");
   return *tooltip != nullptr ? S_OK : E_OUTOFMEMORY;
 }
 
 STDMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT point, const RECT* area) {
-  if (click != TF_LBI_CLK_LEFT || settings_executable_.empty()) {
+  if (click == TF_LBI_CLK_LEFT) {
+    return toggle_input_mode_ ? toggle_input_mode_() : S_OK;
+  }
+  if (click != TF_LBI_CLK_RIGHT || settings_executable_.empty()) {
     return S_OK;
   }
-  const LONG x = area != nullptr ? area->left : point.x;
+  const LONG x = area != nullptr ? area->left + (area->right - area->left) / 2 : point.x;
   const LONG y = area != nullptr ? area->top : point.y;
   const std::wstring arguments =
       L"--quick-menu --x " + std::to_wstring(x) + L" --y " + std::to_wstring(y);

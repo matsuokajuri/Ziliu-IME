@@ -6,13 +6,14 @@
 #include <windows.h>
 
 #include <atomic>
+#include <functional>
 #include <string>
 
 namespace ziliu::tsf {
 
 class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
  public:
-  explicit LanguageBarButton(std::wstring settings_executable);
+  LanguageBarButton(std::wstring settings_executable, std::function<HRESULT()> toggle_input_mode);
 
   LanguageBarButton(const LanguageBarButton&) = delete;
   LanguageBarButton& operator=(const LanguageBarButton&) = delete;
@@ -43,6 +44,7 @@ class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
 
   std::atomic<ULONG> reference_count_{1};
   std::wstring settings_executable_;
+  std::function<HRESULT()> toggle_input_mode_;
   ITfLangBarItemSink* sink_ = nullptr;
   bool chinese_mode_ = true;
   bool visible_ = true;

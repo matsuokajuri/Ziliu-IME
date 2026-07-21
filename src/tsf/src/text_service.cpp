@@ -467,8 +467,11 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   if (SUCCEEDED(thread_manager_->QueryInterface(IID_PPV_ARGS(&language_bar_manager)))) {
     const auto settings_path = SettingsExecutablePath();
-    auto* language_bar_button = new (std::nothrow)
-        LanguageBarButton(settings_path.has_value() ? settings_path->native() : std::wstring{});
+    auto* language_bar_button = new (std::nothrow) LanguageBarButton(
+        settings_path.has_value() ? settings_path->native() : std::wstring{}, [this]() {
+          BOOL eaten = FALSE;
+          return ToggleInputMode(nullptr, &eaten);
+        });
     if (language_bar_button != nullptr &&
         SUCCEEDED(language_bar_manager->AddItem(language_bar_button))) {
       state_->language_bar_manager = language_bar_manager;
