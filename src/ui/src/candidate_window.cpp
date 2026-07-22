@@ -31,7 +31,7 @@ int ToPixels(float value, float scale) {
   return static_cast<int>(std::ceil(value * scale));
 }
 
-void FitCandidateWidths(std::vector<float>* widths, float available_width) {
+void FitCandidateWidths(std::vector<float>* widths, float available_width, float minimum_width) {
   if (widths == nullptr || widths->empty()) {
     return;
   }
@@ -39,7 +39,6 @@ void FitCandidateWidths(std::vector<float>* widths, float available_width) {
   if (desired_width <= available_width) {
     return;
   }
-  const float minimum_width = kMinimumHorizontalCandidateWidth;
   const float minimum_total = minimum_width * static_cast<float>(widths->size());
   if (available_width <= minimum_total) {
     std::fill(widths->begin(), widths->end(),
@@ -50,6 +49,55 @@ void FitCandidateWidths(std::vector<float>* widths, float available_width) {
   for (float& width : *widths) {
     width = minimum_width + (width - minimum_width) * ratio;
   }
+}
+
+bool UseDarkTheme(core::ThemeMode mode) {
+  if (mode == core::ThemeMode::kDark) {
+    return true;
+  }
+  if (mode == core::ThemeMode::kLight) {
+    return false;
+  }
+  DWORD use_light_theme = 1;
+  DWORD size = sizeof(use_light_theme);
+  const LSTATUS result = RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &use_light_theme, &size);
+  return result == ERROR_SUCCESS && use_light_theme == 0;
+}
+
+std::uint32_t BlendColor(std::uint32_t background, std::uint32_t foreground, float amount) {
+  const auto blend_channel = [amount](std::uint32_t from, std::uint32_t to) {
+    return static_cast<std::uint32_t>(
+        std::clamp(static_cast<float>(from) +
+                       (static_cast<float>(to) - static_cast<float>(from)) * amount,
+                   0.0F, 255.0F));
+  };
+  const std::uint32_t red = blend_channel((background >> 16) & 0xFF, (foreground >> 16) & 0xFF);
+  const std::uint32_t green = blend_channel((background >> 8) & 0xFF, (foreground >> 8) & 0xFF);
+  const std::uint32_t blue = blend_channel(background & 0xFF, foreground & 0xFF);
+  return (red << 16) | (green << 8) | blue;
+}
+
+const wchar_t* ChineseFontFamily(core::CandidateChineseFontFamily family) {
+  if (family == core::CandidateChineseFontFamily::kMicrosoftYaHei) {
+    return L"Microsoft YaHei UI";
+  }
+  if (family == core::CandidateChineseFontFamily::kSimSun) {
+    return L"SimSun";
+  }
+  return L"Source Han Sans SC";
+}
+
+const wchar_t* EnglishFontFamily(core::CandidateEnglishFontFamily family) {
+  if (family == core::CandidateEnglishFontFamily::kArial) {
+    return L"Arial";
+  }
+  if (family == core::CandidateEnglishFontFamily::kSourceHanSans) {
+    return L"Source Han Sans SC";
+  }
+  return L"Segoe UI Variable Text";
 }
 
 bool RegisterCandidateWindowClass() {
@@ -117,11 +165,27 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
 
   const bool appearance_changed =
       settings_.theme_mode != settings.theme_mode ||
-      settings_.candidate_color_scheme != settings.candidate_color_scheme ||
-      settings_.candidate_font_family != settings.candidate_font_family ||
-      settings_.candidate_font_size != settings.candidate_font_size;
+      settings_.custom_candidate_colors != settings.custom_candidate_colors ||
+      settings_.preedit_color != settings.preedit_color ||
+      settings_.highlighted_candidate_color != settings.highlighted_candidate_color ||
+      settings_.candidate_text_color != settings.candidate_text_color ||
+      settings_.candidate_background_color != settings.candidate_background_color ||
+      settings_.custom_candidate_fonts != settings.custom_candidate_fonts ||
+      settings_.candidate_chinese_font_family != settings.candidate_chinese_font_family ||
+      settings_.candidate_english_font_family != settings.candidate_english_font_family ||
+      settings_.custom_candidate_font_size != settings.custom_candidate_font_size ||
+      settings_.candidate_font_size != settings.candidate_font_size ||
+      settings_.candidate_scale_with_text != settings.candidate_scale_with_text;
   snapshot_ = snapshot;
   settings_ = settings;
+  const float effective_font_size = static_cast<float>(
+      settings_.custom_candidate_font_size
+          ? std::clamp(settings_.candidate_font_size, core::kMinimumCandidateFontSize,
+                       core::kMaximumCandidateFontSize)
+          : 17);
+  layout_scale_ = settings_.candidate_scale_with_text
+                      ? std::clamp(effective_font_size / 17.0F, 0.82F, 1.42F)
+                      : 1.0F;
   if (appearance_changed) {
     DiscardDeviceResources();
   }
@@ -149,7 +213,8 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   const int work_width = work_right - work_left;
   const int work_height = work_bottom - work_top;
   const float maximum_window_width = std::min(
-      kMaximumHorizontalWindowWidth, static_cast<float>(work_width) / dpi_scale_);
+      kMaximumHorizontalWindowWidth * layout_scale_,
+      static_cast<float>(work_width) / dpi_scale_);
 
   candidate_widths_.clear();
   candidate_lefts_.clear();
@@ -162,25 +227,28 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
         const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
                                    snapshot_.candidates[candidate_index].text;
         Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-        float width = kMinimumHorizontalCandidateWidth;
+        float width = kMinimumHorizontalCandidateWidth * layout_scale_;
         if (SUCCEEDED(dwrite_factory_->CreateTextLayout(
                 label.c_str(), static_cast<UINT32>(label.size()), candidate_format_.Get(),
-                kMaximumHorizontalCandidateWidth, kHorizontalCandidateHeight,
+                kMaximumHorizontalCandidateWidth * layout_scale_,
+                kHorizontalCandidateHeight * layout_scale_,
                 layout.GetAddressOf()))) {
           DWRITE_TEXT_METRICS metrics{};
           if (SUCCEEDED(layout->GetMetrics(&metrics))) {
-            width = std::clamp(metrics.widthIncludingTrailingWhitespace + 24.0F,
-                               kMinimumHorizontalCandidateWidth,
-                               kMaximumHorizontalCandidateWidth);
+            width = std::clamp(metrics.widthIncludingTrailingWhitespace +
+                                   24.0F * layout_scale_,
+                               kMinimumHorizontalCandidateWidth * layout_scale_,
+                               kMaximumHorizontalCandidateWidth * layout_scale_);
           }
         }
         candidate_widths_.push_back(width);
       }
     }
     if (candidate_widths_.empty()) {
-      candidate_widths_.assign(visible_count, kMinimumHorizontalCandidateWidth);
+      candidate_widths_.assign(visible_count,
+                               kMinimumHorizontalCandidateWidth * layout_scale_);
     }
-    constexpr float outer_width = 16.0F;
+    const float outer_width = 16.0F * layout_scale_;
     const bool multiline = settings_.candidate_page_mode == core::CandidatePageMode::kMultiLine &&
                            candidate_widths_.size() > 1;
     horizontal_rows = multiline ? 2 : 1;
@@ -195,36 +263,41 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       }
       std::vector<float> row_widths(candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin),
                                     candidate_widths_.begin() + static_cast<std::ptrdiff_t>(end));
-      FitCandidateWidths(&row_widths, maximum_window_width - outer_width);
+      FitCandidateWidths(&row_widths, maximum_window_width - outer_width,
+                         kMinimumHorizontalCandidateWidth * layout_scale_);
       std::copy(row_widths.begin(), row_widths.end(),
                 candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin));
       widest_row = std::max(
           widest_row, std::accumulate(row_widths.begin(), row_widths.end(), 0.0F));
     }
-    window_width_ = std::clamp(outer_width + widest_row,
-                               std::min(kMinimumHorizontalWindowWidth, maximum_window_width),
-                               maximum_window_width);
+    window_width_ = std::clamp(
+        outer_width + widest_row,
+        std::min(kMinimumHorizontalWindowWidth * layout_scale_, maximum_window_width),
+        maximum_window_width);
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
-      float left = 8.0F;
+      float left = 8.0F * layout_scale_;
       const std::size_t begin = row * columns;
       const std::size_t end = std::min(begin + columns, candidate_widths_.size());
       for (std::size_t index = begin; index < end; ++index) {
         candidate_lefts_.push_back(left);
-        candidate_tops_.push_back(kHorizontalPreeditHeight + 4.0F +
-                                  static_cast<float>(row) * kHorizontalCandidateHeight);
+        candidate_tops_.push_back((kHorizontalPreeditHeight + 4.0F) * layout_scale_ +
+                                  static_cast<float>(row) * kHorizontalCandidateHeight *
+                                      layout_scale_);
         left += candidate_widths_[index];
       }
     }
   } else {
-    window_width_ = std::min(kVerticalWindowWidth, static_cast<float>(work_width) / dpi_scale_);
+    window_width_ = std::min(kVerticalWindowWidth * layout_scale_,
+                             static_cast<float>(work_width) / dpi_scale_);
   }
 
   const float height_dip = horizontal
-                               ? kHorizontalWindowHeight +
+                               ? kHorizontalWindowHeight * layout_scale_ +
                                      static_cast<float>(horizontal_rows - 1) *
-                                         kHorizontalCandidateHeight
-                               : kHorizontalPadding * 2.0F + kPreeditHeight +
-                                     kCandidateHeight * static_cast<float>(visible_count);
+                                         kHorizontalCandidateHeight * layout_scale_
+                               : (kHorizontalPadding * 2.0F + kPreeditHeight +
+                                  kCandidateHeight * static_cast<float>(visible_count)) *
+                                     layout_scale_;
   int width = ToPixels(window_width_, dpi_scale_);
   int height = ToPixels(height_dip, dpi_scale_);
   width = std::min(width, work_width);
@@ -312,22 +385,28 @@ bool CandidateWindow::EnsureDeviceResources() {
     return false;
   }
 
-  std::uint32_t text_color = 0x202124;
-  std::uint32_t muted_color = 0x73767A;
-  std::uint32_t accent_color = 0xE7F0FF;
-  if (settings_.theme_mode == core::ThemeMode::kDark) {
-    text_color = 0xF5F6F7;
-    muted_color = 0xAEB4BC;
-    accent_color = 0x36445A;
-  }
-  if (settings_.candidate_color_scheme == core::CandidateColorScheme::kBlue) {
-    accent_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x294A78 : 0xDCEBFF;
-  } else if (settings_.candidate_color_scheme == core::CandidateColorScheme::kGraphite) {
-    accent_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x474747 : 0xE2E2E2;
-  }
+  const bool dark = UseDarkTheme(settings_.theme_mode);
+  const std::uint32_t background_color = settings_.custom_candidate_colors
+                                             ? settings_.candidate_background_color
+                                             : (dark ? 0x202124 : 0xFAFAFA);
+  const std::uint32_t preedit_color = settings_.custom_candidate_colors
+                                          ? settings_.preedit_color
+                                          : (dark ? 0xF5F6F7 : 0x202124);
+  const std::uint32_t text_color = settings_.custom_candidate_colors
+                                       ? settings_.candidate_text_color
+                                       : (dark ? 0xF5F6F7 : 0x202124);
+  const std::uint32_t highlighted_color = settings_.custom_candidate_colors
+                                              ? settings_.highlighted_candidate_color
+                                              : (dark ? 0x75B6E7 : 0x0067C0);
+  const std::uint32_t muted_color = BlendColor(text_color, background_color, 0.52F);
+  const std::uint32_t accent_color = BlendColor(background_color, highlighted_color, 0.14F);
 
   if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(text_color),
                                                    text_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(preedit_color),
+                                                   preedit_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(
+          D2D1::ColorF(highlighted_color), highlighted_text_brush_.ReleaseAndGetAddressOf())) ||
       FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(muted_color),
                                                    muted_brush_.ReleaseAndGetAddressOf())) ||
       FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(accent_color),
@@ -336,25 +415,27 @@ bool CandidateWindow::EnsureDeviceResources() {
     return false;
   }
 
-  const wchar_t* font_family = L"Source Han Sans SC";
-  if (settings_.candidate_font_family == core::CandidateFontFamily::kMicrosoftYaHei) {
-    font_family = L"Microsoft YaHei UI";
-  } else if (settings_.candidate_font_family == core::CandidateFontFamily::kSystem) {
-    font_family = L"Segoe UI Variable Text";
+  const wchar_t* chinese_font_family = L"Source Han Sans SC";
+  const wchar_t* english_font_family = L"Segoe UI Variable Text";
+  if (settings_.custom_candidate_fonts) {
+    chinese_font_family = ChineseFontFamily(settings_.candidate_chinese_font_family);
+    english_font_family = EnglishFontFamily(settings_.candidate_english_font_family);
   }
-  const float font_size = static_cast<float>(std::clamp(
-      settings_.candidate_font_size, core::kMinimumCandidateFontSize,
-      core::kMaximumCandidateFontSize));
+  const float font_size = static_cast<float>(
+      settings_.custom_candidate_font_size
+          ? std::clamp(settings_.candidate_font_size, core::kMinimumCandidateFontSize,
+                       core::kMaximumCandidateFontSize)
+          : 17);
   if (FAILED(dwrite_factory_->CreateTextFormat(
-          font_family, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+          english_font_family, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size + 1.0F, L"zh-CN",
           preedit_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          chinese_font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"zh-CN",
           candidate_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          chinese_font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
           std::max(font_size - 5.0F, 10.0F), L"zh-CN",
           annotation_format_.ReleaseAndGetAddressOf()))) {
@@ -374,27 +455,26 @@ void CandidateWindow::Paint() {
 
   if (EnsureDeviceResources()) {
     render_target_->BeginDraw();
-    std::uint32_t background_color = settings_.theme_mode == core::ThemeMode::kDark
-                                         ? 0x202124
-                                         : 0xFAFAFA;
-    if (settings_.candidate_color_scheme == core::CandidateColorScheme::kBlue) {
-      background_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x172033 : 0xF7FAFF;
-    } else if (settings_.candidate_color_scheme == core::CandidateColorScheme::kGraphite) {
-      background_color = settings_.theme_mode == core::ThemeMode::kDark ? 0x242424 : 0xF4F4F4;
-    }
+    const bool dark = UseDarkTheme(settings_.theme_mode);
+    const std::uint32_t background_color = settings_.custom_candidate_colors
+                                               ? settings_.candidate_background_color
+                                               : (dark ? 0x202124 : 0xFAFAFA);
     render_target_->Clear(D2D1::ColorF(background_color));
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
-    const float preedit_bottom = horizontal ? kHorizontalPreeditHeight : kPreeditHeight;
+    const float preedit_bottom =
+        (horizontal ? kHorizontalPreeditHeight : kPreeditHeight) * layout_scale_;
     render_target_->DrawTextW(
         snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
         preedit_format_.Get(),
-        D2D1::RectF(kHorizontalPadding, 10.0F, window_width_ - kHorizontalPadding,
+        D2D1::RectF(kHorizontalPadding * layout_scale_, 10.0F * layout_scale_,
+                    window_width_ - kHorizontalPadding * layout_scale_,
                     preedit_bottom),
-        text_brush_.Get());
+        preedit_brush_.Get());
     render_target_->DrawLine(
-        D2D1::Point2F(kHorizontalPadding, preedit_bottom),
-        D2D1::Point2F(window_width_ - kHorizontalPadding, preedit_bottom), muted_brush_.Get(),
+        D2D1::Point2F(kHorizontalPadding * layout_scale_, preedit_bottom),
+        D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, preedit_bottom),
+        muted_brush_.Get(),
         0.5F);
 
     const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
@@ -403,16 +483,19 @@ void CandidateWindow::Paint() {
       const std::size_t candidate_index = slice.offset + visible_index;
       const float cell_width = horizontal && visible_index < candidate_widths_.size()
                                    ? candidate_widths_[visible_index]
-                                   : window_width_ - 16.0F;
+                                   : window_width_ - 16.0F * layout_scale_;
       const float left = horizontal && visible_index < candidate_lefts_.size()
                              ? candidate_lefts_[visible_index]
-                             : 8.0F;
+                             : 8.0F * layout_scale_;
       const float top = horizontal && visible_index < candidate_tops_.size()
                             ? candidate_tops_[visible_index]
-                            : kHorizontalPadding + kPreeditHeight +
-                                  static_cast<float>(visible_index) * kCandidateHeight;
-      const float right = horizontal ? left + cell_width - 2.0F : window_width_ - 8.0F;
-      const float row_height = horizontal ? kHorizontalCandidateHeight : kCandidateHeight;
+                            : (kHorizontalPadding + kPreeditHeight +
+                               static_cast<float>(visible_index) * kCandidateHeight) *
+                                  layout_scale_;
+      const float right = horizontal ? left + cell_width - 2.0F * layout_scale_
+                                     : window_width_ - 8.0F * layout_scale_;
+      const float row_height =
+          (horizontal ? kHorizontalCandidateHeight : kCandidateHeight) * layout_scale_;
       const D2D1_RECT_F row =
           D2D1::RectF(left, top - 2.0F, right, top + row_height - 4.0F);
       if (candidate_index == snapshot_.highlighted_index) {
@@ -424,17 +507,23 @@ void CandidateWindow::Paint() {
                                  snapshot_.candidates[candidate_index].text;
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
-                                D2D1::RectF(horizontal ? left + 8.0F : kHorizontalPadding, top,
-                                            horizontal ? right - 6.0F : 290.0F,
+                                D2D1::RectF(horizontal ? left + 8.0F * layout_scale_
+                                                       : kHorizontalPadding * layout_scale_,
+                                            top,
+                                            horizontal ? right - 6.0F * layout_scale_
+                                                       : 290.0F * layout_scale_,
                                             top + row_height),
-                                text_brush_.Get());
+                                candidate_index == snapshot_.highlighted_index
+                                    ? highlighted_text_brush_.Get()
+                                    : text_brush_.Get());
 
       if (!horizontal) {
         const auto& annotation = snapshot_.candidates[candidate_index].annotation;
         render_target_->DrawTextW(
             annotation.c_str(), static_cast<UINT32>(annotation.size()), annotation_format_.Get(),
-            D2D1::RectF(300.0F, top + 4.0F, window_width_ - kHorizontalPadding,
-                        top + kCandidateHeight),
+            D2D1::RectF(300.0F * layout_scale_, top + 4.0F * layout_scale_,
+                        window_width_ - kHorizontalPadding * layout_scale_,
+                        top + kCandidateHeight * layout_scale_),
             muted_brush_.Get());
       }
     }
@@ -453,6 +542,8 @@ void CandidateWindow::DiscardDeviceResources() {
   annotation_format_.Reset();
   accent_brush_.Reset();
   muted_brush_.Reset();
+  highlighted_text_brush_.Reset();
+  preedit_brush_.Reset();
   text_brush_.Reset();
   render_target_.Reset();
 }

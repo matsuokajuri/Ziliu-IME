@@ -100,8 +100,15 @@ int main() {
       "smart_numeric_punctuation=false\n"
       "theme_mode=dark\n"
       "candidate_page_mode=multi_line\n"
-      "candidate_font_family=microsoft_yahei\n"
-      "candidate_color_scheme=blue\n"
+      "custom_candidate_colors=true\n"
+      "preedit_color=#112233\n"
+      "highlighted_candidate_color=#245678\n"
+      "candidate_text_color=#334455\n"
+      "candidate_background_color=#F0F1F2\n"
+      "custom_candidate_fonts=true\n"
+      "candidate_chinese_font_family=microsoft_yahei\n"
+      "candidate_english_font_family=arial\n"
+      "custom_candidate_font_size=true\n"
       "candidate_font_size=20\n"
       "candidate_scale_with_text=false\n");
   Expect(parsed_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal &&
@@ -117,10 +124,17 @@ int main() {
              parsed_settings.theme_mode == ziliu::core::ThemeMode::kDark &&
              parsed_settings.candidate_page_mode ==
                  ziliu::core::CandidatePageMode::kMultiLine &&
-             parsed_settings.candidate_font_family ==
-                 ziliu::core::CandidateFontFamily::kMicrosoftYaHei &&
-             parsed_settings.candidate_color_scheme ==
-                 ziliu::core::CandidateColorScheme::kBlue &&
+             parsed_settings.custom_candidate_colors &&
+             parsed_settings.preedit_color == 0x112233 &&
+             parsed_settings.highlighted_candidate_color == 0x245678 &&
+             parsed_settings.candidate_text_color == 0x334455 &&
+             parsed_settings.candidate_background_color == 0xF0F1F2 &&
+             parsed_settings.custom_candidate_fonts &&
+             parsed_settings.candidate_chinese_font_family ==
+                 ziliu::core::CandidateChineseFontFamily::kMicrosoftYaHei &&
+             parsed_settings.candidate_english_font_family ==
+                 ziliu::core::CandidateEnglishFontFamily::kArial &&
+             parsed_settings.custom_candidate_font_size &&
              parsed_settings.candidate_font_size == 20 &&
              !parsed_settings.candidate_scale_with_text,
          "settings parser should preserve all supported choices");

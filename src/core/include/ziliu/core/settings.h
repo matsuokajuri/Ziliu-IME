@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -48,16 +49,16 @@ enum class CandidatePageMode {
   kMultiLine,
 };
 
-enum class CandidateFontFamily {
+enum class CandidateChineseFontFamily {
   kSourceHanSans,
   kMicrosoftYaHei,
-  kSystem,
+  kSimSun,
 };
 
-enum class CandidateColorScheme {
-  kSystem,
-  kBlue,
-  kGraphite,
+enum class CandidateEnglishFontFamily {
+  kSegoeUi,
+  kArial,
+  kSourceHanSans,
 };
 
 struct Settings {
@@ -90,8 +91,17 @@ struct Settings {
   bool smart_numeric_punctuation = true;
   ThemeMode theme_mode = ThemeMode::kSystem;
   CandidatePageMode candidate_page_mode = CandidatePageMode::kSingleLine;
-  CandidateFontFamily candidate_font_family = CandidateFontFamily::kSourceHanSans;
-  CandidateColorScheme candidate_color_scheme = CandidateColorScheme::kSystem;
+  bool custom_candidate_colors = false;
+  std::uint32_t preedit_color = 0x202124;
+  std::uint32_t highlighted_candidate_color = 0x0067C0;
+  std::uint32_t candidate_text_color = 0x202124;
+  std::uint32_t candidate_background_color = 0xFAFAFA;
+  bool custom_candidate_fonts = false;
+  CandidateChineseFontFamily candidate_chinese_font_family =
+      CandidateChineseFontFamily::kSourceHanSans;
+  CandidateEnglishFontFamily candidate_english_font_family =
+      CandidateEnglishFontFamily::kSegoeUi;
+  bool custom_candidate_font_size = false;
   std::size_t candidate_font_size = 17;
   bool candidate_scale_with_text = true;
 

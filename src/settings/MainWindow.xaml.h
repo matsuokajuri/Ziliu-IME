@@ -17,6 +17,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void InitializeNavigation();
   void ShowSettingsPage(std::wstring_view page);
   void ApplyThemeFromControls();
+  void UpdateAppearanceControlStates();
+  void UpdateColorSwatches();
   void SaveFromControls();
 
   ziliu::core::Settings settings_;

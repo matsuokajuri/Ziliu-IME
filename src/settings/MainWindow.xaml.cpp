@@ -104,6 +104,20 @@ LaunchOptions ParseLaunchOptions() {
   return options;
 }
 
+winrt::Windows::UI::Color ToColor(std::uint32_t rgb) {
+  winrt::Windows::UI::Color color{};
+  color.A = 0xFF;
+  color.R = static_cast<std::uint8_t>((rgb >> 16) & 0xFF);
+  color.G = static_cast<std::uint8_t>((rgb >> 8) & 0xFF);
+  color.B = static_cast<std::uint8_t>(rgb & 0xFF);
+  return color;
+}
+
+std::uint32_t FromColor(winrt::Windows::UI::Color color) {
+  return (static_cast<std::uint32_t>(color.R) << 16) |
+         (static_cast<std::uint32_t>(color.G) << 8) | static_cast<std::uint32_t>(color.B);
+}
+
 }  // namespace
 
 MainWindow::MainWindow() {
@@ -248,8 +262,17 @@ void MainWindow::InitializeSettingsControls() {
                                                  ziliu::core::CandidatePageMode::kMultiLine
                                              ? 1
                                              : 0);
-  CandidateColorCombo().SelectedIndex(static_cast<int>(settings_.candidate_color_scheme));
-  CandidateFontCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_family));
+  CustomColorsToggle().IsOn(settings_.custom_candidate_colors);
+  PreeditColorPicker().Color(ToColor(settings_.preedit_color));
+  HighlightedColorPicker().Color(ToColor(settings_.highlighted_candidate_color));
+  CandidateTextColorPicker().Color(ToColor(settings_.candidate_text_color));
+  BackgroundColorPicker().Color(ToColor(settings_.candidate_background_color));
+  CustomFontsToggle().IsOn(settings_.custom_candidate_fonts);
+  CandidateChineseFontCombo().SelectedIndex(
+      static_cast<int>(settings_.candidate_chinese_font_family));
+  CandidateEnglishFontCombo().SelectedIndex(
+      static_cast<int>(settings_.candidate_english_font_family));
+  CustomFontSizeToggle().IsOn(settings_.custom_candidate_font_size);
   CandidateFontSizeCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_size) - 14);
   CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
   SwitchKeyCombo().SelectedIndex(
@@ -262,6 +285,8 @@ void MainWindow::InitializeSettingsControls() {
   }
   PageKeyCombo().SelectedIndex(page_key_index);
   ApplyThemeFromControls();
+  UpdateAppearanceControlStates();
+  UpdateColorSwatches();
 }
 
 void MainWindow::InitializeNavigation() {
@@ -284,15 +309,35 @@ void MainWindow::InitializeNavigation() {
   PunctuationBackButton().Click(
       [this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
   ThemeCombo().SelectionChanged([this](auto const&, auto const&) { ApplyThemeFromControls(); });
+  CustomColorsToggle().Toggled(
+      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
+  CustomFontsToggle().Toggled(
+      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
+  CustomFontSizeToggle().Toggled(
+      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
+  const auto update_color = [this](auto const&, auto const&) { UpdateColorSwatches(); };
+  PreeditColorPicker().ColorChanged(update_color);
+  HighlightedColorPicker().ColorChanged(update_color);
+  CandidateTextColorPicker().ColorChanged(update_color);
+  BackgroundColorPicker().ColorChanged(update_color);
   ResetAppearanceButton().Click([this](auto const&, auto const&) {
     ThemeCombo().SelectedIndex(0);
     LayoutCombo().SelectedIndex(1);
     CandidateCountCombo().SelectedIndex(2);
     CandidatePageModeCombo().SelectedIndex(0);
-    CandidateColorCombo().SelectedIndex(0);
-    CandidateFontCombo().SelectedIndex(0);
+    CustomColorsToggle().IsOn(false);
+    PreeditColorPicker().Color(ToColor(0x202124));
+    HighlightedColorPicker().Color(ToColor(0x0067C0));
+    CandidateTextColorPicker().Color(ToColor(0x202124));
+    BackgroundColorPicker().Color(ToColor(0xFAFAFA));
+    CustomFontsToggle().IsOn(false);
+    CandidateChineseFontCombo().SelectedIndex(0);
+    CandidateEnglishFontCombo().SelectedIndex(0);
+    CustomFontSizeToggle().IsOn(false);
     CandidateFontSizeCombo().SelectedIndex(3);
     CandidateScaleToggle().IsOn(true);
+    UpdateAppearanceControlStates();
+    UpdateColorSwatches();
   });
 }
 
@@ -335,6 +380,26 @@ void MainWindow::ApplyThemeFromControls() {
     theme = Microsoft::UI::Xaml::ElementTheme::Dark;
   }
   RootGrid().RequestedTheme(theme);
+}
+
+void MainWindow::UpdateAppearanceControlStates() {
+  const bool colors_enabled = CustomColorsToggle().IsOn();
+  CandidateColorControls().IsHitTestVisible(colors_enabled);
+  CandidateColorControls().Opacity(colors_enabled ? 1.0 : 0.45);
+  CandidateChineseFontCombo().IsEnabled(CustomFontsToggle().IsOn());
+  CandidateEnglishFontCombo().IsEnabled(CustomFontsToggle().IsOn());
+  CandidateFontSizeCombo().IsEnabled(CustomFontSizeToggle().IsOn());
+}
+
+void MainWindow::UpdateColorSwatches() {
+  PreeditColorSwatch().Fill(
+      Microsoft::UI::Xaml::Media::SolidColorBrush(PreeditColorPicker().Color()));
+  HighlightedColorSwatch().Fill(
+      Microsoft::UI::Xaml::Media::SolidColorBrush(HighlightedColorPicker().Color()));
+  CandidateTextColorSwatch().Fill(
+      Microsoft::UI::Xaml::Media::SolidColorBrush(CandidateTextColorPicker().Color()));
+  BackgroundColorSwatch().Fill(
+      Microsoft::UI::Xaml::Media::SolidColorBrush(BackgroundColorPicker().Color()));
 }
 
 void MainWindow::InitializeQuickMenuControls() {
@@ -399,10 +464,19 @@ void MainWindow::SaveFromControls() {
   settings_.candidate_page_mode = CandidatePageModeCombo().SelectedIndex() == 1
                                       ? ziliu::core::CandidatePageMode::kMultiLine
                                       : ziliu::core::CandidatePageMode::kSingleLine;
-  settings_.candidate_color_scheme = static_cast<ziliu::core::CandidateColorScheme>(
-      CandidateColorCombo().SelectedIndex());
-  settings_.candidate_font_family = static_cast<ziliu::core::CandidateFontFamily>(
-      CandidateFontCombo().SelectedIndex());
+  settings_.custom_candidate_colors = CustomColorsToggle().IsOn();
+  settings_.preedit_color = FromColor(PreeditColorPicker().Color());
+  settings_.highlighted_candidate_color = FromColor(HighlightedColorPicker().Color());
+  settings_.candidate_text_color = FromColor(CandidateTextColorPicker().Color());
+  settings_.candidate_background_color = FromColor(BackgroundColorPicker().Color());
+  settings_.custom_candidate_fonts = CustomFontsToggle().IsOn();
+  settings_.candidate_chinese_font_family =
+      static_cast<ziliu::core::CandidateChineseFontFamily>(
+          CandidateChineseFontCombo().SelectedIndex());
+  settings_.candidate_english_font_family =
+      static_cast<ziliu::core::CandidateEnglishFontFamily>(
+          CandidateEnglishFontCombo().SelectedIndex());
+  settings_.custom_candidate_font_size = CustomFontSizeToggle().IsOn();
   settings_.candidate_font_size =
       static_cast<std::size_t>(CandidateFontSizeCombo().SelectedIndex() + 14);
   settings_.candidate_scale_with_text = CandidateScaleToggle().IsOn();
