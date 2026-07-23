@@ -77,7 +77,10 @@ class StubEngine final : public Engine {
 
     candidates_.clear();
     if (!preedit_.empty()) {
-      candidates_.push_back(Candidate{preedit_, L"原样输入", 0.0});
+      const Candidate raw_candidate{preedit_, L"原样输入", 0.0};
+      if (!IsPureEnglishCandidate(raw_candidate.text)) {
+        candidates_.push_back(raw_candidate);
+      }
     }
   }
 

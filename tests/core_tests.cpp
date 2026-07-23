@@ -42,6 +42,15 @@ int main() {
   const ziliu::core::CompositionSnapshot spaced_preedit{L"你 hao", {}, 0};
   Expect(spaced_preedit.plain_text() == L"你hao",
          "plain preedit text should retain selections and remove segmentation spaces");
+  Expect(ziliu::core::IsPureEnglishCandidate(L"hello") &&
+             ziliu::core::IsPureEnglishCandidate(L"New York") &&
+             ziliu::core::IsPureEnglishCandidate(L"don't") &&
+             ziliu::core::IsPureEnglishCandidate(L"e-mail") &&
+             !ziliu::core::IsPureEnglishCandidate(L"") &&
+             !ziliu::core::IsPureEnglishCandidate(L"hello2") &&
+             !ziliu::core::IsPureEnglishCandidate(L"中文") &&
+             !ziliu::core::IsPureEnglishCandidate(L"abc中文"),
+         "pure English candidate detection should preserve mixed and non-English text");
 
   Type(*engine, L"nihao");
   Expect(engine->Backspace(), "backspace should consume an existing letter");

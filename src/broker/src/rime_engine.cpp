@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace ziliu::broker {
 namespace {
@@ -252,7 +253,7 @@ class RimeEngine final : public core::Engine {
   ~RimeEngine() override { api_->destroy_session(session_id_); }
 
   void Reset() override {
-    candidate_offset_ = 0;
+    ResetPaging();
     api_->clear_composition(session_id_);
   }
 
@@ -264,7 +265,7 @@ class RimeEngine final : public core::Engine {
                                                                           : letter);
     const bool consumed = api_->process_key(session_id_, keycode, 0) != False;
     if (consumed) {
-      candidate_offset_ = 0;
+      ResetPaging();
     }
     return consumed;
   }
@@ -272,49 +273,48 @@ class RimeEngine final : public core::Engine {
   bool Backspace() override {
     const bool consumed = api_->process_key(session_id_, kRimeBackspace, 0) != False;
     if (consumed) {
-      candidate_offset_ = 0;
+      ResetPaging();
     }
     return consumed;
   }
 
   bool PageUp() override {
-    if (candidate_offset_ == 0) {
+    if (previous_page_offsets_.empty()) {
       return false;
     }
-    candidate_offset_ = std::max(candidate_offset_ - static_cast<int>(candidate_page_size_), 0);
+    candidate_offset_ = previous_page_offsets_.back();
+    previous_page_offsets_.pop_back();
     return true;
   }
 
   bool PageDown() override {
-    const int page_size = static_cast<int>(candidate_page_size_);
-    if (candidate_offset_ > std::numeric_limits<int>::max() - page_size) {
+    const int next_offset = NextVisiblePageOffset();
+    if (next_offset < 0) {
       return false;
     }
-    const int next_offset = candidate_offset_ + page_size;
-    if (!HasCandidateAt(next_offset)) {
-      return false;
-    }
+    previous_page_offsets_.push_back(candidate_offset_);
     candidate_offset_ = next_offset;
     return true;
   }
 
   void SetCandidatePageSize(std::size_t page_size) override {
-    candidate_offset_ = 0;
+    ResetPaging();
     candidate_page_size_ = std::clamp<std::size_t>(page_size, 1, core::ipc::kMaximumCandidates);
   }
 
   void SetTraditional(bool enabled) override {
-    candidate_offset_ = 0;
+    ResetPaging();
     api_->set_option(session_id_, "traditionalization", enabled ? True : False);
   }
 
   core::SelectionResult Select(std::size_t candidate_index) override {
-    if (candidate_index >= candidate_page_size_ ||
+    const int source_candidate_index = CandidateIndexForVisible(candidate_index);
+    if (candidate_index >= candidate_page_size_ || source_candidate_index < 0 ||
         !api_->select_candidate(session_id_,
-                                static_cast<std::size_t>(candidate_offset_) + candidate_index)) {
+                                static_cast<std::size_t>(source_candidate_index))) {
       return {};
     }
-    candidate_offset_ = 0;
+    ResetPaging();
 
     RIME_STRUCT(RimeCommit, commit);
     if (api_->get_commit(session_id_, &commit)) {
@@ -358,9 +358,13 @@ class RimeEngine final : public core::Engine {
         while (snapshot.candidates.size() < candidate_page_size_ &&
                api_->candidate_list_next(&iterator)) {
           const auto& candidate = iterator.candidate;
+          const std::wstring candidate_text = FromUtf8(candidate.text);
+          if (core::IsPureEnglishCandidate(candidate_text)) {
+            continue;
+          }
           const std::size_t visible_index = snapshot.candidates.size();
           snapshot.candidates.push_back(core::Candidate{
-              FromUtf8(candidate.text), FromUtf8(candidate.comment),
+              candidate_text, FromUtf8(candidate.comment),
               1.0 - static_cast<double>(visible_index) /
                         static_cast<double>(candidate_page_size_ + 1)});
         }
@@ -371,20 +375,65 @@ class RimeEngine final : public core::Engine {
   }
 
  private:
-  [[nodiscard]] bool HasCandidateAt(int candidate_index) const {
-    RimeCandidateListIterator iterator{};
-    if (!api_->candidate_list_from_index(session_id_, &iterator, candidate_index)) {
-      return false;
+  void ResetPaging() {
+    candidate_offset_ = 0;
+    previous_page_offsets_.clear();
+  }
+
+  [[nodiscard]] int CandidateIndexForVisible(std::size_t visible_index) const {
+    if (visible_index >= candidate_page_size_) {
+      return -1;
     }
-    const bool found = api_->candidate_list_next(&iterator) != False;
+    RimeCandidateListIterator iterator{};
+    if (!api_->candidate_list_from_index(session_id_, &iterator, candidate_offset_)) {
+      return -1;
+    }
+    int source_index = candidate_offset_;
+    std::size_t current_visible_index = 0;
+    int result = -1;
+    while (api_->candidate_list_next(&iterator)) {
+      const int current_source_index = source_index++;
+      if (core::IsPureEnglishCandidate(FromUtf8(iterator.candidate.text))) {
+        continue;
+      }
+      if (current_visible_index == visible_index) {
+        result = current_source_index;
+        break;
+      }
+      ++current_visible_index;
+    }
     api_->candidate_list_end(&iterator);
-    return found;
+    return result;
+  }
+
+  [[nodiscard]] int NextVisiblePageOffset() const {
+    RimeCandidateListIterator iterator{};
+    if (!api_->candidate_list_from_index(session_id_, &iterator, candidate_offset_)) {
+      return -1;
+    }
+    int source_index = candidate_offset_;
+    std::size_t visible_count = 0;
+    int next_offset = -1;
+    while (api_->candidate_list_next(&iterator)) {
+      const int current_source_index = source_index++;
+      if (core::IsPureEnglishCandidate(FromUtf8(iterator.candidate.text))) {
+        continue;
+      }
+      if (visible_count == candidate_page_size_) {
+        next_offset = current_source_index;
+        break;
+      }
+      ++visible_count;
+    }
+    api_->candidate_list_end(&iterator);
+    return next_offset;
   }
 
   RimeApi* api_;
   RimeSessionId session_id_;
   int candidate_offset_ = 0;
   std::size_t candidate_page_size_ = core::ipc::kMaximumCandidates;
+  std::vector<int> previous_page_offsets_;
 };
 
 std::unique_ptr<core::Engine> TryCreateRimeEngine() {

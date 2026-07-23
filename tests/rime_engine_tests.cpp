@@ -83,9 +83,18 @@ int main(int argument_count, char* arguments[]) {
     }
     return texts;
   };
+  const auto contains_pure_english = [](const auto& snapshot) {
+    return std::ranges::any_of(snapshot.candidates, [](const auto& candidate) {
+      return ziliu::core::IsPureEnglishCandidate(candidate.text);
+    });
+  };
+  Expect(!contains_pure_english(first_page),
+         "the first visible page should filter pure English candidates");
   Expect(engine->PageDown(), "Rime should consume PageDown when more candidates exist");
   const auto second_page = engine->Snapshot();
   Expect(!second_page.candidates.empty(), "PageDown should retain candidate results");
+  Expect(!contains_pure_english(second_page),
+         "later visible pages should filter pure English candidates");
   Expect(candidate_texts(second_page) != candidate_texts(first_page),
          "PageDown should advance to a different candidate page");
   Expect(engine->PageUp(), "Rime should consume PageUp on the second page");
@@ -102,7 +111,8 @@ int main(int argument_count, char* arguments[]) {
     return candidate.text == L"中国";
   });
   if (china == snapshot.candidates.end()) {
-    if (snapshot.candidates.size() == 1 && snapshot.candidates.front().text == L"zhongguo") {
+    if (snapshot.candidates.empty() ||
+        (snapshot.candidates.size() == 1 && snapshot.candidates.front().text == L"zhongguo")) {
       std::cout << "SKIPPED: verified rime.dll is not staged\n";
       return 77;
     }

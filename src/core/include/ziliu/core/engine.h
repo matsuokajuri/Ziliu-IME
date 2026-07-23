@@ -42,6 +42,8 @@ struct SelectionResult {
   bool operator==(const SelectionResult&) const = default;
 };
 
+[[nodiscard]] bool IsPureEnglishCandidate(std::wstring_view text) noexcept;
+
 class Engine {
  public:
   virtual ~Engine() = default;
