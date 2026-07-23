@@ -14,6 +14,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y);
   void InitializeSettingsControls();
   void InitializeQuickMenuControls();
+  void PlayQuickMenuOpenAnimation();
   void InitializeNavigation();
   void ShowSettingsPage(std::wstring_view page);
   void ApplyThemeFromControls();

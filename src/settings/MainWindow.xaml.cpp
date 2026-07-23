@@ -7,6 +7,7 @@
 
 #include "ziliu/core/settings.h"
 
+#include <dwmapi.h>
 #include <microsoft.ui.xaml.window.h>
 #include <shellapi.h>
 
@@ -130,6 +131,9 @@ MainWindow::MainWindow() {
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     QuickMenuRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
     InitializeQuickMenuControls();
+    QuickMenuRoot().Loaded(
+        [this](winrt::Windows::Foundation::IInspectable const&,
+               Microsoft::UI::Xaml::RoutedEventArgs const&) { PlayQuickMenuOpenAnimation(); });
   } else {
     Title(L"字流 Ziliu 设置");
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
@@ -205,11 +209,26 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   SetWindowPos(window_handle, HWND_TOP, x, y, width, height,
                SWP_FRAMECHANGED | SWP_NOACTIVATE);
 
-  const int corner_diameter = scaled(20);
-  HRGN window_region =
-      CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter);
-  if (window_region != nullptr && SetWindowRgn(window_handle, window_region, FALSE) == 0) {
-    DeleteObject(window_region);
+  const DWMNCRENDERINGPOLICY rendering_policy = DWMNCRP_ENABLED;
+  static_cast<void>(DwmSetWindowAttribute(window_handle, DWMWA_NCRENDERING_POLICY,
+                                          &rendering_policy, sizeof(rendering_policy)));
+  const DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_ROUND;
+  const HRESULT corner_result =
+      DwmSetWindowAttribute(window_handle, DWMWA_WINDOW_CORNER_PREFERENCE, &corner_preference,
+                            sizeof(corner_preference));
+  const COLORREF border_color = DWMWA_COLOR_NONE;
+  static_cast<void>(DwmSetWindowAttribute(window_handle, DWMWA_BORDER_COLOR, &border_color,
+                                          sizeof(border_color)));
+  const MARGINS shadow_margins{1, 1, 1, 1};
+  static_cast<void>(DwmExtendFrameIntoClientArea(window_handle, &shadow_margins));
+
+  if (FAILED(corner_result)) {
+    const int corner_diameter = scaled(20);
+    HRGN window_region =
+        CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter);
+    if (window_region != nullptr && SetWindowRgn(window_handle, window_region, FALSE) == 0) {
+      DeleteObject(window_region);
+    }
   }
 }
 
@@ -420,6 +439,25 @@ void MainWindow::InitializeQuickMenuControls() {
         ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         Close();
       });
+}
+
+void MainWindow::PlayQuickMenuOpenAnimation() {
+  try {
+    const auto resource =
+        RootGrid().Resources().Lookup(winrt::box_value(L"QuickMenuOpenStoryboard"));
+    const auto storyboard =
+        resource.try_as<Microsoft::UI::Xaml::Media::Animation::Storyboard>();
+    if (storyboard != nullptr) {
+      storyboard.Begin();
+      return;
+    }
+  } catch (winrt::hresult_error const&) {
+    // A missing animation resource must never leave the quick menu invisible.
+  }
+  QuickMenuCard().Opacity(1.0);
+  QuickMenuTransform().ScaleX(1.0);
+  QuickMenuTransform().ScaleY(1.0);
+  QuickMenuTransform().TranslateY(0.0);
 }
 
 void MainWindow::SaveFromControls() {
