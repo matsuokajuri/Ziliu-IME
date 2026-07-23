@@ -61,6 +61,16 @@ int main() {
   engine->Reset();
   Expect(!engine->Backspace(), "backspace should pass through on an empty composition");
   Expect(!engine->ProcessLetter(L'1'), "non-letters should pass through");
+  Expect(engine->ProcessLetter(L'x') && engine->Snapshot().candidates.empty(),
+         "Chinese-only filtering should be enabled by default");
+  engine->SetChineseCandidatesOnly(false);
+  Expect(engine->Snapshot().candidates.size() == 1 &&
+             engine->Snapshot().candidates.front().text == L"x",
+         "disabling Chinese-only filtering should restore non-Chinese candidates");
+  engine->SetChineseCandidatesOnly(true);
+  Expect(engine->Snapshot().candidates.empty(),
+         "re-enabling Chinese-only filtering should immediately update candidates");
+  engine->Reset();
 
   ziliu::core::SessionHost host;
   const auto created = host.Handle({1, 0, ziliu::core::ipc::Command::kCreateSession, 0});
@@ -70,6 +80,11 @@ int main() {
       {2, created.session_id, ziliu::core::ipc::Command::kInputLetter, L'z'});
   Expect(input.consumed && input.snapshot.preedit == L"z",
          "session host should route input to its engine");
+  const auto filter_disabled = host.Handle(
+      {3, created.session_id, ziliu::core::ipc::Command::kSetChineseCandidatesOnly, 0});
+  Expect(filter_disabled.consumed && filter_disabled.snapshot.candidates.size() == 1 &&
+             filter_disabled.snapshot.candidates.front().text == L"z",
+         "session host should apply Chinese-only filtering changes");
 
   ziliu::core::ipc::Response wire_response;
   wire_response.request_id = 9;
@@ -94,6 +109,7 @@ int main() {
              defaults.auto_pair_punctuation &&
              defaults.page_key_set == ziliu::core::PageKeySet::kCommaPeriod &&
              defaults.default_input_mode == ziliu::core::DefaultInputMode::kChinese &&
+             defaults.chinese_candidates_only &&
              defaults.theme_mode == ziliu::core::ThemeMode::kSystem &&
              defaults.candidate_page_mode == ziliu::core::CandidatePageMode::kSingleLine,
          "settings defaults should match the first-run experience");
@@ -107,6 +123,7 @@ int main() {
       "page_keys=brackets\n"
       "character_set=traditional\n"
       "default_input_mode=english\n"
+      "chinese_candidates_only=false\n"
       "fuzzy_z_zh=true\n"
       "smart_numeric_punctuation=false\n"
       "theme_mode=dark\n"
@@ -131,6 +148,7 @@ int main() {
              parsed_settings.page_key_set == ziliu::core::PageKeySet::kBrackets &&
              parsed_settings.character_set == ziliu::core::CharacterSet::kTraditional &&
              parsed_settings.default_input_mode == ziliu::core::DefaultInputMode::kEnglish &&
+             !parsed_settings.chinese_candidates_only &&
              parsed_settings.fuzzy_z_zh && !parsed_settings.smart_numeric_punctuation &&
              parsed_settings.theme_mode == ziliu::core::ThemeMode::kDark &&
              parsed_settings.candidate_page_mode ==

@@ -82,6 +82,10 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
       engine.SetTraditional(request.value != 0);
       response.consumed = true;
       break;
+    case ipc::Command::kSetChineseCandidatesOnly:
+      engine.SetChineseCandidatesOnly(request.value != 0);
+      response.consumed = true;
+      break;
     case ipc::Command::kSelectCandidate: {
       auto selection = engine.Select(request.value);
       response.consumed = selection.consumed;

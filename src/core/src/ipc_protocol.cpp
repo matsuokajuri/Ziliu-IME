@@ -197,6 +197,7 @@ bool IsKnownCommand(Command command) {
     case Command::kPageDown:
     case Command::kSetTraditional:
     case Command::kSetCandidatePageSize:
+    case Command::kSetChineseCandidatesOnly:
       return true;
   }
   return false;

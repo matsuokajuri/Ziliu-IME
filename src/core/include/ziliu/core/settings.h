@@ -58,6 +58,7 @@ struct Settings {
   PageKeySet page_key_set = PageKeySet::kCommaPeriod;
   CharacterSet character_set = CharacterSet::kSimplified;
   DefaultInputMode default_input_mode = DefaultInputMode::kChinese;
+  bool chinese_candidates_only = true;
   bool initialism_spelling = true;
   bool spelling_correction = true;
   bool correction_gn_ng = true;

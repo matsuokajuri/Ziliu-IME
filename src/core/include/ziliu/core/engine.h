@@ -55,6 +55,7 @@ class Engine {
   virtual bool PageDown() = 0;
   virtual void SetCandidatePageSize(std::size_t page_size) = 0;
   virtual void SetTraditional(bool enabled) = 0;
+  virtual void SetChineseCandidatesOnly(bool enabled) = 0;
   virtual SelectionResult Select(std::size_t candidate_index) = 0;
   [[nodiscard]] virtual CompositionSnapshot Snapshot() const = 0;
 };

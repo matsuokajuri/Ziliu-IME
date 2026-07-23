@@ -107,6 +107,8 @@
                                     <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="半角 / 全角标点" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="PunctuationCombo" Grid.Column="1" MinWidth="150"><ComboBoxItem Content="半角"/><ComboBoxItem Content="全角"/></ComboBox></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                                     <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="中文 / 英文" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="DefaultInputModeCombo" Grid.Column="1" MinWidth="150"><ComboBoxItem Content="中文"/><ComboBoxItem Content="英文"/></ComboBox></Grid></Border>
+                                    <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="只显示全汉字候选" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="候选词中仅显示全部由汉字组成的内容" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="ChineseCandidatesOnlyToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
                                 </StackPanel>
                             </Border>
 

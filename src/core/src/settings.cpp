@@ -138,6 +138,8 @@ Settings ParseSettings(std::string_view text) {
       } else if (value == "english") {
         settings.default_input_mode = DefaultInputMode::kEnglish;
       }
+    } else if (key == "chinese_candidates_only") {
+      ParseBoolean(value, &settings.chinese_candidates_only);
     } else if (key == "initialism_spelling") {
       ParseBoolean(value, &settings.initialism_spelling);
     } else if (key == "spelling_correction") {
@@ -268,14 +270,16 @@ std::string SerializeSettings(const Settings& settings) {
   const std::size_t candidate_count = std::clamp(
       settings.candidate_count, kMinimumCandidateCount, kMaximumCandidateCount);
 
-  return std::string("version=4\n") + "candidate_layout=" + layout + "\n" +
+  return std::string("version=5\n") + "candidate_layout=" + layout + "\n" +
          "candidate_count=" + std::to_string(candidate_count) + "\n" +
          "input_mode_switch_key=" + switch_key + "\n" +
          "punctuation_style=" + punctuation + "\n" + "auto_pair_punctuation=" +
          (settings.auto_pair_punctuation ? "true" : "false") + "\n" + "page_keys=" +
          page_keys + "\n" +
          "character_set=" + character_set + "\n" + "default_input_mode=" +
-         default_input_mode + "\n" + "initialism_spelling=" +
+         default_input_mode + "\n" + "chinese_candidates_only=" +
+         (settings.chinese_candidates_only ? "true" : "false") + "\n" +
+         "initialism_spelling=" +
          (settings.initialism_spelling ? "true" : "false") + "\n" +
          "spelling_correction=" + (settings.spelling_correction ? "true" : "false") + "\n" +
          "correction_gn_ng=" + (settings.correction_gn_ng ? "true" : "false") + "\n" +

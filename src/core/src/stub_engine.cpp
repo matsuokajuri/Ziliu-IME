@@ -53,6 +53,11 @@ class StubEngine final : public Engine {
 
   void SetTraditional(bool enabled) override { traditional_ = enabled; }
 
+  void SetChineseCandidatesOnly(bool enabled) override {
+    chinese_candidates_only_ = enabled;
+    RefreshCandidates();
+  }
+
   SelectionResult Select(std::size_t candidate_index) override {
     if (candidate_index >= candidates_.size()) {
       return {};
@@ -78,7 +83,7 @@ class StubEngine final : public Engine {
     candidates_.clear();
     if (!preedit_.empty()) {
       const Candidate raw_candidate{preedit_, L"原样输入", 0.0};
-      if (IsChineseCandidate(raw_candidate.text)) {
+      if (!chinese_candidates_only_ || IsChineseCandidate(raw_candidate.text)) {
         candidates_.push_back(raw_candidate);
       }
     }
@@ -87,6 +92,7 @@ class StubEngine final : public Engine {
   std::wstring preedit_;
   CandidateList candidates_;
   bool traditional_ = false;
+  bool chinese_candidates_only_ = true;
 };
 
 }  // namespace

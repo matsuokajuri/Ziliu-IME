@@ -307,6 +307,14 @@ class RimeEngine final : public core::Engine {
     api_->set_option(session_id_, "traditionalization", enabled ? True : False);
   }
 
+  void SetChineseCandidatesOnly(bool enabled) override {
+    if (chinese_candidates_only_ == enabled) {
+      return;
+    }
+    chinese_candidates_only_ = enabled;
+    ResetPaging();
+  }
+
   core::SelectionResult Select(std::size_t candidate_index) override {
     const int source_candidate_index = CandidateIndexForVisible(candidate_index);
     if (candidate_index >= candidate_page_size_ || source_candidate_index < 0 ||
@@ -359,7 +367,7 @@ class RimeEngine final : public core::Engine {
                api_->candidate_list_next(&iterator)) {
           const auto& candidate = iterator.candidate;
           const std::wstring candidate_text = FromUtf8(candidate.text);
-          if (!core::IsChineseCandidate(candidate_text)) {
+          if (!ShouldShowCandidate(candidate_text)) {
             continue;
           }
           const std::size_t visible_index = snapshot.candidates.size();
@@ -380,6 +388,10 @@ class RimeEngine final : public core::Engine {
     previous_page_offsets_.clear();
   }
 
+  [[nodiscard]] bool ShouldShowCandidate(std::wstring_view text) const noexcept {
+    return !chinese_candidates_only_ || core::IsChineseCandidate(text);
+  }
+
   [[nodiscard]] int CandidateIndexForVisible(std::size_t visible_index) const {
     if (visible_index >= candidate_page_size_) {
       return -1;
@@ -393,7 +405,7 @@ class RimeEngine final : public core::Engine {
     int result = -1;
     while (api_->candidate_list_next(&iterator)) {
       const int current_source_index = source_index++;
-      if (!core::IsChineseCandidate(FromUtf8(iterator.candidate.text))) {
+      if (!ShouldShowCandidate(FromUtf8(iterator.candidate.text))) {
         continue;
       }
       if (current_visible_index == visible_index) {
@@ -416,7 +428,7 @@ class RimeEngine final : public core::Engine {
     int next_offset = -1;
     while (api_->candidate_list_next(&iterator)) {
       const int current_source_index = source_index++;
-      if (!core::IsChineseCandidate(FromUtf8(iterator.candidate.text))) {
+      if (!ShouldShowCandidate(FromUtf8(iterator.candidate.text))) {
         continue;
       }
       if (visible_count == candidate_page_size_) {
@@ -433,6 +445,7 @@ class RimeEngine final : public core::Engine {
   RimeSessionId session_id_;
   int candidate_offset_ = 0;
   std::size_t candidate_page_size_ = core::ipc::kMaximumCandidates;
+  bool chinese_candidates_only_ = true;
   std::vector<int> previous_page_offsets_;
 };
 

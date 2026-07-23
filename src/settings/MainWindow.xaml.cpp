@@ -387,6 +387,7 @@ void MainWindow::InitializeSettingsControls() {
                                                 ziliu::core::DefaultInputMode::kEnglish
                                             ? 1
                                             : 0);
+  ChineseCandidatesOnlyToggle().IsOn(settings_.chinese_candidates_only);
   InitialismToggle().IsOn(settings_.initialism_spelling);
   SpellingCorrectionToggle().IsOn(settings_.spelling_correction);
   AutoPairToggle().IsOn(settings_.auto_pair_punctuation);
@@ -627,6 +628,7 @@ void MainWindow::SaveFromControls() {
   settings_.default_input_mode = DefaultInputModeCombo().SelectedIndex() == 1
                                      ? ziliu::core::DefaultInputMode::kEnglish
                                      : ziliu::core::DefaultInputMode::kChinese;
+  settings_.chinese_candidates_only = ChineseCandidatesOnlyToggle().IsOn();
   settings_.initialism_spelling = InitialismToggle().IsOn();
   settings_.spelling_correction = SpellingCorrectionToggle().IsOn();
   settings_.auto_pair_punctuation = AutoPairToggle().IsOn();
