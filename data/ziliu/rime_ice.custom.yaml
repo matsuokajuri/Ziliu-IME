@@ -6,3 +6,16 @@ patch:
   custom_phrase/user_dict: ziliu_phrase
   custom_phrase/initial_quality: 100
   menu/page_size: 9
+
+  # 使用 librime 的 QWERTY 邻键容错器；与雾凇拼音已有的错序、漏键
+  # spelling algebra 共同工作，精确拼写仍保持更高优先级。
+  translator/enable_correction: true
+
+  # 沿用 rime_ice.userdb，显式启用 librime 用户词典，避免升级时丢失
+  # 既有输入习惯。学习长度参考万象拼音的长期使用配置：短段会组合
+  # 学习，超过七个音节的长句只提升组成词，不把整句当成永久词条。
+  translator/enable_user_dict: true
+  translator/user_dict: rime_ice
+  translator/core_word_length: 4
+  translator/max_word_length: 7
+  translator/max_homophones: 8

@@ -7,6 +7,7 @@ librime 官方运行时：
 |---|---|---|---|
 | rime/librime | 输入引擎 | BSD-3-Clause | `33e78140250125871856cdc5b42ddc6a5fcd3cd4` |
 | iDvel/rime-ice | 默认拼音方案与词库 | GPL-3.0 | `b681a34f788795034b3b288830f4861980bc8b0d` |
+| amzxyz/rime-wanxiang | 用户学习长度参数参考 | CC BY 4.0 | `wanxiang` 分支（2026-07-23） |
 
 librime Windows MSVC x64 运行时取自官方 `1.17.0` Release，资产名
 `rime-33e7814-Windows-msvc-x64.7z`，SHA-256 为

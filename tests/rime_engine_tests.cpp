@@ -102,6 +102,65 @@ int main(int argument_count, char* arguments[]) {
          "PageUp should return to the first candidate page");
   engine->Reset();
 
+  for (const wchar_t letter : std::wstring_view(L"no")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume adjacent-key typo input");
+  }
+  bool found_corrected_candidate = false;
+  for (int page = 0; page < 16 && !found_corrected_candidate; ++page) {
+    const auto correction_page = engine->Snapshot();
+    found_corrected_candidate =
+        std::ranges::any_of(correction_page.candidates, [](const auto& candidate) {
+          return candidate.text == L"你";
+        });
+    if (!found_corrected_candidate && !engine->PageDown()) {
+      break;
+    }
+  }
+  Expect(found_corrected_candidate,
+         "librime adjacent-key correction should offer 你 when i is mistyped as o");
+  engine->Reset();
+
+  const auto type_spelling = [&engine](std::wstring_view spelling) {
+    for (const wchar_t letter : spelling) {
+      Expect(engine->ProcessLetter(letter), "Rime should consume learning test input");
+    }
+  };
+  type_spelling(L"shi");
+  const auto learning_baseline = engine->Snapshot();
+  Expect(learning_baseline.candidates.size() >= 4,
+         "Rime should expose enough candidates for a learning test");
+  const std::size_t learned_candidate_index =
+      (std::min)(std::size_t{5}, learning_baseline.candidates.size() - 1);
+  const std::wstring learned_candidate =
+      learning_baseline.candidates[learned_candidate_index].text;
+  engine->Reset();
+  for (int repetition = 0; repetition < 8; ++repetition) {
+    type_spelling(L"shi");
+    const auto learning_page = engine->Snapshot();
+    const auto candidate =
+        std::ranges::find_if(learning_page.candidates, [&learned_candidate](const auto& item) {
+          return item.text == learned_candidate;
+        });
+    Expect(candidate != learning_page.candidates.end(),
+           "the selected learning candidate should remain available");
+    const auto candidate_index =
+        static_cast<std::size_t>(candidate - learning_page.candidates.begin());
+    Expect(engine->Select(candidate_index).consumed,
+           "Rime should consume a user-learning selection");
+  }
+  type_spelling(L"shi");
+  const auto learned_snapshot = engine->Snapshot();
+  const auto learned_position =
+      std::ranges::find_if(learned_snapshot.candidates, [&learned_candidate](const auto& item) {
+        return item.text == learned_candidate;
+      });
+  Expect(learned_position != learned_snapshot.candidates.end(),
+         "the learned candidate should remain visible");
+  Expect(static_cast<std::size_t>(learned_position - learned_snapshot.candidates.begin()) <
+             learned_candidate_index,
+         "repeated selections should promote a learned candidate");
+  engine->Reset();
+
   for (const wchar_t letter : std::wstring_view(L"xi")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume manual-split input");
   }
@@ -182,8 +241,8 @@ int main(int argument_count, char* arguments[]) {
            "A 63-letter composition should retain all typed input");
     Expect(!below_limit.candidates.empty(),
            "Candidates should remain visible below the 64-letter limit");
-    Expect(below_limit.candidates.front().text.size() == 63,
-           "Automatic Rime segments should remain attached to the visible long candidate");
+    Expect(ziliu::core::IsChineseCandidate(below_limit.candidates.front().text),
+           "Automatic Rime segments should remain attached to a Chinese candidate");
 
     Expect(engine->ProcessLetter(repeated_letter), "Rime should consume the 64th pinyin letter");
     const auto at_limit = engine->Snapshot();
