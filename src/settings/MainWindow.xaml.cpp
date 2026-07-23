@@ -27,6 +27,27 @@
 namespace winrt::ZiliuSettings::implementation {
 namespace {
 
+HWND g_quick_menu_window = nullptr;
+HHOOK g_quick_menu_mouse_hook = nullptr;
+bool g_quick_menu_outside_click_armed = false;
+
+LRESULT CALLBACK QuickMenuMouseHookProcedure(int code, WPARAM wparam, LPARAM lparam) {
+  const bool is_mouse_button_down =
+      wparam == WM_LBUTTONDOWN || wparam == WM_RBUTTONDOWN || wparam == WM_MBUTTONDOWN ||
+      wparam == WM_XBUTTONDOWN;
+  if (code == HC_ACTION && is_mouse_button_down && g_quick_menu_outside_click_armed &&
+      g_quick_menu_window != nullptr) {
+    const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(lparam);
+    RECT window_rectangle{};
+    if (mouse != nullptr && GetWindowRect(g_quick_menu_window, &window_rectangle) &&
+        !PtInRect(&window_rectangle, mouse->pt)) {
+      g_quick_menu_outside_click_armed = false;
+      static_cast<void>(PostMessageW(g_quick_menu_window, WM_CLOSE, 0, 0));
+    }
+  }
+  return CallNextHookEx(g_quick_menu_mouse_hook, code, wparam, lparam);
+}
+
 struct LaunchOptions {
   bool quick_menu = false;
   int anchor_x = 0;
@@ -303,12 +324,26 @@ MainWindow::MainWindow() {
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
   if (options.quick_menu) {
+    Microsoft::UI::Xaml::Window window = *this;
+    winrt::check_hresult(window.as<::IWindowNative>()->get_WindowHandle(&g_quick_menu_window));
+    g_quick_menu_outside_click_armed = false;
+    g_quick_menu_mouse_hook =
+        SetWindowsHookExW(WH_MOUSE_LL, QuickMenuMouseHookProcedure, GetModuleHandleW(nullptr), 0);
+    Closed([](winrt::Windows::Foundation::IInspectable const&,
+              Microsoft::UI::Xaml::WindowEventArgs const&) {
+      g_quick_menu_outside_click_armed = false;
+      g_quick_menu_window = nullptr;
+      if (g_quick_menu_mouse_hook != nullptr) {
+        UnhookWindowsHookEx(g_quick_menu_mouse_hook);
+        g_quick_menu_mouse_hook = nullptr;
+      }
+    });
     quick_menu_close_arm_timer_ =
         Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().CreateTimer();
-    quick_menu_close_arm_timer_.Interval(std::chrono::milliseconds(400));
+    quick_menu_close_arm_timer_.Interval(std::chrono::milliseconds(600));
     quick_menu_close_arm_timer_.IsRepeating(false);
     quick_menu_close_arm_timer_.Tick([this](auto const&, auto const&) {
-      quick_menu_close_armed_ = true;
+      g_quick_menu_outside_click_armed = true;
       quick_menu_close_arm_timer_ = nullptr;
     });
     quick_menu_close_arm_timer_.Start();
@@ -316,12 +351,9 @@ MainWindow::MainWindow() {
         [this](winrt::Windows::Foundation::IInspectable const&,
                Microsoft::UI::Xaml::WindowActivatedEventArgs const& args) {
           const auto activation_state = args.WindowActivationState();
-          if (activation_state ==
-              Microsoft::UI::Xaml::WindowActivationState::Deactivated) {
-            if (quick_menu_close_armed_) {
-              Close();
-            }
-          } else if (!quick_menu_animation_started_) {
+          if (activation_state !=
+                  Microsoft::UI::Xaml::WindowActivationState::Deactivated &&
+              !quick_menu_animation_started_) {
             quick_menu_animation_started_ = true;
             PlayQuickMenuOpenAnimation();
           }
