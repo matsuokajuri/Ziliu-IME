@@ -131,9 +131,6 @@ MainWindow::MainWindow() {
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     QuickMenuRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
     InitializeQuickMenuControls();
-    QuickMenuRoot().Loaded(
-        [this](winrt::Windows::Foundation::IInspectable const&,
-               Microsoft::UI::Xaml::RoutedEventArgs const&) { PlayQuickMenuOpenAnimation(); });
   } else {
     Title(L"字流 Ziliu 设置");
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
@@ -439,25 +436,6 @@ void MainWindow::InitializeQuickMenuControls() {
         ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         Close();
       });
-}
-
-void MainWindow::PlayQuickMenuOpenAnimation() {
-  try {
-    const auto resource =
-        RootGrid().Resources().Lookup(winrt::box_value(L"QuickMenuOpenStoryboard"));
-    const auto storyboard =
-        resource.try_as<Microsoft::UI::Xaml::Media::Animation::Storyboard>();
-    if (storyboard != nullptr) {
-      storyboard.Begin();
-      return;
-    }
-  } catch (winrt::hresult_error const&) {
-    // A missing animation resource must never leave the quick menu invisible.
-  }
-  QuickMenuCard().Opacity(1.0);
-  QuickMenuTransform().ScaleX(1.0);
-  QuickMenuTransform().ScaleY(1.0);
-  QuickMenuTransform().TranslateY(0.0);
 }
 
 void MainWindow::SaveFromControls() {

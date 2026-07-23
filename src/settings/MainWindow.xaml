@@ -46,48 +46,6 @@
                 <Setter Property="Padding" Value="36,28,36,40" />
                 <Setter Property="HorizontalAlignment" Value="Center" />
             </Style>
-            <Storyboard x:Key="QuickMenuOpenStoryboard">
-                <DoubleAnimation
-                    Storyboard.TargetName="QuickMenuCard"
-                    Storyboard.TargetProperty="Opacity"
-                    From="0"
-                    To="1"
-                    Duration="0:0:0.14">
-                    <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                    </DoubleAnimation.EasingFunction>
-                </DoubleAnimation>
-                <DoubleAnimation
-                    Storyboard.TargetName="QuickMenuTransform"
-                    Storyboard.TargetProperty="ScaleX"
-                    From="0.965"
-                    To="1"
-                    Duration="0:0:0.18">
-                    <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                    </DoubleAnimation.EasingFunction>
-                </DoubleAnimation>
-                <DoubleAnimation
-                    Storyboard.TargetName="QuickMenuTransform"
-                    Storyboard.TargetProperty="ScaleY"
-                    From="0.965"
-                    To="1"
-                    Duration="0:0:0.18">
-                    <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                    </DoubleAnimation.EasingFunction>
-                </DoubleAnimation>
-                <DoubleAnimation
-                    Storyboard.TargetName="QuickMenuTransform"
-                    Storyboard.TargetProperty="TranslateY"
-                    From="8"
-                    To="0"
-                    Duration="0:0:0.18">
-                    <DoubleAnimation.EasingFunction>
-                        <CubicEase EasingMode="EaseOut" />
-                    </DoubleAnimation.EasingFunction>
-                </DoubleAnimation>
-            </Storyboard>
         </Grid.Resources>
 
         <Grid x:Name="SettingsRoot">
@@ -294,21 +252,19 @@
 
         <Grid x:Name="QuickMenuRoot" Visibility="Collapsed">
             <Border
-                x:Name="QuickMenuCard"
                 Padding="18"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
-                CornerRadius="10"
-                Opacity="0"
-                RenderTransformOrigin="0.5,1">
-                <Border.RenderTransform>
-                    <CompositeTransform
-                        x:Name="QuickMenuTransform"
-                        ScaleX="0.965"
-                        ScaleY="0.965"
-                        TranslateY="8" />
-                </Border.RenderTransform>
+                CornerRadius="10">
+                <Border.Transitions>
+                    <TransitionCollection>
+                        <EntranceThemeTransition
+                            FromHorizontalOffset="0"
+                            FromVerticalOffset="8"
+                            IsStaggeringEnabled="False" />
+                    </TransitionCollection>
+                </Border.Transitions>
                 <StackPanel Spacing="14">
                     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border Width="38" Height="38" Background="{ThemeResource AccentFillColorDefaultBrush}" CornerRadius="9"><FontIcon FontSize="19" Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" Glyph="&#xE765;"/></Border><StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"><TextBlock Text="字流 Ziliu" Style="{StaticResource ZiliuSubtitleStyle}"/><TextBlock Text="左键切换中英文 · 右键打开菜单" Style="{StaticResource ZiliuCaptionStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel></Grid>
                     <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12"><Grid ColumnSpacing="20"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel Spacing="2" VerticalAlignment="Center"><TextBlock Text="简繁转换" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="切换候选词的简体或繁体输出" Style="{StaticResource ZiliuCaptionStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/></StackPanel><ToggleSwitch x:Name="CharacterSetToggle" Grid.Column="1" MinWidth="116" OnContent="繁体" OffContent="简体" VerticalAlignment="Center"/></Grid></Border>
