@@ -9,10 +9,21 @@
 #include <array>
 #include <cstdint>
 #include <cwchar>
+#include <mutex>
+#include <new>
 #include <string>
 
 namespace ziliu::tsf {
 namespace {
+
+constexpr wchar_t kQuickMenuDispatchWindowClass[] =
+    L"Ziliu.LanguageBarButton.QuickMenuDispatch.v1";
+constexpr UINT kOpenQuickMenuMessage = WM_APP + 1;
+
+struct QuickMenuRequest {
+  LONG x = 0;
+  LONG y = 0;
+};
 
 HICON CreateModeIcon(bool chinese_mode) {
   constexpr int size = 32;
@@ -85,9 +96,13 @@ LanguageBarButton::LanguageBarButton(std::wstring settings_executable,
     : settings_executable_(std::move(settings_executable)),
       toggle_input_mode_(std::move(toggle_input_mode)) {
   AddModuleReference();
+  static_cast<void>(CreateQuickMenuDispatchWindow());
 }
 
 LanguageBarButton::~LanguageBarButton() {
+  if (quick_menu_dispatch_window_ != nullptr) {
+    DestroyWindow(quick_menu_dispatch_window_);
+  }
   if (sink_ != nullptr) {
     sink_->Release();
   }
@@ -173,7 +188,56 @@ STDMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT point, const REC
   }
   const LONG x = area != nullptr ? area->left + (area->right - area->left) / 2 : point.x;
   const LONG y = area != nullptr ? area->top : point.y;
-  return OpenQuickMenu(x, y);
+  return ScheduleQuickMenu(x, y);
+}
+
+bool LanguageBarButton::CreateQuickMenuDispatchWindow() {
+  static std::once_flag registration_once;
+  static bool class_registered = false;
+  std::call_once(registration_once, [] {
+    WNDCLASSW window_class{};
+    window_class.lpfnWndProc = QuickMenuDispatchWindowProcedure;
+    window_class.hInstance = ModuleInstance();
+    window_class.lpszClassName = kQuickMenuDispatchWindowClass;
+    class_registered = RegisterClassW(&window_class) != 0 ||
+                       GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+  });
+  if (!class_registered) {
+    return false;
+  }
+
+  quick_menu_dispatch_window_ =
+      CreateWindowExW(0, kQuickMenuDispatchWindowClass, L"", 0, 0, 0, 0, 0,
+                      HWND_MESSAGE, nullptr, ModuleInstance(), this);
+  return quick_menu_dispatch_window_ != nullptr;
+}
+
+HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
+  if (settings_executable_.empty()) {
+    return S_OK;
+  }
+  const ULONGLONG now = GetTickCount64();
+  if (last_menu_request_tick_ != 0 && now - last_menu_request_tick_ < 100) {
+    return S_OK;
+  }
+  last_menu_request_tick_ = now;
+
+  if (quick_menu_dispatch_window_ == nullptr) {
+    return OpenQuickMenu(x, y);
+  }
+  auto* request = new (std::nothrow) QuickMenuRequest{x, y};
+  if (request == nullptr) {
+    return E_OUTOFMEMORY;
+  }
+  AddRef();
+  if (!PostMessageW(quick_menu_dispatch_window_, kOpenQuickMenuMessage, 0,
+                    reinterpret_cast<LPARAM>(request))) {
+    const HRESULT post_result = HRESULT_FROM_WIN32(GetLastError());
+    delete request;
+    Release();
+    return post_result;
+  }
+  return S_OK;
 }
 
 HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
@@ -195,12 +259,39 @@ STDMETHODIMP LanguageBarButton::InitMenu(ITfMenu* menu) {
   if (!GetCursorPos(&cursor)) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
-  return OpenQuickMenu(cursor.x, cursor.y);
+  return ScheduleQuickMenu(cursor.x, cursor.y);
 }
 
 STDMETHODIMP LanguageBarButton::OnMenuSelect(UINT identifier) {
   static_cast<void>(identifier);
   return S_OK;
+}
+
+LRESULT CALLBACK LanguageBarButton::QuickMenuDispatchWindowProcedure(
+    HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_NCCREATE) {
+    const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
+    auto* self = static_cast<LanguageBarButton*>(create->lpCreateParams);
+    SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+    self->quick_menu_dispatch_window_ = window;
+  }
+
+  auto* self = reinterpret_cast<LanguageBarButton*>(
+      GetWindowLongPtrW(window, GWLP_USERDATA));
+  if (message == kOpenQuickMenuMessage && self != nullptr) {
+    auto* request = reinterpret_cast<QuickMenuRequest*>(lparam);
+    if (request != nullptr) {
+      static_cast<void>(self->OpenQuickMenu(request->x, request->y));
+      delete request;
+    }
+    self->Release();
+    return 0;
+  }
+  if (message == WM_NCDESTROY && self != nullptr) {
+    self->quick_menu_dispatch_window_ = nullptr;
+    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
 }
 
 STDMETHODIMP LanguageBarButton::GetIcon(HICON* icon) {

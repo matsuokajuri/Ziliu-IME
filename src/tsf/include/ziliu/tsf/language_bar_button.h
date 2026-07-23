@@ -40,12 +40,18 @@ class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
  private:
   ~LanguageBarButton();
 
+  bool CreateQuickMenuDispatchWindow();
+  HRESULT ScheduleQuickMenu(LONG x, LONG y);
   HRESULT OpenQuickMenu(LONG x, LONG y);
+  static LRESULT CALLBACK QuickMenuDispatchWindowProcedure(HWND window, UINT message,
+                                                           WPARAM wparam, LPARAM lparam);
   void NotifyUpdate(DWORD flags) const;
 
   std::atomic<ULONG> reference_count_{1};
   std::wstring settings_executable_;
   std::function<HRESULT()> toggle_input_mode_;
+  HWND quick_menu_dispatch_window_ = nullptr;
+  ULONGLONG last_menu_request_tick_ = 0;
   ITfLangBarItemSink* sink_ = nullptr;
   bool chinese_mode_ = true;
   bool visible_ = true;
