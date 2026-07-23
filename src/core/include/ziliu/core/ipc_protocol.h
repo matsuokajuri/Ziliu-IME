@@ -10,9 +10,12 @@
 
 namespace ziliu::core::ipc {
 
-inline constexpr std::uint16_t kProtocolVersion = 3;
+inline constexpr std::uint16_t kProtocolVersion = 4;
 inline constexpr std::size_t kMaximumMessageBytes = 64U * 1024U;
-inline constexpr std::size_t kMaximumCandidates = 9;
+inline constexpr std::size_t kMaximumCandidatesPerPage = 9;
+inline constexpr std::size_t kMaximumCandidateWindowPages = 5;
+inline constexpr std::size_t kMaximumCandidates =
+    kMaximumCandidatesPerPage * kMaximumCandidateWindowPages;
 
 enum class Command : std::uint16_t {
   kPing = 1,
@@ -28,6 +31,7 @@ enum class Command : std::uint16_t {
   kSetCandidatePageSize = 11,
   kSetChineseCandidatesOnly = 12,
   kInputSeparator = 13,
+  kSetCandidateWindowPageCount = 14,
 };
 
 enum class Status : std::uint16_t {

@@ -113,8 +113,17 @@ struct CandidatePageSlice {
   bool operator==(const CandidatePageSlice&) const = default;
 };
 
+struct CandidatePageWindow {
+  CandidatePageSlice active;
+  CandidatePageSlice visible;
+  std::size_t row_count = 0;
+
+  bool operator==(const CandidatePageWindow&) const = default;
+};
+
 inline constexpr std::size_t kMinimumCandidateCount = 3;
 inline constexpr std::size_t kMaximumCandidateCount = 9;
+inline constexpr std::size_t kCandidateWindowPageCount = 5;
 inline constexpr std::size_t kMinimumCandidateFontSize = 14;
 inline constexpr std::size_t kMaximumCandidateFontSize = 24;
 
@@ -125,5 +134,9 @@ inline constexpr std::size_t kMaximumCandidateFontSize = 24;
 [[nodiscard]] CandidatePageSlice MakeCandidatePageSlice(std::size_t candidate_total,
                                                         std::size_t page_size,
                                                         std::size_t requested_offset);
+[[nodiscard]] CandidatePageWindow MakeCandidatePageWindow(std::size_t candidate_total,
+                                                          std::size_t page_size,
+                                                          std::size_t highlighted_index,
+                                                          bool expanded);
 
 }  // namespace ziliu::core

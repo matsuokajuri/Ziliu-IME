@@ -115,13 +115,23 @@ int main() {
   Expect(filter_disabled.consumed && filter_disabled.snapshot.candidates.size() == 1 &&
              filter_disabled.snapshot.candidates.front().text == L"z",
          "session host should apply Chinese-only filtering changes");
+  const auto window_pages = host.Handle(
+      {4, created.session_id,
+       ziliu::core::ipc::Command::kSetCandidateWindowPageCount, 5});
+  Expect(window_pages.consumed,
+         "session host should accept a five-page candidate window");
+  const auto invalid_window_pages = host.Handle(
+      {5, created.session_id,
+       ziliu::core::ipc::Command::kSetCandidateWindowPageCount, 6});
+  Expect(invalid_window_pages.status == ziliu::core::ipc::Status::kInvalidRequest,
+         "session host should reject candidate windows larger than five pages");
   const auto separator = host.Handle(
-      {4, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0});
+      {6, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0});
   Expect(separator.consumed && separator.snapshot.preedit == L"z'",
          "session host should route a manual pinyin separator");
   std::vector<std::byte> request_bytes;
   const ziliu::core::ipc::Request separator_request{
-      5, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0};
+      7, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0};
   Expect(ziliu::core::ipc::EncodeRequest(separator_request, &request_bytes),
          "separator request should encode");
   ziliu::core::ipc::Request decoded_request;
@@ -256,6 +266,16 @@ int main() {
              ziliu::core::MakeCandidatePageSlice(9, 5, 99) ==
                  ziliu::core::CandidatePageSlice{5, 4},
          "candidate pagination should clamp to a stable visible slice");
+  Expect(ziliu::core::MakeCandidatePageWindow(32, 7, 9, false) ==
+             ziliu::core::CandidatePageWindow{
+                 {7, 7}, {7, 7}, 1} &&
+             ziliu::core::MakeCandidatePageWindow(32, 7, 9, true) ==
+                 ziliu::core::CandidatePageWindow{
+                     {7, 7}, {0, 32}, 5} &&
+             ziliu::core::MakeCandidatePageWindow(8, 7, 7, true) ==
+                 ziliu::core::CandidatePageWindow{
+                     {7, 1}, {0, 8}, 2},
+         "candidate page windows should collapse to the active row and expand to five rows");
 
   std::cout << "ziliu_core_tests: OK\n";
   return EXIT_SUCCESS;

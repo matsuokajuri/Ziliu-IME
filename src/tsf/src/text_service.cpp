@@ -7,6 +7,7 @@
 #include "ziliu/tsf/module_state.h"
 #include "ziliu/ui/candidate_window.h"
 
+#include <shellapi.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -478,6 +479,24 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
       state_->language_bar_button = language_bar_button;
       state_->language_bar_button->SetChineseMode(state_->chinese_mode);
       static_cast<void>(state_->language_bar_button->Show(TRUE));
+      state_->candidate_window.SetQuickMenuAction([this](POINT anchor) {
+        if (state_->language_bar_button != nullptr) {
+          static_cast<void>(
+              state_->language_bar_button->ShowQuickMenu(anchor.x, anchor.y));
+          return;
+        }
+        const auto settings_path = SettingsExecutablePath();
+        if (!settings_path.has_value()) {
+          return;
+        }
+        const std::wstring arguments =
+            L"--quick-menu --x " + std::to_wstring(anchor.x) +
+            L" --y " + std::to_wstring(anchor.y);
+        static_cast<void>(ShellExecuteW(nullptr, L"open", settings_path->c_str(),
+                                        arguments.c_str(),
+                                        settings_path->parent_path().c_str(),
+                                        SW_SHOWNORMAL));
+      });
     } else {
       if (language_bar_button != nullptr) {
         language_bar_button->Release();
@@ -577,6 +596,13 @@ bool TextService::EnsureSession() {
       state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
       static_cast<std::uint32_t>(state_->settings.candidate_count)};
   static_cast<void>(state_->client.Exchange(page_size_request));
+  const core::ipc::Request page_window_request{
+      state_->request_id++, state_->session_id,
+      core::ipc::Command::kSetCandidateWindowPageCount,
+      state_->settings.candidate_page_mode == core::CandidatePageMode::kMultiLine
+          ? static_cast<std::uint32_t>(core::kCandidateWindowPageCount)
+          : 1U};
+  static_cast<void>(state_->client.Exchange(page_window_request));
   const core::ipc::Request candidate_filter_request{
       state_->request_id++, state_->session_id,
       core::ipc::Command::kSetChineseCandidatesOnly,
@@ -598,6 +624,8 @@ void TextService::RefreshSettings(bool force) {
       const bool was_traditional =
           state_->settings.character_set == core::CharacterSet::kTraditional;
       const std::size_t previous_candidate_count = state_->settings.candidate_count;
+      const core::CandidatePageMode previous_page_mode =
+          state_->settings.candidate_page_mode;
       const bool previous_chinese_candidates_only =
           state_->settings.chinese_candidates_only;
       state_->settings = {};
@@ -614,6 +642,16 @@ void TextService::RefreshSettings(bool force) {
         const core::ipc::Request request{
             state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
             static_cast<std::uint32_t>(state_->settings.candidate_count)};
+        static_cast<void>(state_->client.Exchange(request));
+      }
+      if (state_->session_id != 0 &&
+          previous_page_mode != state_->settings.candidate_page_mode) {
+        const core::ipc::Request request{
+            state_->request_id++, state_->session_id,
+            core::ipc::Command::kSetCandidateWindowPageCount,
+            state_->settings.candidate_page_mode == core::CandidatePageMode::kMultiLine
+                ? static_cast<std::uint32_t>(core::kCandidateWindowPageCount)
+                : 1U};
         static_cast<void>(state_->client.Exchange(request));
       }
       if (state_->session_id != 0 &&
@@ -637,6 +675,8 @@ void TextService::RefreshSettings(bool force) {
   }
   const core::CharacterSet previous_character_set = state_->settings.character_set;
   const std::size_t previous_candidate_count = state_->settings.candidate_count;
+  const core::CandidatePageMode previous_page_mode =
+      state_->settings.candidate_page_mode;
   const bool previous_chinese_candidates_only =
       state_->settings.chinese_candidates_only;
   state_->settings = core::ParseSettings(*contents);
@@ -654,6 +694,16 @@ void TextService::RefreshSettings(bool force) {
     const core::ipc::Request request{
         state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
         static_cast<std::uint32_t>(state_->settings.candidate_count)};
+    static_cast<void>(state_->client.Exchange(request));
+  }
+  if (state_->session_id != 0 &&
+      previous_page_mode != state_->settings.candidate_page_mode) {
+    const core::ipc::Request request{
+        state_->request_id++, state_->session_id,
+        core::ipc::Command::kSetCandidateWindowPageCount,
+        state_->settings.candidate_page_mode == core::CandidatePageMode::kMultiLine
+            ? static_cast<std::uint32_t>(core::kCandidateWindowPageCount)
+            : 1U};
     static_cast<void>(state_->client.Exchange(request));
   }
   if (state_->session_id != 0 &&
@@ -905,6 +955,11 @@ void TextService::ShowCandidateWindow() {
   if (state_->snapshot.empty()) {
     state_->candidate_window.Hide();
   } else if (state_->candidate_window.Create(state_->candidate_owner)) {
+    state_->candidate_page_offset =
+        core::MakeCandidatePageSlice(
+            state_->snapshot.candidates.size(), state_->settings.candidate_count,
+            state_->snapshot.highlighted_index)
+            .offset;
     state_->candidate_window.Show(state_->snapshot, state_->candidate_anchor, state_->settings,
                                   state_->candidate_page_offset);
   }
@@ -1055,39 +1110,14 @@ void TextService::ResetCompositionState() {
 
 HRESULT TextService::HandleCandidatePage(ITfContext* context, bool next, BOOL* eaten) {
   static_cast<void>(context);
-  const auto slice = core::MakeCandidatePageSlice(
-      state_->snapshot.candidates.size(), state_->settings.candidate_count,
-      state_->candidate_page_offset);
-  if (next && slice.offset + slice.count < state_->snapshot.candidates.size()) {
-    state_->candidate_page_offset = slice.offset + state_->settings.candidate_count;
-    ShowCandidateWindow();
-    *eaten = TRUE;
-    return S_OK;
-  }
-  if (!next && slice.offset != 0) {
-    state_->candidate_page_offset =
-        slice.offset > state_->settings.candidate_count
-            ? slice.offset - state_->settings.candidate_count
-            : 0;
-    ShowCandidateWindow();
-    *eaten = TRUE;
-    return S_OK;
-  }
-
   const core::ipc::Request request{
       state_->request_id++, state_->session_id,
       next ? core::ipc::Command::kPageDown : core::ipc::Command::kPageUp, 0};
   const auto response = state_->client.Exchange(request);
   if (response.has_value() && response->status == core::ipc::Status::kOk && response->consumed) {
     state_->snapshot = response->snapshot;
-    if (next) {
-      state_->candidate_page_offset = 0;
-    } else {
-      state_->candidate_page_offset = core::MakeCandidatePageSlice(
-                                          state_->snapshot.candidates.size(),
-                                          state_->settings.candidate_count,
-                                          state_->snapshot.candidates.size())
-                                          .offset;
+    if (state_->settings.candidate_page_mode == core::CandidatePageMode::kMultiLine) {
+      state_->candidate_window.SetExpanded(true);
     }
     ShowCandidateWindow();
   }
@@ -1151,11 +1181,11 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
         state_->snapshot.highlighted_index >= slice.offset &&
         state_->snapshot.highlighted_index < slice.offset + slice.count;
     value = static_cast<std::uint32_t>(highlight_is_visible
-                                           ? state_->snapshot.highlighted_index
-                                           : slice.offset);
+                                           ? state_->snapshot.highlighted_index - slice.offset
+                                           : 0);
   } else if (wparam >= L'1' && wparam <= L'9') {
     command = core::ipc::Command::kSelectCandidate;
-    value = static_cast<std::uint32_t>(slice.offset + static_cast<std::size_t>(wparam - L'1'));
+    value = static_cast<std::uint32_t>(wparam - L'1');
   } else {
     return S_OK;
   }
@@ -1187,10 +1217,7 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
   }
 
   state_->snapshot = response->snapshot;
-  if (command == core::ipc::Command::kInputLetter ||
-      command == core::ipc::Command::kBackspace || state_->snapshot.empty()) {
-    state_->candidate_page_offset = 0;
-  }
+  state_->candidate_window.SetExpanded(false);
   ShowCandidateWindow();
   *eaten = TRUE;
   return S_OK;

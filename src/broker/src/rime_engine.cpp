@@ -354,7 +354,14 @@ class RimeEngine final : public core::Engine {
 
   void SetCandidatePageSize(std::size_t page_size) override {
     ResetPaging();
-    candidate_page_size_ = std::clamp<std::size_t>(page_size, 1, core::ipc::kMaximumCandidates);
+    candidate_page_size_ =
+        std::clamp<std::size_t>(page_size, 1, core::ipc::kMaximumCandidatesPerPage);
+  }
+
+  void SetCandidateWindowPageCount(std::size_t page_count) override {
+    ResetPaging();
+    candidate_window_page_count_ =
+        std::clamp<std::size_t>(page_count, 1, core::ipc::kMaximumCandidateWindowPages);
   }
 
   void SetTraditional(bool enabled) override {
@@ -512,10 +519,20 @@ class RimeEngine final : public core::Engine {
     api_->free_context(&context);
 
     if (has_menu) {
+      const std::size_t current_page = previous_page_offsets_.size();
+      const std::size_t first_page =
+          (current_page / candidate_window_page_count_) * candidate_window_page_count_;
+      int first_candidate_offset = candidate_offset_;
+      if (first_page < current_page && first_page < previous_page_offsets_.size()) {
+        first_candidate_offset = previous_page_offsets_[first_page];
+      }
+      const std::size_t active_page = current_page - first_page;
+      const std::size_t maximum_candidates =
+          candidate_page_size_ * candidate_window_page_count_;
       RimeCandidateListIterator iterator{};
-      if (api_->candidate_list_from_index(session_id_, &iterator, candidate_offset_)) {
-        snapshot.candidates.reserve(candidate_page_size_);
-        while (snapshot.candidates.size() < candidate_page_size_ &&
+      if (api_->candidate_list_from_index(session_id_, &iterator, first_candidate_offset)) {
+        snapshot.candidates.reserve(maximum_candidates);
+        while (snapshot.candidates.size() < maximum_candidates &&
                api_->candidate_list_next(&iterator)) {
           const auto& candidate = iterator.candidate;
           const std::wstring candidate_text = FromUtf8(candidate.text);
@@ -526,9 +543,13 @@ class RimeEngine final : public core::Engine {
           snapshot.candidates.push_back(core::Candidate{
               candidate_text, FromUtf8(candidate.comment),
               1.0 - static_cast<double>(visible_index) /
-                        static_cast<double>(candidate_page_size_ + 1)});
+                        static_cast<double>(maximum_candidates + 1)});
         }
         api_->candidate_list_end(&iterator);
+      }
+      if (!snapshot.candidates.empty()) {
+        snapshot.highlighted_index =
+            std::min(active_page * candidate_page_size_, snapshot.candidates.size() - 1);
       }
     }
     return snapshot;
@@ -595,7 +616,8 @@ class RimeEngine final : public core::Engine {
   RimeApi* api_;
   RimeSessionId session_id_;
   int candidate_offset_ = 0;
-  std::size_t candidate_page_size_ = core::ipc::kMaximumCandidates;
+  std::size_t candidate_page_size_ = core::ipc::kMaximumCandidatesPerPage;
+  std::size_t candidate_window_page_count_ = 1;
   bool chinese_candidates_only_ = true;
   std::wstring raw_keys_;
   std::wstring automatic_commit_text_prefix_;

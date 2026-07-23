@@ -35,6 +35,10 @@ class DelayedEngine final : public ziliu::core::Engine {
     engine_->SetCandidatePageSize(page_size);
   }
 
+  void SetCandidateWindowPageCount(std::size_t page_count) override {
+    engine_->SetCandidateWindowPageCount(page_count);
+  }
+
   void SetTraditional(bool enabled) override { engine_->SetTraditional(enabled); }
 
   void SetChineseCandidatesOnly(bool enabled) override {

@@ -68,6 +68,10 @@ class StubEngine final : public Engine {
     static_cast<void>(page_size);
   }
 
+  void SetCandidateWindowPageCount(std::size_t page_count) override {
+    static_cast<void>(page_count);
+  }
+
   void SetTraditional(bool enabled) override { traditional_ = enabled; }
 
   void SetChineseCandidatesOnly(bool enabled) override {

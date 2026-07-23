@@ -199,6 +199,7 @@ bool IsKnownCommand(Command command) {
     case Command::kSetCandidatePageSize:
     case Command::kSetChineseCandidatesOnly:
     case Command::kInputSeparator:
+    case Command::kSetCandidateWindowPageCount:
       return true;
   }
   return false;

@@ -376,4 +376,24 @@ CandidatePageSlice MakeCandidatePageSlice(std::size_t candidate_total, std::size
   return CandidatePageSlice{offset, std::min(page_size, candidate_total - offset)};
 }
 
+CandidatePageWindow MakeCandidatePageWindow(std::size_t candidate_total, std::size_t page_size,
+                                            std::size_t highlighted_index, bool expanded) {
+  const CandidatePageSlice active =
+      MakeCandidatePageSlice(candidate_total, page_size, highlighted_index);
+  if (active.count == 0) {
+    return {};
+  }
+  if (!expanded) {
+    return CandidatePageWindow{active, active, 1};
+  }
+
+  page_size = std::clamp(page_size, kMinimumCandidateCount, kMaximumCandidateCount);
+  const std::size_t maximum_visible =
+      std::min(candidate_total, page_size * kCandidateWindowPageCount);
+  const std::size_t row_count =
+      (maximum_visible + page_size - 1) / page_size;
+  return CandidatePageWindow{
+      active, CandidatePageSlice{0, maximum_visible}, row_count};
+}
+
 }  // namespace ziliu::core

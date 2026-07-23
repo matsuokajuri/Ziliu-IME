@@ -71,11 +71,19 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
       response.consumed = engine.PageDown();
       break;
     case ipc::Command::kSetCandidatePageSize:
-      if (request.value == 0 || request.value > ipc::kMaximumCandidates) {
+      if (request.value == 0 || request.value > ipc::kMaximumCandidatesPerPage) {
         response.status = ipc::Status::kInvalidRequest;
         return response;
       }
       engine.SetCandidatePageSize(request.value);
+      response.consumed = true;
+      break;
+    case ipc::Command::kSetCandidateWindowPageCount:
+      if (request.value == 0 || request.value > ipc::kMaximumCandidateWindowPages) {
+        response.status = ipc::Status::kInvalidRequest;
+        return response;
+      }
+      engine.SetCandidateWindowPageCount(request.value);
       response.consumed = true;
       break;
     case ipc::Command::kSetTraditional:

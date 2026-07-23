@@ -36,6 +36,7 @@ class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
   STDMETHODIMP UnadviseSink(DWORD cookie) override;
 
   void SetChineseMode(bool chinese_mode);
+  HRESULT ShowQuickMenu(LONG x, LONG y);
 
  private:
   ~LanguageBarButton();

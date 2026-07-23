@@ -191,6 +191,10 @@ HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
   return OpenQuickMenu(x, y);
 }
 
+HRESULT LanguageBarButton::ShowQuickMenu(LONG x, LONG y) {
+  return ScheduleQuickMenu(x, y);
+}
+
 HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
   if (settings_executable_.empty()) {
     return S_OK;

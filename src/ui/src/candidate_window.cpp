@@ -2,6 +2,7 @@
 
 #include <d2d1helper.h>
 #include <dwmapi.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <numeric>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace ziliu::ui {
 namespace {
@@ -26,6 +28,8 @@ constexpr float kHorizontalPreeditHeight = 34.0F;
 constexpr float kHorizontalCandidateHeight = 36.0F;
 constexpr float kHorizontalWindowHeight = 78.0F;
 constexpr float kHorizontalPreeditOnlyHeight = 42.0F;
+constexpr float kHorizontalExpandButtonWidth = 40.0F;
+constexpr float kHorizontalMenuButtonWidth = 48.0F;
 constexpr float kCornerRadius = 10.0F;
 
 int ToPixels(float value, float scale) {
@@ -196,6 +200,7 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       settings_.candidate_scale_with_text != settings.candidate_scale_with_text;
   snapshot_ = snapshot;
   settings_ = settings;
+  text_rectangle_ = text_rectangle;
   dark_theme_ = resolved_dark_theme;
   dark_theme_initialized_ = true;
   const float effective_font_size = static_cast<float>(
@@ -209,10 +214,19 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   if (appearance_changed) {
     DiscardDeviceResources();
   }
-  const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
-                                                  settings_.candidate_count, page_offset);
-  page_offset_ = slice.offset;
   const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+  const auto active_slice = core::MakeCandidatePageSlice(
+      snapshot_.candidates.size(), settings_.candidate_count, page_offset);
+  page_offset_ = active_slice.offset;
+  can_expand_ =
+      horizontal && settings_.candidate_page_mode == core::CandidatePageMode::kMultiLine &&
+      snapshot_.candidates.size() > active_slice.count;
+  if (!can_expand_) {
+    expanded_ = false;
+  }
+  const auto page_window = core::MakeCandidatePageWindow(
+      snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
+  const auto slice = page_window.visible;
   const UINT dpi = std::max(GetDpiForWindow(window_), static_cast<UINT>(USER_DEFAULT_SCREEN_DPI));
   dpi_scale_ = static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
   if (render_target_ != nullptr) {
@@ -241,16 +255,28 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   const float desired_preedit_window_width =
       measured_preedit_width + 2.0F * kHorizontalPadding * layout_scale_;
 
+  candidate_indices_.clear();
   candidate_widths_.clear();
   candidate_lefts_.clear();
   candidate_tops_.clear();
-  std::size_t horizontal_rows = slice.count == 0 ? 0 : 1;
+  expand_button_bounds_ = {};
+  menu_button_bounds_ = {};
+  std::size_t horizontal_rows = horizontal ? page_window.row_count : 0;
   if (horizontal) {
+    candidate_indices_.reserve(slice.count);
+    for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
+      candidate_indices_.push_back(slice.offset + visible_index);
+    }
     if (has_device_resources) {
       for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
         const std::size_t candidate_index = slice.offset + visible_index;
-        const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
-                                   snapshot_.candidates[candidate_index].text;
+        const bool active = candidate_index >= page_window.active.offset &&
+                            candidate_index < page_window.active.offset + page_window.active.count;
+        const std::wstring label =
+            active
+                ? std::to_wstring(candidate_index - page_window.active.offset + 1) + L"  " +
+                      snapshot_.candidates[candidate_index].text
+                : snapshot_.candidates[candidate_index].text;
         const float measured_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
                              maximum_window_width, kHorizontalCandidateHeight * layout_scale_);
@@ -265,11 +291,10 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
                                kMinimumHorizontalCandidateWidth * layout_scale_);
     }
     const float outer_width = 16.0F * layout_scale_;
-    const bool multiline = settings_.candidate_page_mode == core::CandidatePageMode::kMultiLine &&
-                           candidate_widths_.size() > 1;
-    horizontal_rows = candidate_widths_.empty() ? 0 : (multiline ? 2 : 1);
-    const std::size_t columns =
-        multiline ? (candidate_widths_.size() + 1) / 2 : candidate_widths_.size();
+    const float action_width =
+        (kHorizontalMenuButtonWidth + (can_expand_ ? kHorizontalExpandButtonWidth : 0.0F)) *
+        layout_scale_;
+    const std::size_t columns = settings_.candidate_count;
     float widest_row = 0.0F;
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
       const std::size_t begin = row * columns;
@@ -279,15 +304,19 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       }
       std::vector<float> row_widths(candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin),
                                     candidate_widths_.begin() + static_cast<std::ptrdiff_t>(end));
-      FitCandidateWidths(&row_widths, maximum_window_width - outer_width,
-                         kMinimumHorizontalCandidateWidth * layout_scale_, row == 0);
+      const bool active_row =
+          begin < candidate_indices_.size() &&
+          candidate_indices_[begin] <= page_window.active.offset &&
+          page_window.active.offset <= candidate_indices_[end - 1];
+      FitCandidateWidths(&row_widths, maximum_window_width - outer_width - action_width,
+                         kMinimumHorizontalCandidateWidth * layout_scale_, active_row);
       std::copy(row_widths.begin(), row_widths.end(),
                 candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin));
       widest_row = std::max(
           widest_row, std::accumulate(row_widths.begin(), row_widths.end(), 0.0F));
     }
     window_width_ = std::clamp(
-        std::max(outer_width + widest_row, desired_preedit_window_width),
+        std::max(outer_width + widest_row + action_width, desired_preedit_window_width),
         std::min(kMinimumHorizontalWindowWidth * layout_scale_, maximum_window_width),
         maximum_window_width);
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
@@ -302,7 +331,22 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
         left += candidate_widths_[index];
       }
     }
+    const float button_top = (kHorizontalPreeditHeight + 4.0F) * layout_scale_;
+    const float button_bottom =
+        button_top + kHorizontalCandidateHeight * layout_scale_;
+    menu_button_bounds_ =
+        D2D1::RectF(window_width_ - kHorizontalMenuButtonWidth * layout_scale_, button_top,
+                    window_width_, button_bottom);
+    if (can_expand_) {
+      expand_button_bounds_ =
+          D2D1::RectF(menu_button_bounds_.left - kHorizontalExpandButtonWidth * layout_scale_,
+                      button_top, menu_button_bounds_.left, button_bottom);
+    }
   } else {
+    candidate_indices_.reserve(slice.count);
+    for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
+      candidate_indices_.push_back(slice.offset + visible_index);
+    }
     float desired_vertical_width =
         std::max(kVerticalWindowWidth * layout_scale_, desired_preedit_window_width);
     if (has_device_resources) {
@@ -351,10 +395,25 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   InvalidateRect(window_, nullptr, FALSE);
 }
 
+void CandidateWindow::SetExpanded(bool expanded) {
+  if (expanded_ == expanded) {
+    return;
+  }
+  expanded_ = expanded;
+  if (window_ != nullptr && !snapshot_.empty() && IsWindowVisible(window_)) {
+    Show(snapshot_, text_rectangle_, settings_, page_offset_);
+  }
+}
+
+void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
+  quick_menu_action_ = std::move(action);
+}
+
 void CandidateWindow::Hide() {
   if (window_ != nullptr) {
     ShowWindow(window_, SW_HIDE);
   }
+  expanded_ = false;
 }
 
 LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -391,6 +450,30 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                    suggested->right - suggested->left, suggested->bottom - suggested->top,
                    SWP_NOACTIVATE | SWP_NOZORDER);
       return 0;
+    }
+    case WM_LBUTTONUP: {
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      const auto contains = [x, y](const D2D1_RECT_F& bounds) {
+        return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
+      };
+      if (can_expand_ && contains(expand_button_bounds_)) {
+        SetExpanded(!expanded_);
+        return 0;
+      }
+      if (quick_menu_action_ && contains(menu_button_bounds_)) {
+        RECT window_rectangle{};
+        if (GetWindowRect(window_, &window_rectangle)) {
+          const POINT anchor{
+              window_rectangle.left +
+                  ToPixels((menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F,
+                           dpi_scale_),
+              window_rectangle.top + ToPixels(menu_button_bounds_.top, dpi_scale_)};
+          quick_menu_action_(anchor);
+        }
+        return 0;
+      }
+      return DefWindowProcW(window_, message, wparam, lparam);
     }
     case WM_ERASEBKGND:
       return 1;
@@ -488,8 +571,9 @@ void CandidateWindow::Paint() {
     render_target_->Clear(D2D1::ColorF(palette.candidate_background_color));
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
-    const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
-                                                    settings_.candidate_count, page_offset_);
+    const auto page_window = core::MakeCandidatePageWindow(
+        snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
+    const auto slice = page_window.visible;
     const float preedit_bottom =
         (horizontal ? kHorizontalPreeditHeight : kPreeditHeight) * layout_scale_;
     render_target_->DrawTextW(
@@ -529,8 +613,13 @@ void CandidateWindow::Paint() {
                                              accent_brush_.Get());
       }
 
-      const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
-                                 snapshot_.candidates[candidate_index].text;
+      const bool active = candidate_index >= page_window.active.offset &&
+                          candidate_index < page_window.active.offset + page_window.active.count;
+      const std::wstring label =
+          active
+              ? std::to_wstring(candidate_index - page_window.active.offset + 1) + L"  " +
+                    snapshot_.candidates[candidate_index].text
+              : snapshot_.candidates[candidate_index].text;
       const auto& annotation = snapshot_.candidates[candidate_index].annotation;
       const float vertical_annotation_left =
           annotation.empty()
@@ -557,6 +646,52 @@ void CandidateWindow::Paint() {
                         window_width_ - kHorizontalPadding * layout_scale_,
                         top + kCandidateHeight * layout_scale_),
             muted_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+      }
+    }
+
+    if (horizontal && slice.count != 0) {
+      const float action_left =
+          can_expand_ ? expand_button_bounds_.left : menu_button_bounds_.left;
+      render_target_->DrawLine(
+          D2D1::Point2F(action_left, menu_button_bounds_.top + 4.0F * layout_scale_),
+          D2D1::Point2F(action_left, menu_button_bounds_.bottom - 4.0F * layout_scale_),
+          muted_brush_.Get(), 0.5F);
+
+      if (can_expand_) {
+        const float center_x =
+            (expand_button_bounds_.left + expand_button_bounds_.right) / 2.0F;
+        const float center_y =
+            (expand_button_bounds_.top + expand_button_bounds_.bottom) / 2.0F;
+        const float direction = expanded_ ? -1.0F : 1.0F;
+        render_target_->DrawLine(
+            D2D1::Point2F(center_x - 6.0F * layout_scale_,
+                          center_y - direction * 3.0F * layout_scale_),
+            D2D1::Point2F(center_x, center_y + direction * 3.0F * layout_scale_),
+            text_brush_.Get(), 1.6F * layout_scale_);
+        render_target_->DrawLine(
+            D2D1::Point2F(center_x, center_y + direction * 3.0F * layout_scale_),
+            D2D1::Point2F(center_x + 6.0F * layout_scale_,
+                          center_y - direction * 3.0F * layout_scale_),
+            text_brush_.Get(), 1.6F * layout_scale_);
+        render_target_->DrawLine(
+            D2D1::Point2F(menu_button_bounds_.left,
+                          menu_button_bounds_.top + 4.0F * layout_scale_),
+            D2D1::Point2F(menu_button_bounds_.left,
+                          menu_button_bounds_.bottom - 4.0F * layout_scale_),
+            muted_brush_.Get(), 0.5F);
+      }
+
+      const float menu_center_x =
+          (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F;
+      const float menu_center_y =
+          (menu_button_bounds_.top + menu_button_bounds_.bottom) / 2.0F;
+      for (const float offset : {-6.0F, 0.0F, 6.0F}) {
+        render_target_->DrawLine(
+            D2D1::Point2F(menu_center_x - 10.0F * layout_scale_,
+                          menu_center_y + offset * layout_scale_),
+            D2D1::Point2F(menu_center_x + 10.0F * layout_scale_,
+                          menu_center_y + offset * layout_scale_),
+            text_brush_.Get(), 1.4F * layout_scale_);
       }
     }
 

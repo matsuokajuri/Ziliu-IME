@@ -784,18 +784,17 @@ void MainWindow::UpdateCandidatePreview() {
       };
 
   if (horizontal) {
-    const bool multiline =
+    const bool expandable =
         preview_settings.candidate_page_mode ==
-            ziliu::core::CandidatePageMode::kMultiLine &&
-        preview_settings.candidate_count > 1;
-    const std::size_t row_count = multiline ? 2 : 1;
-    const std::size_t column_count =
-        multiline ? (preview_settings.candidate_count + 1) / 2
-                  : preview_settings.candidate_count;
+        ziliu::core::CandidatePageMode::kMultiLine;
+    const std::size_t row_count = 1;
+    const std::size_t column_count = preview_settings.candidate_count;
     const double cell_width = 76.0 * layout_scale;
+    const double action_width = (expandable ? 88.0 : 48.0) * layout_scale;
     CandidatePreviewWindow().Width(std::max(
         280.0 * layout_scale,
-        16.0 * layout_scale + static_cast<double>(column_count) * cell_width));
+        16.0 * layout_scale + static_cast<double>(column_count) * cell_width +
+            action_width));
 
     Microsoft::UI::Xaml::Controls::StackPanel rows;
     rows.Margin(Microsoft::UI::Xaml::Thickness{
@@ -816,6 +815,25 @@ void MainWindow::UpdateCandidatePreview() {
             1.0 * layout_scale});
         row.Children().Append(cell);
       }
+      const auto append_action_button =
+          [&](std::wstring_view glyph, double width) {
+            Microsoft::UI::Xaml::Controls::Border button;
+            button.Width(width * layout_scale);
+            button.Height(36.0 * layout_scale);
+            button.BorderBrush(muted_brush);
+            button.BorderThickness(
+                Microsoft::UI::Xaml::Thickness{0.5, 0.0, 0.0, 0.0});
+            Microsoft::UI::Xaml::Controls::FontIcon icon;
+            icon.Glyph(winrt::hstring(glyph));
+            icon.FontSize(16.0 * layout_scale);
+            icon.Foreground(candidate_brush);
+            button.Child(icon);
+            row.Children().Append(button);
+          };
+      if (expandable) {
+        append_action_button(L"\uE70D", 40.0);
+      }
+      append_action_button(L"\uE700", 48.0);
       rows.Children().Append(row);
     }
     CandidatePreviewContent().Children().Append(rows);

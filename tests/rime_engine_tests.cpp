@@ -100,6 +100,17 @@ int main(int argument_count, char* arguments[]) {
   Expect(engine->PageUp(), "Rime should consume PageUp on the second page");
   Expect(candidate_texts(engine->Snapshot()) == candidate_texts(first_page),
          "PageUp should return to the first candidate page");
+  engine->SetCandidateWindowPageCount(5);
+  const auto expanded_first_page = engine->Snapshot();
+  Expect(expanded_first_page.candidates.size() > 14 &&
+             expanded_first_page.highlighted_index == 0,
+         "multi-line paging should return several pages with the first row active");
+  Expect(engine->PageDown(), "multi-line paging should advance to the second row");
+  const auto expanded_second_page = engine->Snapshot();
+  Expect(expanded_second_page.candidates == expanded_first_page.candidates &&
+             expanded_second_page.highlighted_index == 7,
+         "paging inside a five-row window should retain the group and move the active row");
+  engine->SetCandidateWindowPageCount(1);
   engine->Reset();
 
   for (const wchar_t letter : std::wstring_view(L"no")) {

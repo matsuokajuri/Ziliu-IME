@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include <functional>
 #include <vector>
 
 namespace ziliu::ui {
@@ -23,6 +24,8 @@ class CandidateWindow final {
   bool Create(HWND owner);
   void Show(const core::CompositionSnapshot& snapshot, const RECT& text_rectangle,
             const core::Settings& settings, std::size_t page_offset);
+  void SetExpanded(bool expanded);
+  void SetQuickMenuAction(std::function<void(POINT)> action);
   void Hide();
 
   static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -37,15 +40,22 @@ class CandidateWindow final {
   HWND window_ = nullptr;
   core::CompositionSnapshot snapshot_;
   core::Settings settings_;
+  RECT text_rectangle_{};
   std::size_t page_offset_ = 0;
   float window_width_ = 420.0F;
   float dpi_scale_ = 1.0F;
   float layout_scale_ = 1.0F;
   bool dark_theme_ = false;
   bool dark_theme_initialized_ = false;
+  bool expanded_ = false;
+  bool can_expand_ = false;
+  std::function<void(POINT)> quick_menu_action_;
+  std::vector<std::size_t> candidate_indices_;
   std::vector<float> candidate_widths_;
   std::vector<float> candidate_lefts_;
   std::vector<float> candidate_tops_;
+  D2D1_RECT_F expand_button_bounds_{};
+  D2D1_RECT_F menu_button_bounds_{};
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
   Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget> render_target_;
