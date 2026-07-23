@@ -274,8 +274,7 @@ class RimeEngine final : public core::Engine {
 
   void Reset() override {
     ResetPaging();
-    overflow_preedit_.clear();
-    overflow_base_preedit_.clear();
+    ClearTrackedInput();
     api_->clear_composition(session_id_);
   }
 
@@ -285,24 +284,11 @@ class RimeEngine final : public core::Engine {
     }
     const int keycode = static_cast<int>(letter >= L'A' && letter <= L'Z' ? letter - L'A' + L'a'
                                                                           : letter);
-    if (!overflow_preedit_.empty()) {
-      overflow_preedit_.push_back(static_cast<wchar_t>(keycode));
+    if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       ResetPaging();
       return true;
     }
-
-    const core::CompositionSnapshot current = ReadSnapshot(false);
-    if (!current.candidates.empty() &&
-        core::UnicodeCodePointCount(current.candidates.front().text) >=
-            core::kMaximumVisibleCandidateLength) {
-      overflow_base_preedit_ = current.preedit;
-      overflow_preedit_ = current.preedit;
-      overflow_preedit_.push_back(static_cast<wchar_t>(keycode));
-      ResetPaging();
-      return true;
-    }
-
-    const bool consumed = api_->process_key(session_id_, keycode, 0) != False;
+    const bool consumed = ProcessTrackedKey(keycode, static_cast<wchar_t>(keycode), true);
     if (consumed) {
       ResetPaging();
     }
@@ -310,15 +296,10 @@ class RimeEngine final : public core::Engine {
   }
 
   bool ProcessSeparator() override {
-    if (!overflow_preedit_.empty()) {
-      if (overflow_preedit_.back() == L'\'') {
-        return false;
-      }
-      overflow_preedit_.push_back(L'\'');
-      ResetPaging();
-      return true;
+    if (!raw_keys_.empty() && raw_keys_.back() == L'\'') {
+      return false;
     }
-    const bool consumed = api_->process_key(session_id_, '\'', 0) != False;
+    const bool consumed = ProcessTrackedKey('\'', L'\'', false);
     if (consumed) {
       ResetPaging();
     }
@@ -326,24 +307,28 @@ class RimeEngine final : public core::Engine {
   }
 
   bool Backspace() override {
-    if (!overflow_preedit_.empty()) {
-      overflow_preedit_.pop_back();
-      if (overflow_preedit_ == overflow_base_preedit_) {
-        overflow_preedit_.clear();
-        overflow_base_preedit_.clear();
-      }
+    if (raw_keys_.empty()) {
+      return false;
+    }
+    if (!automatic_commit_text_prefix_.empty()) {
+      raw_keys_.pop_back();
+      RebuildComposition();
       ResetPaging();
       return true;
     }
     const bool consumed = api_->process_key(session_id_, kRimeBackspace, 0) != False;
     if (consumed) {
+      if (raw_keys_.back() != L'\'') {
+        --pinyin_letter_count_;
+      }
+      raw_keys_.pop_back();
       ResetPaging();
     }
     return consumed;
   }
 
   bool PageUp() override {
-    if (!overflow_preedit_.empty()) {
+    if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       return false;
     }
     if (previous_page_offsets_.empty()) {
@@ -355,7 +340,7 @@ class RimeEngine final : public core::Engine {
   }
 
   bool PageDown() override {
-    if (!overflow_preedit_.empty()) {
+    if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       return false;
     }
     const int next_offset = NextVisiblePageOffset();
@@ -386,7 +371,7 @@ class RimeEngine final : public core::Engine {
   }
 
   core::SelectionResult Select(std::size_t candidate_index) override {
-    if (!overflow_preedit_.empty()) {
+    if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       return {};
     }
     const int source_candidate_index = CandidateIndexForVisible(candidate_index);
@@ -399,8 +384,9 @@ class RimeEngine final : public core::Engine {
 
     RIME_STRUCT(RimeCommit, commit);
     if (api_->get_commit(session_id_, &commit)) {
-      std::wstring result = FromUtf8(commit.text);
+      std::wstring result = automatic_commit_text_prefix_ + FromUtf8(commit.text);
       api_->free_commit(&commit);
+      ClearTrackedInput();
       return core::SelectionResult{true, std::move(result)};
     }
 
@@ -417,20 +403,79 @@ class RimeEngine final : public core::Engine {
     if (!api_->get_commit(session_id_, &commit)) {
       return core::SelectionResult{true, {}};
     }
-    std::wstring result = FromUtf8(commit.text);
+    std::wstring result = automatic_commit_text_prefix_ + FromUtf8(commit.text);
     api_->free_commit(&commit);
+    ClearTrackedInput();
     return core::SelectionResult{true, std::move(result)};
   }
 
   [[nodiscard]] core::CompositionSnapshot Snapshot() const override {
-    if (!overflow_preedit_.empty()) {
-      return core::CompositionSnapshot{overflow_preedit_, {}, 0};
+    core::CompositionSnapshot snapshot = ReadSnapshot();
+    if (!automatic_commit_preedit_prefix_.empty()) {
+      if (!snapshot.preedit.empty() && automatic_commit_preedit_prefix_.back() != L'\'' &&
+          snapshot.preedit.front() != L'\'') {
+        snapshot.preedit.insert(snapshot.preedit.begin(), L'\'');
+      }
+      snapshot.preedit.insert(0, automatic_commit_preedit_prefix_);
     }
-    return ReadSnapshot(true);
+    if (!automatic_commit_text_prefix_.empty()) {
+      for (auto& candidate : snapshot.candidates) {
+        candidate.text.insert(0, automatic_commit_text_prefix_);
+      }
+    }
+    if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
+      snapshot.candidates.clear();
+    }
+    return snapshot;
   }
 
  private:
-  [[nodiscard]] core::CompositionSnapshot ReadSnapshot(bool hide_long_candidates) const {
+  bool ProcessTrackedKey(int keycode, wchar_t raw_key, bool is_letter) {
+    const core::CompositionSnapshot before = ReadSnapshot();
+    if (api_->process_key(session_id_, keycode, 0) == False) {
+      return false;
+    }
+    raw_keys_.push_back(raw_key);
+    if (is_letter) {
+      ++pinyin_letter_count_;
+    }
+
+    RIME_STRUCT(RimeCommit, commit);
+    if (api_->get_commit(session_id_, &commit)) {
+      automatic_commit_text_prefix_ += FromUtf8(commit.text);
+      api_->free_commit(&commit);
+      if (!before.preedit.empty()) {
+        if (!automatic_commit_preedit_prefix_.empty() &&
+            automatic_commit_preedit_prefix_.back() != L'\'' &&
+            before.preedit.front() != L'\'') {
+          automatic_commit_preedit_prefix_.push_back(L'\'');
+        }
+        automatic_commit_preedit_prefix_ += before.preedit;
+      }
+    }
+    return true;
+  }
+
+  void RebuildComposition() {
+    const std::wstring keys = raw_keys_;
+    api_->clear_composition(session_id_);
+    ClearTrackedInput();
+    for (const wchar_t key : keys) {
+      const bool is_letter = key != L'\'';
+      if (!ProcessTrackedKey(static_cast<int>(key), key, is_letter)) {
+        break;
+      }
+    }
+  }
+
+  void ClearTrackedInput() {
+    raw_keys_.clear();
+    automatic_commit_text_prefix_.clear();
+    automatic_commit_preedit_prefix_.clear();
+    pinyin_letter_count_ = 0;
+  }
+
+  [[nodiscard]] core::CompositionSnapshot ReadSnapshot() const {
     core::CompositionSnapshot snapshot;
     RIME_STRUCT(RimeContext, context);
     if (!api_->get_context(session_id_, &context)) {
@@ -459,11 +504,6 @@ class RimeEngine final : public core::Engine {
         }
         api_->candidate_list_end(&iterator);
       }
-    }
-    if (hide_long_candidates && !snapshot.candidates.empty() &&
-        core::UnicodeCodePointCount(snapshot.candidates.front().text) >
-            core::kMaximumVisibleCandidateLength) {
-      snapshot.candidates.clear();
     }
     return snapshot;
   }
@@ -531,8 +571,10 @@ class RimeEngine final : public core::Engine {
   int candidate_offset_ = 0;
   std::size_t candidate_page_size_ = core::ipc::kMaximumCandidates;
   bool chinese_candidates_only_ = true;
-  std::wstring overflow_preedit_;
-  std::wstring overflow_base_preedit_;
+  std::wstring raw_keys_;
+  std::wstring automatic_commit_text_prefix_;
+  std::wstring automatic_commit_preedit_prefix_;
+  std::size_t pinyin_letter_count_ = 0;
   std::vector<int> previous_page_offsets_;
 };
 

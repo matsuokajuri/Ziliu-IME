@@ -172,40 +172,32 @@ int main(int argument_count, char* arguments[]) {
   Expect(selected_first_character, "Rime Ice should offer 中 as a partial candidate for zhongguo");
   engine->Reset();
 
-  for (int index = 0; index < 16; ++index) {
+  for (int index = 0; index < 63; ++index) {
     Expect(engine->ProcessLetter(L'h'), "Rime should consume long composition input");
   }
-  const auto maximum_candidate_length = engine->Snapshot();
-  Expect(maximum_candidate_length.plain_text().size() == 16,
-         "A 16-syllable composition should retain all typed input");
-  Expect(!maximum_candidate_length.candidates.empty(),
-         "A 16-character first candidate should remain visible");
-  Expect(ziliu::core::UnicodeCodePointCount(maximum_candidate_length.candidates.front().text) <=
-             ziliu::core::kMaximumVisibleCandidateLength,
-         "The visible first candidate should respect the display length boundary");
+  const auto below_limit = engine->Snapshot();
+  Expect(below_limit.plain_text().size() == 63,
+         "A 63-letter composition should retain all typed input");
+  Expect(!below_limit.candidates.empty(),
+         "Candidates should remain visible below the 64-letter limit");
+  Expect(below_limit.candidates.front().text.size() == 63,
+         "Automatic Rime commits should remain attached to the visible long candidate");
 
-  Expect(engine->ProcessLetter(L'h'), "Rime should consume input beyond the candidate boundary");
-  const auto hidden_long_candidate = engine->Snapshot();
-  Expect(hidden_long_candidate.plain_text().size() == 17,
-         "Input beyond the candidate boundary should keep the complete preedit");
-  Expect(hidden_long_candidate.candidates.empty(),
-         "Candidates beyond the 16-character boundary should be hidden");
-  for (int index = 17; index < 32; ++index) {
-    Expect(engine->ProcessLetter(L'h'), "Rime should retain extended overflow input");
-  }
-  const auto extended_overflow = engine->Snapshot();
-  Expect(extended_overflow.plain_text().size() == 32,
-         "A long overflow composition should retain every typed letter");
-  Expect(extended_overflow.candidates.empty(),
-         "A long overflow composition should continue hiding candidates");
-  for (int index = 32; index > 16; --index) {
-    Expect(engine->Backspace(), "Backspace should consume long-composition overflow input");
-  }
-  const auto restored_boundary = engine->Snapshot();
-  Expect(restored_boundary.plain_text().size() == 16,
-         "Backspace should restore the 16-syllable composition");
-  Expect(!restored_boundary.candidates.empty(),
-         "Backspace should restore candidates at the display boundary");
+  Expect(engine->ProcessLetter(L'h'), "Rime should consume the 64th pinyin letter");
+  const auto at_limit = engine->Snapshot();
+  Expect(at_limit.plain_text().size() == 64,
+         "The 64th pinyin letter should remain in the preedit");
+  Expect(at_limit.candidates.empty(),
+         "Candidates should be hidden at the 64-letter limit");
+  Expect(engine->ProcessLetter(L'h'), "Input beyond the limit should be consumed and rejected");
+  Expect(engine->Snapshot().plain_text().size() == 64,
+         "Input beyond the limit should not change the preedit");
+  Expect(engine->Backspace(), "Backspace should reduce the 64-letter composition");
+  const auto restored_below_limit = engine->Snapshot();
+  Expect(restored_below_limit.plain_text().size() == 63,
+         "Backspace should restore a 63-letter composition");
+  Expect(!restored_below_limit.candidates.empty(),
+         "Backspace should restore candidates below the limit");
   engine->Reset();
 
   for (const wchar_t letter : std::wstring_view(L"ziliu")) {

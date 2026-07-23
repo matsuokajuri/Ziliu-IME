@@ -85,6 +85,23 @@ int main() {
          "re-enabling Chinese-only filtering should immediately update candidates");
   engine->Reset();
 
+  engine->SetChineseCandidatesOnly(false);
+  for (std::size_t index = 0; index < ziliu::core::kMaximumPinyinLetters - 1; ++index) {
+    Expect(engine->ProcessLetter(L'h'), "input below the pinyin limit should be consumed");
+  }
+  Expect(engine->Snapshot().preedit.size() == 63 && !engine->Snapshot().candidates.empty(),
+         "63 pinyin letters should retain visible candidates");
+  Expect(engine->ProcessLetter(L'h'), "the 64th pinyin letter should be consumed");
+  Expect(engine->Snapshot().preedit.size() == 64 && engine->Snapshot().candidates.empty(),
+         "the 64th pinyin letter should hide candidates");
+  Expect(engine->ProcessLetter(L'h') && engine->Snapshot().preedit.size() == 64,
+         "pinyin letters beyond the limit should be consumed without being appended");
+  Expect(engine->Backspace() && engine->Snapshot().preedit.size() == 63 &&
+             !engine->Snapshot().candidates.empty(),
+         "backspace to 63 pinyin letters should restore candidates");
+  engine->Reset();
+  engine->SetChineseCandidatesOnly(true);
+
   ziliu::core::SessionHost host;
   const auto created = host.Handle({1, 0, ziliu::core::ipc::Command::kCreateSession, 0});
   Expect(created.session_id != 0 && host.session_count() == 1,

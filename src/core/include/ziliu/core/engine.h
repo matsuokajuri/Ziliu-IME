@@ -8,7 +8,7 @@
 
 namespace ziliu::core {
 
-inline constexpr std::size_t kMaximumVisibleCandidateLength = 16;
+inline constexpr std::size_t kMaximumPinyinLetters = 64;
 
 struct Candidate {
   std::wstring text;
@@ -45,7 +45,6 @@ struct SelectionResult {
 };
 
 [[nodiscard]] bool IsChineseCandidate(std::wstring_view text) noexcept;
-[[nodiscard]] std::size_t UnicodeCodePointCount(std::wstring_view text) noexcept;
 
 class Engine {
  public:

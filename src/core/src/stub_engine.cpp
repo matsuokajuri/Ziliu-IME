@@ -21,14 +21,19 @@ class StubEngine final : public Engine {
   void Reset() override {
     preedit_.clear();
     candidates_.clear();
+    pinyin_letter_count_ = 0;
   }
 
   bool ProcessLetter(wchar_t letter) override {
     if (!std::iswalpha(letter)) {
       return false;
     }
+    if (pinyin_letter_count_ >= kMaximumPinyinLetters) {
+      return true;
+    }
 
     preedit_.push_back(static_cast<wchar_t>(std::towlower(letter)));
+    ++pinyin_letter_count_;
     RefreshCandidates();
     return true;
   }
@@ -47,6 +52,9 @@ class StubEngine final : public Engine {
       return false;
     }
 
+    if (preedit_.back() != L'\'') {
+      --pinyin_letter_count_;
+    }
     preedit_.pop_back();
     RefreshCandidates();
     return true;
@@ -83,6 +91,10 @@ class StubEngine final : public Engine {
 
  private:
   void RefreshCandidates() {
+    if (pinyin_letter_count_ >= kMaximumPinyinLetters) {
+      candidates_.clear();
+      return;
+    }
     std::wstring lookup_key;
     lookup_key.reserve(preedit_.size());
     for (const wchar_t character : preedit_) {
@@ -109,6 +121,7 @@ class StubEngine final : public Engine {
   CandidateList candidates_;
   bool traditional_ = false;
   bool chinese_candidates_only_ = true;
+  std::size_t pinyin_letter_count_ = 0;
 };
 
 }  // namespace
