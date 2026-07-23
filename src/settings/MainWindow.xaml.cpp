@@ -14,6 +14,7 @@
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -121,6 +122,22 @@ winrt::Windows::UI::Color ToColor(std::uint32_t rgb) {
 std::uint32_t FromColor(winrt::Windows::UI::Color color) {
   return (static_cast<std::uint32_t>(color.R) << 16) |
          (static_cast<std::uint32_t>(color.G) << 8) | static_cast<std::uint32_t>(color.B);
+}
+
+bool UseDarkTheme(ziliu::core::ThemeMode mode) {
+  if (mode == ziliu::core::ThemeMode::kDark) {
+    return true;
+  }
+  if (mode == ziliu::core::ThemeMode::kLight) {
+    return false;
+  }
+  DWORD use_light_theme = 1;
+  DWORD size = sizeof(use_light_theme);
+  const LSTATUS result = RegGetValueW(
+      HKEY_CURRENT_USER,
+      L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+      L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &use_light_theme, &size);
+  return result == ERROR_SUCCESS && use_light_theme == 0;
 }
 
 std::optional<std::wstring> LocalizedFontFamilyName(IDWriteFontFamily* family) {
@@ -450,6 +467,7 @@ void MainWindow::InitializeSettingsControls() {
   ApplyThemeFromControls();
   UpdateAppearanceControlStates();
   UpdateColorSwatches();
+  UpdateCandidatePreview();
 }
 
 void MainWindow::InitializeNavigation() {
@@ -471,14 +489,29 @@ void MainWindow::InitializeNavigation() {
   FuzzyBackButton().Click([this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
   PunctuationBackButton().Click(
       [this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
-  ThemeCombo().SelectionChanged([this](auto const&, auto const&) { ApplyThemeFromControls(); });
-  CustomColorsToggle().Toggled(
-      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
-  CustomFontsToggle().Toggled(
-      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
-  CustomFontSizeToggle().Toggled(
-      [this](auto const&, auto const&) { UpdateAppearanceControlStates(); });
-  const auto update_color = [this](auto const&, auto const&) { UpdateColorSwatches(); };
+  ThemeCombo().SelectionChanged([this](auto const&, auto const&) {
+    ApplyThemeFromControls();
+    UpdateCandidatePreview();
+  });
+  const auto update_appearance_state = [this](auto const&, auto const&) {
+    UpdateAppearanceControlStates();
+    UpdateCandidatePreview();
+  };
+  CustomColorsToggle().Toggled(update_appearance_state);
+  CustomFontsToggle().Toggled(update_appearance_state);
+  CustomFontSizeToggle().Toggled(update_appearance_state);
+  const auto update_preview = [this](auto const&, auto const&) { UpdateCandidatePreview(); };
+  LayoutCombo().SelectionChanged(update_preview);
+  CandidateCountCombo().SelectionChanged(update_preview);
+  CandidatePageModeCombo().SelectionChanged(update_preview);
+  CandidateChineseFontCombo().SelectionChanged(update_preview);
+  CandidateEnglishFontCombo().SelectionChanged(update_preview);
+  CandidateFontSizeCombo().SelectionChanged(update_preview);
+  CandidateScaleToggle().Toggled(update_preview);
+  const auto update_color = [this](auto const&, auto const&) {
+    UpdateColorSwatches();
+    UpdateCandidatePreview();
+  };
   PreeditColorPicker().ColorChanged(update_color);
   HighlightedColorPicker().ColorChanged(update_color);
   CandidateTextColorPicker().ColorChanged(update_color);
@@ -504,6 +537,7 @@ void MainWindow::InitializeNavigation() {
     CandidateScaleToggle().IsOn(true);
     UpdateAppearanceControlStates();
     UpdateColorSwatches();
+    UpdateCandidatePreview();
   });
 }
 
@@ -566,6 +600,197 @@ void MainWindow::UpdateColorSwatches() {
       Microsoft::UI::Xaml::Media::SolidColorBrush(CandidateTextColorPicker().Color()));
   BackgroundColorSwatch().Fill(
       Microsoft::UI::Xaml::Media::SolidColorBrush(BackgroundColorPicker().Color()));
+}
+
+void MainWindow::UpdateCandidatePreview() {
+  const int theme_index = ThemeCombo().SelectedIndex();
+  const int layout_index = LayoutCombo().SelectedIndex();
+  const int candidate_count_index = CandidateCountCombo().SelectedIndex();
+  if (theme_index < 0 || layout_index < 0 || candidate_count_index < 0) {
+    return;
+  }
+
+  ziliu::core::Settings preview_settings = settings_;
+  preview_settings.theme_mode = static_cast<ziliu::core::ThemeMode>(theme_index);
+  preview_settings.candidate_layout = layout_index == 0
+                                          ? ziliu::core::CandidateLayout::kHorizontal
+                                          : ziliu::core::CandidateLayout::kVertical;
+  preview_settings.candidate_count = std::clamp(
+      static_cast<std::size_t>(candidate_count_index + 3),
+      ziliu::core::kMinimumCandidateCount, ziliu::core::kMaximumCandidateCount);
+  preview_settings.candidate_page_mode =
+      CandidatePageModeCombo().SelectedIndex() == 1
+          ? ziliu::core::CandidatePageMode::kMultiLine
+          : ziliu::core::CandidatePageMode::kSingleLine;
+  preview_settings.custom_candidate_colors = CustomColorsToggle().IsOn();
+  preview_settings.preedit_color = FromColor(PreeditColorPicker().Color());
+  preview_settings.highlighted_candidate_color =
+      FromColor(HighlightedColorPicker().Color());
+  preview_settings.candidate_text_color = FromColor(CandidateTextColorPicker().Color());
+  preview_settings.candidate_background_color = FromColor(BackgroundColorPicker().Color());
+  preview_settings.custom_candidate_fonts = CustomFontsToggle().IsOn();
+  preview_settings.candidate_chinese_font_family =
+      SelectedFontFamily(CandidateChineseFontCombo(),
+                         preview_settings.candidate_chinese_font_family);
+  preview_settings.candidate_english_font_family =
+      SelectedFontFamily(CandidateEnglishFontCombo(),
+                         preview_settings.candidate_english_font_family);
+  preview_settings.custom_candidate_font_size = CustomFontSizeToggle().IsOn();
+  if (CandidateFontSizeCombo().SelectedIndex() >= 0) {
+    preview_settings.candidate_font_size = std::clamp(
+        static_cast<std::size_t>(CandidateFontSizeCombo().SelectedIndex() + 14),
+        ziliu::core::kMinimumCandidateFontSize,
+        ziliu::core::kMaximumCandidateFontSize);
+  }
+  preview_settings.candidate_scale_with_text = CandidateScaleToggle().IsOn();
+
+  const bool dark_theme = UseDarkTheme(preview_settings.theme_mode);
+  const ziliu::core::CandidatePalette palette =
+      ziliu::core::ResolveCandidatePalette(preview_settings, dark_theme);
+  const auto make_brush = [](std::uint32_t color) {
+    return Microsoft::UI::Xaml::Media::SolidColorBrush(ToColor(color));
+  };
+  const auto background_brush = make_brush(palette.candidate_background_color);
+  const auto preedit_brush = make_brush(palette.preedit_color);
+  const auto candidate_brush = make_brush(palette.candidate_text_color);
+  const auto highlighted_brush = make_brush(palette.highlighted_candidate_color);
+  const auto muted_brush = make_brush(palette.muted_color);
+  const auto highlight_background_brush =
+      make_brush(palette.highlight_background_color);
+
+  const float font_size = static_cast<float>(
+      preview_settings.custom_candidate_font_size
+          ? preview_settings.candidate_font_size
+          : 17);
+  const float layout_scale =
+      preview_settings.candidate_scale_with_text
+          ? std::clamp(font_size / 17.0F, 0.82F, 1.42F)
+          : 1.0F;
+  const std::string chinese_family =
+      preview_settings.custom_candidate_fonts
+          ? preview_settings.candidate_chinese_font_family
+          : "Source Han Sans SC";
+  const std::string english_family =
+      preview_settings.custom_candidate_fonts
+          ? preview_settings.candidate_english_font_family
+          : "Segoe UI Variable Text";
+  const Microsoft::UI::Xaml::Media::FontFamily chinese_font(
+      winrt::to_hstring(chinese_family));
+  const Microsoft::UI::Xaml::Media::FontFamily english_font(
+      winrt::to_hstring(english_family));
+
+  CandidatePreviewContent().Children().Clear();
+  CandidatePreviewWindow().Background(background_brush);
+  CandidatePreviewWindow().BorderBrush(muted_brush);
+
+  const bool horizontal =
+      preview_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal;
+  const double preedit_height = (horizontal ? 34.0 : 42.0) * layout_scale;
+  Microsoft::UI::Xaml::Controls::Border preedit_region;
+  preedit_region.Height(preedit_height);
+  preedit_region.Padding(
+      Microsoft::UI::Xaml::Thickness{14.0 * layout_scale, 0.0,
+                                     14.0 * layout_scale, 0.0});
+  Microsoft::UI::Xaml::Controls::TextBlock preedit_text;
+  preedit_text.Text(L"ziliu shurufa");
+  preedit_text.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+  preedit_text.Foreground(preedit_brush);
+  preedit_text.FontFamily(english_font);
+  preedit_text.FontSize(font_size + 1.0F);
+  preedit_text.FontWeight(winrt::Windows::UI::Text::FontWeights::SemiBold());
+  preedit_text.TextWrapping(Microsoft::UI::Xaml::TextWrapping::NoWrap);
+  preedit_region.Child(preedit_text);
+  CandidatePreviewContent().Children().Append(preedit_region);
+
+  Microsoft::UI::Xaml::Controls::Border divider;
+  divider.Height(0.5);
+  divider.Margin(Microsoft::UI::Xaml::Thickness{
+      14.0 * layout_scale, 0.0, 14.0 * layout_scale, 0.0});
+  divider.Background(muted_brush);
+  CandidatePreviewContent().Children().Append(divider);
+
+  static constexpr std::array<std::wstring_view, 9> candidate_words{
+      L"字流", L"输入法", L"简洁", L"高效", L"纯粹",
+      L"中文", L"拼音", L"开源", L"轻巧"};
+  const auto create_candidate =
+      [&](std::size_t index, bool horizontal_candidate) {
+        Microsoft::UI::Xaml::Controls::Border cell;
+        cell.Height((horizontal_candidate ? 34.0 : 36.0) * layout_scale);
+        cell.CornerRadius(Microsoft::UI::Xaml::CornerRadius{
+            10.0, 10.0, 10.0, 10.0});
+        cell.Padding(Microsoft::UI::Xaml::Thickness{
+            (horizontal_candidate ? 8.0 : 6.0) * layout_scale, 0.0,
+            6.0 * layout_scale, 0.0});
+        if (index == 0) {
+          cell.Background(highlight_background_brush);
+        }
+
+        Microsoft::UI::Xaml::Controls::TextBlock label;
+        const std::wstring label_text =
+            std::to_wstring(index + 1) + L"  " +
+            std::wstring(candidate_words[index]);
+        label.Text(winrt::hstring(label_text));
+        label.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+        label.Foreground(index == 0 ? highlighted_brush : candidate_brush);
+        label.FontFamily(chinese_font);
+        label.FontSize(font_size);
+        label.TextWrapping(Microsoft::UI::Xaml::TextWrapping::NoWrap);
+        label.TextTrimming(Microsoft::UI::Xaml::TextTrimming::CharacterEllipsis);
+        cell.Child(label);
+        return cell;
+      };
+
+  if (horizontal) {
+    const bool multiline =
+        preview_settings.candidate_page_mode ==
+            ziliu::core::CandidatePageMode::kMultiLine &&
+        preview_settings.candidate_count > 1;
+    const std::size_t row_count = multiline ? 2 : 1;
+    const std::size_t column_count =
+        multiline ? (preview_settings.candidate_count + 1) / 2
+                  : preview_settings.candidate_count;
+    const double cell_width = 76.0 * layout_scale;
+    CandidatePreviewWindow().Width(std::max(
+        280.0 * layout_scale,
+        16.0 * layout_scale + static_cast<double>(column_count) * cell_width));
+
+    Microsoft::UI::Xaml::Controls::StackPanel rows;
+    rows.Margin(Microsoft::UI::Xaml::Thickness{
+        8.0 * layout_scale, 3.5 * layout_scale,
+        8.0 * layout_scale, 4.0 * layout_scale});
+    for (std::size_t row_index = 0; row_index < row_count; ++row_index) {
+      Microsoft::UI::Xaml::Controls::StackPanel row;
+      row.Orientation(Microsoft::UI::Xaml::Controls::Orientation::Horizontal);
+      row.Height(36.0 * layout_scale);
+      const std::size_t begin = row_index * column_count;
+      const std::size_t end =
+          std::min(begin + column_count, preview_settings.candidate_count);
+      for (std::size_t index = begin; index < end; ++index) {
+        auto cell = create_candidate(index, true);
+        cell.Width(cell_width);
+        cell.Margin(Microsoft::UI::Xaml::Thickness{
+            0.0, 1.0 * layout_scale, 2.0 * layout_scale,
+            1.0 * layout_scale});
+        row.Children().Append(cell);
+      }
+      rows.Children().Append(row);
+    }
+    CandidatePreviewContent().Children().Append(rows);
+  } else {
+    CandidatePreviewWindow().Width(420.0 * layout_scale);
+    Microsoft::UI::Xaml::Controls::StackPanel candidates;
+    candidates.Margin(Microsoft::UI::Xaml::Thickness{
+        8.0 * layout_scale, 13.5 * layout_scale,
+        8.0 * layout_scale, 14.0 * layout_scale});
+    for (std::size_t index = 0; index < preview_settings.candidate_count; ++index) {
+      auto cell = create_candidate(index, false);
+      cell.HorizontalAlignment(Microsoft::UI::Xaml::HorizontalAlignment::Stretch);
+      cell.Margin(Microsoft::UI::Xaml::Thickness{
+          0.0, 1.0 * layout_scale, 0.0, 1.0 * layout_scale});
+      candidates.Children().Append(cell);
+    }
+    CandidatePreviewContent().Children().Append(candidates);
+  }
 }
 
 void MainWindow::InitializeQuickMenuControls() {

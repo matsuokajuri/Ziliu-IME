@@ -95,6 +95,17 @@ struct Settings {
   bool operator==(const Settings&) const = default;
 };
 
+struct CandidatePalette {
+  std::uint32_t preedit_color = 0;
+  std::uint32_t highlighted_candidate_color = 0;
+  std::uint32_t candidate_text_color = 0;
+  std::uint32_t candidate_background_color = 0;
+  std::uint32_t muted_color = 0;
+  std::uint32_t highlight_background_color = 0;
+
+  bool operator==(const CandidatePalette&) const = default;
+};
+
 struct CandidatePageSlice {
   std::size_t offset = 0;
   std::size_t count = 0;
@@ -109,6 +120,8 @@ inline constexpr std::size_t kMaximumCandidateFontSize = 24;
 
 [[nodiscard]] Settings ParseSettings(std::string_view text);
 [[nodiscard]] std::string SerializeSettings(const Settings& settings);
+[[nodiscard]] CandidatePalette ResolveCandidatePalette(const Settings& settings,
+                                                        bool dark_theme);
 [[nodiscard]] CandidatePageSlice MakeCandidatePageSlice(std::size_t candidate_total,
                                                         std::size_t page_size,
                                                         std::size_t requested_offset);

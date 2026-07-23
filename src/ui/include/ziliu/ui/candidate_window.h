@@ -41,6 +41,8 @@ class CandidateWindow final {
   float window_width_ = 420.0F;
   float dpi_scale_ = 1.0F;
   float layout_scale_ = 1.0F;
+  bool dark_theme_ = false;
+  bool dark_theme_initialized_ = false;
   std::vector<float> candidate_widths_;
   std::vector<float> candidate_lefts_;
   std::vector<float> candidate_tops_;

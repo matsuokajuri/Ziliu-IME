@@ -21,6 +21,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ApplyThemeFromControls();
   void UpdateAppearanceControlStates();
   void UpdateColorSwatches();
+  void UpdateCandidatePreview();
   void SaveFromControls();
 
   ziliu::core::Settings settings_;

@@ -97,19 +97,6 @@ bool UseDarkTheme(core::ThemeMode mode) {
   return result == ERROR_SUCCESS && use_light_theme == 0;
 }
 
-std::uint32_t BlendColor(std::uint32_t background, std::uint32_t foreground, float amount) {
-  const auto blend_channel = [amount](std::uint32_t from, std::uint32_t to) {
-    return static_cast<std::uint32_t>(
-        std::clamp(static_cast<float>(from) +
-                       (static_cast<float>(to) - static_cast<float>(from)) * amount,
-                   0.0F, 255.0F));
-  };
-  const std::uint32_t red = blend_channel((background >> 16) & 0xFF, (foreground >> 16) & 0xFF);
-  const std::uint32_t green = blend_channel((background >> 8) & 0xFF, (foreground >> 8) & 0xFF);
-  const std::uint32_t blue = blend_channel(background & 0xFF, foreground & 0xFF);
-  return (red << 16) | (green << 8) | blue;
-}
-
 std::wstring Utf8ToWide(std::string_view value) {
   if (value.empty() ||
       value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
@@ -192,7 +179,9 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
     return;
   }
 
+  const bool resolved_dark_theme = UseDarkTheme(settings.theme_mode);
   const bool appearance_changed =
+      !dark_theme_initialized_ || dark_theme_ != resolved_dark_theme ||
       settings_.theme_mode != settings.theme_mode ||
       settings_.custom_candidate_colors != settings.custom_candidate_colors ||
       settings_.preedit_color != settings.preedit_color ||
@@ -207,6 +196,8 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       settings_.candidate_scale_with_text != settings.candidate_scale_with_text;
   snapshot_ = snapshot;
   settings_ = settings;
+  dark_theme_ = resolved_dark_theme;
+  dark_theme_initialized_ = true;
   const float effective_font_size = static_cast<float>(
       settings_.custom_candidate_font_size
           ? std::clamp(settings_.candidate_font_size, core::kMinimumCandidateFontSize,
@@ -427,31 +418,19 @@ bool CandidateWindow::EnsureDeviceResources() {
     return false;
   }
 
-  const bool dark = UseDarkTheme(settings_.theme_mode);
-  const std::uint32_t background_color = settings_.custom_candidate_colors
-                                             ? settings_.candidate_background_color
-                                             : (dark ? 0x202124 : 0xFAFAFA);
-  const std::uint32_t preedit_color = settings_.custom_candidate_colors
-                                          ? settings_.preedit_color
-                                          : (dark ? 0xF5F6F7 : 0x202124);
-  const std::uint32_t text_color = settings_.custom_candidate_colors
-                                       ? settings_.candidate_text_color
-                                       : (dark ? 0xF5F6F7 : 0x202124);
-  const std::uint32_t highlighted_color = settings_.custom_candidate_colors
-                                              ? settings_.highlighted_candidate_color
-                                              : (dark ? 0x75B6E7 : 0x0067C0);
-  const std::uint32_t muted_color = BlendColor(text_color, background_color, 0.52F);
-  const std::uint32_t accent_color = BlendColor(background_color, highlighted_color, 0.14F);
+  const core::CandidatePalette palette =
+      core::ResolveCandidatePalette(settings_, dark_theme_);
 
-  if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(text_color),
+  if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.candidate_text_color),
                                                    text_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(preedit_color),
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.preedit_color),
                                                    preedit_brush_.ReleaseAndGetAddressOf())) ||
       FAILED(render_target_->CreateSolidColorBrush(
-          D2D1::ColorF(highlighted_color), highlighted_text_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(muted_color),
+          D2D1::ColorF(palette.highlighted_candidate_color),
+          highlighted_text_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.muted_color),
                                                    muted_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(accent_color),
+      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.highlight_background_color),
                                                    accent_brush_.ReleaseAndGetAddressOf()))) {
     DiscardDeviceResources();
     return false;
@@ -504,11 +483,9 @@ void CandidateWindow::Paint() {
 
   if (EnsureDeviceResources()) {
     render_target_->BeginDraw();
-    const bool dark = UseDarkTheme(settings_.theme_mode);
-    const std::uint32_t background_color = settings_.custom_candidate_colors
-                                               ? settings_.candidate_background_color
-                                               : (dark ? 0x202124 : 0xFAFAFA);
-    render_target_->Clear(D2D1::ColorF(background_color));
+    const core::CandidatePalette palette =
+        core::ResolveCandidatePalette(settings_, dark_theme_);
+    render_target_->Clear(D2D1::ColorF(palette.candidate_background_color));
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
     const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),

@@ -199,14 +199,18 @@
                         <StackPanel Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="外观" Style="{StaticResource ZiliuTitleStyle}"/>
                             <Border Margin="0,22,0,0" Padding="28" CornerRadius="12" Background="{ThemeResource LayerFillColorAltBrush}">
-                                <Border MaxWidth="620" Padding="16,10" HorizontalAlignment="Center" Background="{ThemeResource SolidBackgroundFillColorBaseBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
-                                    <StackPanel Spacing="8"><TextBlock Text="ziliu shurufa" Style="{StaticResource ZiliuBodyStyle}"/><StackPanel Orientation="Horizontal" Spacing="18"><TextBlock Text="1 字流" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"/><TextBlock Text="2 输入法"/><TextBlock Text="3 简洁"/><TextBlock Text="4 高效"/><TextBlock Text="5 纯粹"/></StackPanel></StackPanel>
-                                </Border>
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Center" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled">
+                                    <Border x:Name="CandidatePreviewWindow" HorizontalAlignment="Center" BorderThickness="1" CornerRadius="10">
+                                        <StackPanel x:Name="CandidatePreviewContent"/>
+                                    </Border>
+                                </ScrollViewer>
                             </Border>
                             <TextBlock Text="个性化" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
                                 <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="模式选择" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="ThemeCombo" Grid.Column="1" MinWidth="180"><ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="浅色"/><ComboBoxItem Content="深色"/></ComboBox></Grid></Border>
                             </StackPanel></Border>
+                            <TextBlock Text="主题" Style="{StaticResource SectionLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}" MinHeight="88"/>
                             <TextBlock Text="候选显示" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
                                 <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="横排 / 竖排" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="LayoutCombo" Grid.Column="1" MinWidth="180"><ComboBoxItem Content="横排"/><ComboBoxItem Content="竖排"/></ComboBox></Grid></Border>

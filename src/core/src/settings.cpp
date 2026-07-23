@@ -69,7 +69,52 @@ void ParseFontFamily(std::string_view value, std::string* destination) {
   }
 }
 
+std::uint32_t BlendColor(std::uint32_t background, std::uint32_t foreground, float amount) {
+  const auto blend_channel = [amount](std::uint32_t from, std::uint32_t to) {
+    return static_cast<std::uint32_t>(
+        std::clamp(static_cast<float>(from) +
+                       (static_cast<float>(to) - static_cast<float>(from)) * amount,
+                   0.0F, 255.0F));
+  };
+  const std::uint32_t red =
+      blend_channel((background >> 16) & 0xFF, (foreground >> 16) & 0xFF);
+  const std::uint32_t green =
+      blend_channel((background >> 8) & 0xFF, (foreground >> 8) & 0xFF);
+  const std::uint32_t blue = blend_channel(background & 0xFF, foreground & 0xFF);
+  return (red << 16) | (green << 8) | blue;
+}
+
+bool IsDarkColor(std::uint32_t color) {
+  const std::uint32_t red = (color >> 16) & 0xFF;
+  const std::uint32_t green = (color >> 8) & 0xFF;
+  const std::uint32_t blue = color & 0xFF;
+  return red * 299 + green * 587 + blue * 114 < 128000;
+}
+
 }  // namespace
+
+CandidatePalette ResolveCandidatePalette(const Settings& settings, bool dark_theme) {
+  CandidatePalette palette;
+  palette.preedit_color = dark_theme ? 0xF5F6F7 : 0x202124;
+  palette.highlighted_candidate_color = dark_theme ? 0x75B6E7 : 0x0067C0;
+  palette.candidate_text_color = dark_theme ? 0xF5F6F7 : 0x202124;
+  palette.candidate_background_color = dark_theme ? 0x202124 : 0xFAFAFA;
+
+  const bool custom_background_matches_theme =
+      IsDarkColor(settings.candidate_background_color) == dark_theme;
+  if (settings.custom_candidate_colors && custom_background_matches_theme) {
+    palette.preedit_color = settings.preedit_color;
+    palette.highlighted_candidate_color = settings.highlighted_candidate_color;
+    palette.candidate_text_color = settings.candidate_text_color;
+    palette.candidate_background_color = settings.candidate_background_color;
+  }
+
+  palette.muted_color =
+      BlendColor(palette.candidate_text_color, palette.candidate_background_color, 0.52F);
+  palette.highlight_background_color =
+      BlendColor(palette.candidate_background_color, palette.highlighted_candidate_color, 0.14F);
+  return palette;
+}
 
 Settings ParseSettings(std::string_view text) {
   Settings settings;

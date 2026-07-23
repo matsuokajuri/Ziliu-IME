@@ -157,6 +157,30 @@ int main() {
              defaults.candidate_page_mode == ziliu::core::CandidatePageMode::kSingleLine,
          "settings defaults should match the first-run experience");
 
+  const auto light_palette = ziliu::core::ResolveCandidatePalette(defaults, false);
+  const auto dark_palette = ziliu::core::ResolveCandidatePalette(defaults, true);
+  Expect(light_palette.candidate_background_color == 0xFAFAFA &&
+             light_palette.candidate_text_color == 0x202124 &&
+             dark_palette.candidate_background_color == 0x202124 &&
+             dark_palette.candidate_text_color == 0xF5F6F7,
+         "candidate palettes should follow the selected light or dark mode");
+  auto custom_palette_settings = defaults;
+  custom_palette_settings.custom_candidate_colors = true;
+  custom_palette_settings.candidate_background_color = 0xF7FAFF;
+  Expect(ziliu::core::ResolveCandidatePalette(custom_palette_settings, true) == dark_palette,
+         "a light custom palette should not force a dark candidate window back to light");
+  custom_palette_settings.candidate_background_color = 0x101820;
+  custom_palette_settings.preedit_color = 0xE7EDF3;
+  custom_palette_settings.highlighted_candidate_color = 0x80C8FF;
+  custom_palette_settings.candidate_text_color = 0xDDE7F0;
+  const auto custom_dark_palette =
+      ziliu::core::ResolveCandidatePalette(custom_palette_settings, true);
+  Expect(custom_dark_palette.candidate_background_color == 0x101820 &&
+             custom_dark_palette.preedit_color == 0xE7EDF3 &&
+             custom_dark_palette.highlighted_candidate_color == 0x80C8FF &&
+             custom_dark_palette.candidate_text_color == 0xDDE7F0,
+         "a custom palette matching the active mode should remain fully customizable");
+
   const auto parsed_settings = ziliu::core::ParseSettings(
       "candidate_layout=horizontal\n"
       "candidate_count=7\n"
