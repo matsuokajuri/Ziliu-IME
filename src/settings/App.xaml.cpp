@@ -90,10 +90,9 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     if (quick_menu_mutex_ != nullptr && GetLastError() == ERROR_ALREADY_EXISTS) {
       CloseHandle(quick_menu_mutex_);
       quick_menu_mutex_ = nullptr;
-      if (ActivateExistingQuickMenu(options)) {
-        Exit();
-        return;
-      }
+      static_cast<void>(ActivateExistingQuickMenu(options));
+      Exit();
+      return;
     }
   }
 

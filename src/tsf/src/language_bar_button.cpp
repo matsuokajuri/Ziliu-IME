@@ -14,6 +14,8 @@
 namespace ziliu::tsf {
 namespace {
 
+constexpr ULONGLONG kQuickMenuDebounceMilliseconds = 1500;
+
 HICON CreateModeIcon(bool chinese_mode) {
   constexpr int size = 32;
   BITMAPV5HEADER header{};
@@ -181,7 +183,8 @@ HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
     return S_OK;
   }
   const ULONGLONG now = GetTickCount64();
-  if (last_menu_request_tick_ != 0 && now - last_menu_request_tick_ < 100) {
+  if (last_menu_request_tick_ != 0 &&
+      now - last_menu_request_tick_ < kQuickMenuDebounceMilliseconds) {
     return S_OK;
   }
   last_menu_request_tick_ = now;
