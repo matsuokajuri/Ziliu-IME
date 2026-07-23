@@ -1,22 +1,48 @@
 #include "ziliu/core/engine.h"
 
-namespace ziliu::core {
+#include <cstdint>
 
-bool IsPureEnglishCandidate(std::wstring_view text) noexcept {
-  bool has_letter = false;
-  for (const wchar_t character : text) {
-    if ((character >= L'A' && character <= L'Z') ||
-        (character >= L'a' && character <= L'z')) {
-      has_letter = true;
-      continue;
-    }
-    if (character == L' ' || character == L'\t' || character == L'\'' ||
-        character == L'-') {
-      continue;
-    }
+namespace ziliu::core {
+namespace {
+
+bool IsHanCodePoint(std::uint32_t code_point) noexcept {
+  return code_point == 0x3007 ||
+         (code_point >= 0x3400 && code_point <= 0x4DBF) ||
+         (code_point >= 0x4E00 && code_point <= 0x9FFF) ||
+         (code_point >= 0xF900 && code_point <= 0xFAFF) ||
+         (code_point >= 0x20000 && code_point <= 0x2FA1F) ||
+         (code_point >= 0x30000 && code_point <= 0x3347F);
+}
+
+}  // namespace
+
+bool IsChineseCandidate(std::wstring_view text) noexcept {
+  if (text.empty()) {
     return false;
   }
-  return has_letter;
+  for (std::size_t index = 0; index < text.size();) {
+    std::uint32_t code_point = static_cast<std::uint32_t>(text[index++]);
+    if constexpr (sizeof(wchar_t) == 2) {
+      if (code_point >= 0xD800 && code_point <= 0xDBFF) {
+        if (index >= text.size()) {
+          return false;
+        }
+        const std::uint32_t low_surrogate =
+            static_cast<std::uint32_t>(text[index++]);
+        if (low_surrogate < 0xDC00 || low_surrogate > 0xDFFF) {
+          return false;
+        }
+        code_point =
+            0x10000 + ((code_point - 0xD800) << 10) + (low_surrogate - 0xDC00);
+      } else if (code_point >= 0xDC00 && code_point <= 0xDFFF) {
+        return false;
+      }
+    }
+    if (!IsHanCodePoint(code_point)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace ziliu::core

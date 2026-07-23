@@ -359,7 +359,7 @@ class RimeEngine final : public core::Engine {
                api_->candidate_list_next(&iterator)) {
           const auto& candidate = iterator.candidate;
           const std::wstring candidate_text = FromUtf8(candidate.text);
-          if (core::IsPureEnglishCandidate(candidate_text)) {
+          if (!core::IsChineseCandidate(candidate_text)) {
             continue;
           }
           const std::size_t visible_index = snapshot.candidates.size();
@@ -393,7 +393,7 @@ class RimeEngine final : public core::Engine {
     int result = -1;
     while (api_->candidate_list_next(&iterator)) {
       const int current_source_index = source_index++;
-      if (core::IsPureEnglishCandidate(FromUtf8(iterator.candidate.text))) {
+      if (!core::IsChineseCandidate(FromUtf8(iterator.candidate.text))) {
         continue;
       }
       if (current_visible_index == visible_index) {
@@ -416,7 +416,7 @@ class RimeEngine final : public core::Engine {
     int next_offset = -1;
     while (api_->candidate_list_next(&iterator)) {
       const int current_source_index = source_index++;
-      if (core::IsPureEnglishCandidate(FromUtf8(iterator.candidate.text))) {
+      if (!core::IsChineseCandidate(FromUtf8(iterator.candidate.text))) {
         continue;
       }
       if (visible_count == candidate_page_size_) {

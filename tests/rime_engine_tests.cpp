@@ -83,18 +83,18 @@ int main(int argument_count, char* arguments[]) {
     }
     return texts;
   };
-  const auto contains_pure_english = [](const auto& snapshot) {
+  const auto contains_non_chinese = [](const auto& snapshot) {
     return std::ranges::any_of(snapshot.candidates, [](const auto& candidate) {
-      return ziliu::core::IsPureEnglishCandidate(candidate.text);
+      return !ziliu::core::IsChineseCandidate(candidate.text);
     });
   };
-  Expect(!contains_pure_english(first_page),
-         "the first visible page should filter pure English candidates");
+  Expect(!contains_non_chinese(first_page),
+         "the first visible page should contain only Chinese candidates");
   Expect(engine->PageDown(), "Rime should consume PageDown when more candidates exist");
   const auto second_page = engine->Snapshot();
   Expect(!second_page.candidates.empty(), "PageDown should retain candidate results");
-  Expect(!contains_pure_english(second_page),
-         "later visible pages should filter pure English candidates");
+  Expect(!contains_non_chinese(second_page),
+         "later visible pages should contain only Chinese candidates");
   Expect(candidate_texts(second_page) != candidate_texts(first_page),
          "PageDown should advance to a different candidate page");
   Expect(engine->PageUp(), "Rime should consume PageUp on the second page");
