@@ -45,4 +45,21 @@ bool IsChineseCandidate(std::wstring_view text) noexcept {
   return true;
 }
 
+std::size_t UnicodeCodePointCount(std::wstring_view text) noexcept {
+  std::size_t count = 0;
+  for (std::size_t index = 0; index < text.size(); ++index) {
+    const std::uint32_t code_point = static_cast<std::uint32_t>(text[index]);
+    if constexpr (sizeof(wchar_t) == 2) {
+      if (code_point >= 0xD800 && code_point <= 0xDBFF && index + 1 < text.size()) {
+        const std::uint32_t low_surrogate = static_cast<std::uint32_t>(text[index + 1]);
+        if (low_surrogate >= 0xDC00 && low_surrogate <= 0xDFFF) {
+          ++index;
+        }
+      }
+    }
+    ++count;
+  }
+  return count;
+}
+
 }  // namespace ziliu::core

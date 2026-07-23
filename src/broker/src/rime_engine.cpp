@@ -274,6 +274,8 @@ class RimeEngine final : public core::Engine {
 
   void Reset() override {
     ResetPaging();
+    overflow_preedit_.clear();
+    overflow_base_preedit_.clear();
     api_->clear_composition(session_id_);
   }
 
@@ -283,6 +285,23 @@ class RimeEngine final : public core::Engine {
     }
     const int keycode = static_cast<int>(letter >= L'A' && letter <= L'Z' ? letter - L'A' + L'a'
                                                                           : letter);
+    if (!overflow_preedit_.empty()) {
+      overflow_preedit_.push_back(static_cast<wchar_t>(keycode));
+      ResetPaging();
+      return true;
+    }
+
+    const core::CompositionSnapshot current = ReadSnapshot(false);
+    if (!current.candidates.empty() &&
+        core::UnicodeCodePointCount(current.candidates.front().text) >=
+            core::kMaximumVisibleCandidateLength) {
+      overflow_base_preedit_ = current.preedit;
+      overflow_preedit_ = current.preedit;
+      overflow_preedit_.push_back(static_cast<wchar_t>(keycode));
+      ResetPaging();
+      return true;
+    }
+
     const bool consumed = api_->process_key(session_id_, keycode, 0) != False;
     if (consumed) {
       ResetPaging();
@@ -291,6 +310,14 @@ class RimeEngine final : public core::Engine {
   }
 
   bool ProcessSeparator() override {
+    if (!overflow_preedit_.empty()) {
+      if (overflow_preedit_.back() == L'\'') {
+        return false;
+      }
+      overflow_preedit_.push_back(L'\'');
+      ResetPaging();
+      return true;
+    }
     const bool consumed = api_->process_key(session_id_, '\'', 0) != False;
     if (consumed) {
       ResetPaging();
@@ -299,6 +326,15 @@ class RimeEngine final : public core::Engine {
   }
 
   bool Backspace() override {
+    if (!overflow_preedit_.empty()) {
+      overflow_preedit_.pop_back();
+      if (overflow_preedit_ == overflow_base_preedit_) {
+        overflow_preedit_.clear();
+        overflow_base_preedit_.clear();
+      }
+      ResetPaging();
+      return true;
+    }
     const bool consumed = api_->process_key(session_id_, kRimeBackspace, 0) != False;
     if (consumed) {
       ResetPaging();
@@ -307,6 +343,9 @@ class RimeEngine final : public core::Engine {
   }
 
   bool PageUp() override {
+    if (!overflow_preedit_.empty()) {
+      return false;
+    }
     if (previous_page_offsets_.empty()) {
       return false;
     }
@@ -316,6 +355,9 @@ class RimeEngine final : public core::Engine {
   }
 
   bool PageDown() override {
+    if (!overflow_preedit_.empty()) {
+      return false;
+    }
     const int next_offset = NextVisiblePageOffset();
     if (next_offset < 0) {
       return false;
@@ -344,6 +386,9 @@ class RimeEngine final : public core::Engine {
   }
 
   core::SelectionResult Select(std::size_t candidate_index) override {
+    if (!overflow_preedit_.empty()) {
+      return {};
+    }
     const int source_candidate_index = CandidateIndexForVisible(candidate_index);
     if (candidate_index >= candidate_page_size_ || source_candidate_index < 0 ||
         !api_->select_candidate(session_id_,
@@ -378,6 +423,14 @@ class RimeEngine final : public core::Engine {
   }
 
   [[nodiscard]] core::CompositionSnapshot Snapshot() const override {
+    if (!overflow_preedit_.empty()) {
+      return core::CompositionSnapshot{overflow_preedit_, {}, 0};
+    }
+    return ReadSnapshot(true);
+  }
+
+ private:
+  [[nodiscard]] core::CompositionSnapshot ReadSnapshot(bool hide_long_candidates) const {
     core::CompositionSnapshot snapshot;
     RIME_STRUCT(RimeContext, context);
     if (!api_->get_context(session_id_, &context)) {
@@ -407,10 +460,14 @@ class RimeEngine final : public core::Engine {
         api_->candidate_list_end(&iterator);
       }
     }
+    if (hide_long_candidates && !snapshot.candidates.empty() &&
+        core::UnicodeCodePointCount(snapshot.candidates.front().text) >
+            core::kMaximumVisibleCandidateLength) {
+      snapshot.candidates.clear();
+    }
     return snapshot;
   }
 
- private:
   void ResetPaging() {
     candidate_offset_ = 0;
     previous_page_offsets_.clear();
@@ -474,6 +531,8 @@ class RimeEngine final : public core::Engine {
   int candidate_offset_ = 0;
   std::size_t candidate_page_size_ = core::ipc::kMaximumCandidates;
   bool chinese_candidates_only_ = true;
+  std::wstring overflow_preedit_;
+  std::wstring overflow_base_preedit_;
   std::vector<int> previous_page_offsets_;
 };
 

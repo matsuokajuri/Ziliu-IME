@@ -18,28 +18,41 @@ namespace {
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr float kVerticalWindowWidth = 420.0F;
 constexpr float kMinimumHorizontalWindowWidth = 280.0F;
-constexpr float kMaximumHorizontalWindowWidth = 1040.0F;
 constexpr float kMinimumHorizontalCandidateWidth = 68.0F;
-constexpr float kMaximumHorizontalCandidateWidth = 240.0F;
 constexpr float kHorizontalPadding = 14.0F;
 constexpr float kPreeditHeight = 42.0F;
 constexpr float kCandidateHeight = 38.0F;
 constexpr float kHorizontalPreeditHeight = 34.0F;
 constexpr float kHorizontalCandidateHeight = 36.0F;
 constexpr float kHorizontalWindowHeight = 78.0F;
+constexpr float kHorizontalPreeditOnlyHeight = 42.0F;
 constexpr float kCornerRadius = 10.0F;
 
 int ToPixels(float value, float scale) {
   return static_cast<int>(std::ceil(value * scale));
 }
 
-void FitCandidateWidths(std::vector<float>* widths, float available_width, float minimum_width) {
+void FitCandidateWidths(std::vector<float>* widths, float available_width, float minimum_width,
+                        bool preserve_first_width) {
   if (widths == nullptr || widths->empty()) {
     return;
   }
   const float desired_width = std::accumulate(widths->begin(), widths->end(), 0.0F);
   if (desired_width <= available_width) {
     return;
+  }
+  if (preserve_first_width && widths->size() > 1) {
+    const float other_minimum_total =
+        minimum_width * static_cast<float>(widths->size() - 1);
+    if (available_width > minimum_width + other_minimum_total) {
+      const float first_width =
+          std::min(widths->front(), available_width - other_minimum_total);
+      std::vector<float> other_widths(widths->begin() + 1, widths->end());
+      FitCandidateWidths(&other_widths, available_width - first_width, minimum_width, false);
+      widths->front() = first_width;
+      std::copy(other_widths.begin(), other_widths.end(), widths->begin() + 1);
+      return;
+    }
   }
   const float minimum_total = minimum_width * static_cast<float>(widths->size());
   if (available_width <= minimum_total) {
@@ -51,6 +64,21 @@ void FitCandidateWidths(std::vector<float>* widths, float available_width, float
   for (float& width : *widths) {
     width = minimum_width + (width - minimum_width) * ratio;
   }
+}
+
+float MeasureTextWidth(IDWriteFactory* factory, IDWriteTextFormat* format,
+                       std::wstring_view text, float maximum_width, float height) {
+  if (factory == nullptr || format == nullptr || text.empty() ||
+      text.size() > static_cast<std::size_t>(std::numeric_limits<UINT32>::max())) {
+    return 0.0F;
+  }
+  Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+  if (FAILED(factory->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), format,
+                                       maximum_width, height, layout.GetAddressOf()))) {
+    return 0.0F;
+  }
+  DWRITE_TEXT_METRICS metrics{};
+  return SUCCEEDED(layout->GetMetrics(&metrics)) ? metrics.widthIncludingTrailingWhitespace : 0.0F;
 }
 
 bool UseDarkTheme(core::ThemeMode mode) {
@@ -193,7 +221,6 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
                                                   settings_.candidate_count, page_offset);
   page_offset_ = slice.offset;
-  const auto visible_count = std::max<std::size_t>(slice.count, 1);
   const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
   const UINT dpi = std::max(GetDpiForWindow(window_), static_cast<UINT>(USER_DEFAULT_SCREEN_DPI));
   dpi_scale_ = static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
@@ -213,46 +240,43 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   const int work_bottom = static_cast<int>(monitor_info.rcWork.bottom);
   const int work_width = work_right - work_left;
   const int work_height = work_bottom - work_top;
-  const float maximum_window_width = std::min(
-      kMaximumHorizontalWindowWidth * layout_scale_,
-      static_cast<float>(work_width) / dpi_scale_);
+  const float maximum_window_width = static_cast<float>(work_width) / dpi_scale_;
+  const bool has_device_resources = EnsureDeviceResources();
+  const float measured_preedit_width =
+      has_device_resources
+          ? MeasureTextWidth(dwrite_factory_.Get(), preedit_format_.Get(), snapshot_.preedit,
+                             maximum_window_width, kPreeditHeight * layout_scale_)
+          : 0.0F;
+  const float desired_preedit_window_width =
+      measured_preedit_width + 2.0F * kHorizontalPadding * layout_scale_;
 
   candidate_widths_.clear();
   candidate_lefts_.clear();
   candidate_tops_.clear();
-  std::size_t horizontal_rows = 1;
+  std::size_t horizontal_rows = slice.count == 0 ? 0 : 1;
   if (horizontal) {
-    if (EnsureDeviceResources()) {
+    if (has_device_resources) {
       for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
         const std::size_t candidate_index = slice.offset + visible_index;
         const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
                                    snapshot_.candidates[candidate_index].text;
-        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
-        float width = kMinimumHorizontalCandidateWidth * layout_scale_;
-        if (SUCCEEDED(dwrite_factory_->CreateTextLayout(
-                label.c_str(), static_cast<UINT32>(label.size()), candidate_format_.Get(),
-                kMaximumHorizontalCandidateWidth * layout_scale_,
-                kHorizontalCandidateHeight * layout_scale_,
-                layout.GetAddressOf()))) {
-          DWRITE_TEXT_METRICS metrics{};
-          if (SUCCEEDED(layout->GetMetrics(&metrics))) {
-            width = std::clamp(metrics.widthIncludingTrailingWhitespace +
-                                   24.0F * layout_scale_,
-                               kMinimumHorizontalCandidateWidth * layout_scale_,
-                               kMaximumHorizontalCandidateWidth * layout_scale_);
-          }
-        }
+        const float measured_width =
+            MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
+                             maximum_window_width, kHorizontalCandidateHeight * layout_scale_);
+        const float width =
+            std::clamp(measured_width + 24.0F * layout_scale_,
+                       kMinimumHorizontalCandidateWidth * layout_scale_, maximum_window_width);
         candidate_widths_.push_back(width);
       }
     }
-    if (candidate_widths_.empty()) {
-      candidate_widths_.assign(visible_count,
+    if (candidate_widths_.empty() && slice.count != 0) {
+      candidate_widths_.assign(slice.count,
                                kMinimumHorizontalCandidateWidth * layout_scale_);
     }
     const float outer_width = 16.0F * layout_scale_;
     const bool multiline = settings_.candidate_page_mode == core::CandidatePageMode::kMultiLine &&
                            candidate_widths_.size() > 1;
-    horizontal_rows = multiline ? 2 : 1;
+    horizontal_rows = candidate_widths_.empty() ? 0 : (multiline ? 2 : 1);
     const std::size_t columns =
         multiline ? (candidate_widths_.size() + 1) / 2 : candidate_widths_.size();
     float widest_row = 0.0F;
@@ -265,14 +289,14 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       std::vector<float> row_widths(candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin),
                                     candidate_widths_.begin() + static_cast<std::ptrdiff_t>(end));
       FitCandidateWidths(&row_widths, maximum_window_width - outer_width,
-                         kMinimumHorizontalCandidateWidth * layout_scale_);
+                         kMinimumHorizontalCandidateWidth * layout_scale_, row == 0);
       std::copy(row_widths.begin(), row_widths.end(),
                 candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin));
       widest_row = std::max(
           widest_row, std::accumulate(row_widths.begin(), row_widths.end(), 0.0F));
     }
     window_width_ = std::clamp(
-        outer_width + widest_row,
+        std::max(outer_width + widest_row, desired_preedit_window_width),
         std::min(kMinimumHorizontalWindowWidth * layout_scale_, maximum_window_width),
         maximum_window_width);
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
@@ -288,17 +312,34 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       }
     }
   } else {
-    window_width_ = std::min(kVerticalWindowWidth * layout_scale_,
-                             static_cast<float>(work_width) / dpi_scale_);
+    float desired_vertical_width =
+        std::max(kVerticalWindowWidth * layout_scale_, desired_preedit_window_width);
+    if (has_device_resources) {
+      for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
+        const std::size_t candidate_index = slice.offset + visible_index;
+        const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
+                                   snapshot_.candidates[candidate_index].text;
+        const float candidate_width =
+            MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
+                             maximum_window_width, kCandidateHeight * layout_scale_);
+        desired_vertical_width =
+            std::max(desired_vertical_width,
+                     candidate_width + 160.0F * layout_scale_);
+      }
+    }
+    window_width_ = std::min(desired_vertical_width, maximum_window_width);
   }
 
-  const float height_dip = horizontal
-                               ? kHorizontalWindowHeight * layout_scale_ +
-                                     static_cast<float>(horizontal_rows - 1) *
-                                         kHorizontalCandidateHeight * layout_scale_
-                               : (kHorizontalPadding * 2.0F + kPreeditHeight +
-                                  kCandidateHeight * static_cast<float>(visible_count)) *
-                                     layout_scale_;
+  const float height_dip =
+      horizontal
+          ? (horizontal_rows == 0
+                 ? kHorizontalPreeditOnlyHeight * layout_scale_
+                 : kHorizontalWindowHeight * layout_scale_ +
+                       static_cast<float>(horizontal_rows - 1) *
+                           kHorizontalCandidateHeight * layout_scale_)
+          : (kHorizontalPadding * 2.0F + kPreeditHeight +
+             kCandidateHeight * static_cast<float>(slice.count)) *
+                layout_scale_;
   int width = ToPixels(window_width_, dpi_scale_);
   int height = ToPixels(height_dip, dpi_scale_);
   width = std::min(width, work_width);
@@ -451,6 +492,7 @@ bool CandidateWindow::EnsureDeviceResources() {
   }
   render_target_->SetDpi(dpi_scale_ * static_cast<float>(USER_DEFAULT_SCREEN_DPI),
                          dpi_scale_ * static_cast<float>(USER_DEFAULT_SCREEN_DPI));
+  static_cast<void>(preedit_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
   static_cast<void>(candidate_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
   static_cast<void>(candidate_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER));
   return true;
@@ -469,6 +511,8 @@ void CandidateWindow::Paint() {
     render_target_->Clear(D2D1::ColorF(background_color));
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+    const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
+                                                    settings_.candidate_count, page_offset_);
     const float preedit_bottom =
         (horizontal ? kHorizontalPreeditHeight : kPreeditHeight) * layout_scale_;
     render_target_->DrawTextW(
@@ -477,15 +521,13 @@ void CandidateWindow::Paint() {
         D2D1::RectF(kHorizontalPadding * layout_scale_, 10.0F * layout_scale_,
                     window_width_ - kHorizontalPadding * layout_scale_,
                     preedit_bottom),
-        preedit_brush_.Get());
-    render_target_->DrawLine(
-        D2D1::Point2F(kHorizontalPadding * layout_scale_, preedit_bottom),
-        D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, preedit_bottom),
-        muted_brush_.Get(),
-        0.5F);
-
-    const auto slice = core::MakeCandidatePageSlice(snapshot_.candidates.size(),
-                                                    settings_.candidate_count, page_offset_);
+        preedit_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    if (slice.count != 0) {
+      render_target_->DrawLine(
+          D2D1::Point2F(kHorizontalPadding * layout_scale_, preedit_bottom),
+          D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, preedit_bottom),
+          muted_brush_.Get(), 0.5F);
+    }
     for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
       const std::size_t candidate_index = slice.offset + visible_index;
       const float cell_width = horizontal && visible_index < candidate_widths_.size()
@@ -512,26 +554,32 @@ void CandidateWindow::Paint() {
 
       const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
                                  snapshot_.candidates[candidate_index].text;
+      const auto& annotation = snapshot_.candidates[candidate_index].annotation;
+      const float vertical_annotation_left =
+          annotation.empty()
+              ? window_width_ - kHorizontalPadding * layout_scale_
+              : std::max(300.0F * layout_scale_, window_width_ - 120.0F * layout_scale_);
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
                                 D2D1::RectF(horizontal ? left + 8.0F * layout_scale_
                                                        : kHorizontalPadding * layout_scale_,
                                             top,
                                             horizontal ? right - 6.0F * layout_scale_
-                                                       : 290.0F * layout_scale_,
+                                                       : vertical_annotation_left -
+                                                             10.0F * layout_scale_,
                                             top + row_height),
                                 candidate_index == snapshot_.highlighted_index
                                     ? highlighted_text_brush_.Get()
-                                    : text_brush_.Get());
+                                    : text_brush_.Get(),
+                                D2D1_DRAW_TEXT_OPTIONS_CLIP);
 
-      if (!horizontal) {
-        const auto& annotation = snapshot_.candidates[candidate_index].annotation;
+      if (!horizontal && !annotation.empty()) {
         render_target_->DrawTextW(
             annotation.c_str(), static_cast<UINT32>(annotation.size()), annotation_format_.Get(),
-            D2D1::RectF(300.0F * layout_scale_, top + 4.0F * layout_scale_,
+            D2D1::RectF(vertical_annotation_left, top + 4.0F * layout_scale_,
                         window_width_ - kHorizontalPadding * layout_scale_,
                         top + kCandidateHeight * layout_scale_),
-            muted_brush_.Get());
+            muted_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
       }
     }
 
