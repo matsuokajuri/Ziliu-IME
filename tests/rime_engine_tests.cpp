@@ -172,33 +172,37 @@ int main(int argument_count, char* arguments[]) {
   Expect(selected_first_character, "Rime Ice should offer 中 as a partial candidate for zhongguo");
   engine->Reset();
 
-  for (int index = 0; index < 63; ++index) {
-    Expect(engine->ProcessLetter(L'h'), "Rime should consume long composition input");
-  }
-  const auto below_limit = engine->Snapshot();
-  Expect(below_limit.plain_text().size() == 63,
-         "A 63-letter composition should retain all typed input");
-  Expect(!below_limit.candidates.empty(),
-         "Candidates should remain visible below the 64-letter limit");
-  Expect(below_limit.candidates.front().text.size() == 63,
-         "Automatic Rime commits should remain attached to the visible long candidate");
+  for (const wchar_t repeated_letter : std::wstring_view(L"has")) {
+    for (int index = 0; index < 63; ++index) {
+      Expect(engine->ProcessLetter(repeated_letter),
+             "Rime should consume long composition input for every pinyin initial");
+    }
+    const auto below_limit = engine->Snapshot();
+    Expect(below_limit.plain_text().size() == 63,
+           "A 63-letter composition should retain all typed input");
+    Expect(!below_limit.candidates.empty(),
+           "Candidates should remain visible below the 64-letter limit");
+    Expect(below_limit.candidates.front().text.size() == 63,
+           "Automatic Rime segments should remain attached to the visible long candidate");
 
-  Expect(engine->ProcessLetter(L'h'), "Rime should consume the 64th pinyin letter");
-  const auto at_limit = engine->Snapshot();
-  Expect(at_limit.plain_text().size() == 64,
-         "The 64th pinyin letter should remain in the preedit");
-  Expect(at_limit.candidates.empty(),
-         "Candidates should be hidden at the 64-letter limit");
-  Expect(engine->ProcessLetter(L'h'), "Input beyond the limit should be consumed and rejected");
-  Expect(engine->Snapshot().plain_text().size() == 64,
-         "Input beyond the limit should not change the preedit");
-  Expect(engine->Backspace(), "Backspace should reduce the 64-letter composition");
-  const auto restored_below_limit = engine->Snapshot();
-  Expect(restored_below_limit.plain_text().size() == 63,
-         "Backspace should restore a 63-letter composition");
-  Expect(!restored_below_limit.candidates.empty(),
-         "Backspace should restore candidates below the limit");
-  engine->Reset();
+    Expect(engine->ProcessLetter(repeated_letter), "Rime should consume the 64th pinyin letter");
+    const auto at_limit = engine->Snapshot();
+    Expect(at_limit.plain_text().size() == 64,
+           "The 64th pinyin letter should remain in the preedit");
+    Expect(at_limit.candidates.empty(),
+           "Candidates should be hidden at the 64-letter limit");
+    Expect(engine->ProcessLetter(repeated_letter),
+           "Input beyond the limit should be consumed and rejected");
+    Expect(engine->Snapshot().plain_text().size() == 64,
+           "Input beyond the limit should not change the preedit");
+    Expect(engine->Backspace(), "Backspace should reduce the 64-letter composition");
+    const auto restored_below_limit = engine->Snapshot();
+    Expect(restored_below_limit.plain_text().size() == 63,
+           "Backspace should restore a 63-letter composition");
+    Expect(!restored_below_limit.candidates.empty(),
+           "Backspace should restore candidates below the limit");
+    engine->Reset();
+  }
 
   for (const wchar_t letter : std::wstring_view(L"ziliu")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume the Ziliu spelling");

@@ -423,6 +423,9 @@ class RimeEngine final : public core::Engine {
         candidate.text.insert(0, automatic_commit_text_prefix_);
       }
     }
+    if (snapshot.preedit.empty() && !raw_keys_.empty()) {
+      snapshot.preedit = raw_keys_;
+    }
     if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       snapshot.candidates.clear();
     }
@@ -432,28 +435,51 @@ class RimeEngine final : public core::Engine {
  private:
   bool ProcessTrackedKey(int keycode, wchar_t raw_key, bool is_letter) {
     const core::CompositionSnapshot before = ReadSnapshot();
-    if (api_->process_key(session_id_, keycode, 0) == False) {
+    bool accepted = api_->process_key(session_id_, keycode, 0) != False;
+    bool has_commit = false;
+    RIME_STRUCT(RimeCommit, commit);
+    if (api_->get_commit(session_id_, &commit)) {
+      AppendAutomaticSegment(FromUtf8(commit.text), before.preedit);
+      api_->free_commit(&commit);
+      has_commit = true;
+    }
+
+    const core::CompositionSnapshot after = ReadSnapshot();
+    if (!has_commit && (!accepted || after.preedit.empty()) && !before.preedit.empty() &&
+        !before.candidates.empty()) {
+      // Rime Ice can auto-clear a long but otherwise valid spelling sequence
+      // (notably repeated initials such as "s") without producing a commit.
+      // Preserve its first choice as a completed internal segment, then retry
+      // the current key in a fresh Rime composition.
+      AppendAutomaticSegment(before.candidates.front().text, before.preedit);
+      api_->clear_composition(session_id_);
+      accepted = api_->process_key(session_id_, keycode, 0) != False;
+      if (api_->get_commit(session_id_, &commit)) {
+        AppendAutomaticSegment(FromUtf8(commit.text), std::wstring_view{});
+        api_->free_commit(&commit);
+      }
+    }
+
+    if (!accepted && !is_letter) {
       return false;
     }
     raw_keys_.push_back(raw_key);
     if (is_letter) {
       ++pinyin_letter_count_;
     }
-
-    RIME_STRUCT(RimeCommit, commit);
-    if (api_->get_commit(session_id_, &commit)) {
-      automatic_commit_text_prefix_ += FromUtf8(commit.text);
-      api_->free_commit(&commit);
-      if (!before.preedit.empty()) {
-        if (!automatic_commit_preedit_prefix_.empty() &&
-            automatic_commit_preedit_prefix_.back() != L'\'' &&
-            before.preedit.front() != L'\'') {
-          automatic_commit_preedit_prefix_.push_back(L'\'');
-        }
-        automatic_commit_preedit_prefix_ += before.preedit;
-      }
-    }
     return true;
+  }
+
+  void AppendAutomaticSegment(std::wstring_view text, std::wstring_view preedit) {
+    automatic_commit_text_prefix_.append(text);
+    if (preedit.empty()) {
+      return;
+    }
+    if (!automatic_commit_preedit_prefix_.empty() &&
+        automatic_commit_preedit_prefix_.back() != L'\'' && preedit.front() != L'\'') {
+      automatic_commit_preedit_prefix_.push_back(L'\'');
+    }
+    automatic_commit_preedit_prefix_.append(preedit);
   }
 
   void RebuildComposition() {
