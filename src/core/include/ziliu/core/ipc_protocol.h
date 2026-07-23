@@ -27,6 +27,7 @@ enum class Command : std::uint16_t {
   kSetTraditional = 10,
   kSetCandidatePageSize = 11,
   kSetChineseCandidatesOnly = 12,
+  kInputSeparator = 13,
 };
 
 enum class Status : std::uint16_t {

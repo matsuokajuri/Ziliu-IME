@@ -33,6 +33,15 @@ class StubEngine final : public Engine {
     return true;
   }
 
+  bool ProcessSeparator() override {
+    if (preedit_.empty() || preedit_.back() == L'\'') {
+      return false;
+    }
+    preedit_.push_back(L'\'');
+    RefreshCandidates();
+    return true;
+  }
+
   bool Backspace() override {
     if (preedit_.empty()) {
       return false;
@@ -74,7 +83,14 @@ class StubEngine final : public Engine {
 
  private:
   void RefreshCandidates() {
-    const auto found = kSeedCandidates.find(preedit_);
+    std::wstring lookup_key;
+    lookup_key.reserve(preedit_.size());
+    for (const wchar_t character : preedit_) {
+      if (character != L'\'') {
+        lookup_key.push_back(character);
+      }
+    }
+    const auto found = kSeedCandidates.find(lookup_key);
     if (found != kSeedCandidates.end()) {
       candidates_ = found->second;
       return;

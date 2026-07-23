@@ -42,6 +42,19 @@ int main() {
   const ziliu::core::CompositionSnapshot spaced_preedit{L"你 hao", {}, 0};
   Expect(spaced_preedit.plain_text() == L"你hao",
          "plain preedit text should retain selections and remove segmentation spaces");
+  const ziliu::core::CompositionSnapshot separated_preedit{L"xi'an", {}, 0};
+  Expect(separated_preedit.plain_text() == L"xian",
+         "plain preedit text should omit pinyin separators");
+
+  Type(*engine, L"ni");
+  Expect(engine->ProcessSeparator(), "manual pinyin separator should be accepted");
+  Type(*engine, L"hao");
+  snapshot = engine->Snapshot();
+  Expect(snapshot.preedit == L"ni'hao" && !snapshot.candidates.empty() &&
+             snapshot.candidates.front().text == L"你好",
+         "manual pinyin separator should preserve candidate lookup");
+  engine->Reset();
+
   Expect(ziliu::core::IsChineseCandidate(L"中文") &&
              ziliu::core::IsChineseCandidate(L"繁體") &&
              ziliu::core::IsChineseCandidate(L"〇") &&
@@ -85,6 +98,19 @@ int main() {
   Expect(filter_disabled.consumed && filter_disabled.snapshot.candidates.size() == 1 &&
              filter_disabled.snapshot.candidates.front().text == L"z",
          "session host should apply Chinese-only filtering changes");
+  const auto separator = host.Handle(
+      {4, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0});
+  Expect(separator.consumed && separator.snapshot.preedit == L"z'",
+         "session host should route a manual pinyin separator");
+  std::vector<std::byte> request_bytes;
+  const ziliu::core::ipc::Request separator_request{
+      5, created.session_id, ziliu::core::ipc::Command::kInputSeparator, 0};
+  Expect(ziliu::core::ipc::EncodeRequest(separator_request, &request_bytes),
+         "separator request should encode");
+  ziliu::core::ipc::Request decoded_request;
+  Expect(ziliu::core::ipc::DecodeRequest(request_bytes, &decoded_request) &&
+             decoded_request.command == ziliu::core::ipc::Command::kInputSeparator,
+         "separator request should survive the IPC round trip");
 
   ziliu::core::ipc::Response wire_response;
   wire_response.request_id = 9;

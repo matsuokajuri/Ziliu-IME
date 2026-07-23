@@ -86,6 +86,9 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
       engine.SetChineseCandidatesOnly(request.value != 0);
       response.consumed = true;
       break;
+    case ipc::Command::kInputSeparator:
+      response.consumed = engine.ProcessSeparator();
+      break;
     case ipc::Command::kSelectCandidate: {
       auto selection = engine.Select(request.value);
       response.consumed = selection.consumed;

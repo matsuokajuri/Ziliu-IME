@@ -895,6 +895,9 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
        IsPageKey(wparam, state_->settings.page_key_set, true))) {
     return true;
   }
+  if (!shifted && wparam == VK_OEM_7 && !state_->snapshot.preedit.empty()) {
+    return true;
+  }
   return !Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty();
 }
 
@@ -988,6 +991,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
     if (IsPageKey(wparam, state_->settings.page_key_set, true)) {
       return HandleCandidatePage(context, true, eaten);
     }
+  }
+  if (!shifted && wparam == VK_OEM_7 && !state_->snapshot.preedit.empty()) {
+    return ApplyKeyResponse(context, wparam, eaten);
   }
   if (wparam == VK_RETURN && !state_->snapshot.preedit.empty()) {
     return CommitPendingInput(context, eaten);
@@ -1133,6 +1139,8 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
       state_->candidate_page_offset);
   if (IsLetterKey(wparam)) {
     value = static_cast<std::uint32_t>(wparam - L'A' + L'a');
+  } else if (wparam == VK_OEM_7) {
+    command = core::ipc::Command::kInputSeparator;
   } else if (wparam == VK_BACK) {
     command = core::ipc::Command::kBackspace;
   } else if (wparam == VK_ESCAPE) {

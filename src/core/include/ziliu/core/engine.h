@@ -26,7 +26,7 @@ struct CompositionSnapshot {
     std::wstring result;
     result.reserve(preedit.size());
     for (const wchar_t character : preedit) {
-      if (character != L' ' && character != L'\t' && character != L'\r' &&
+      if (character != L'\'' && character != L' ' && character != L'\t' && character != L'\r' &&
           character != L'\n') {
         result.push_back(character);
       }
@@ -50,6 +50,7 @@ class Engine {
 
   virtual void Reset() = 0;
   virtual bool ProcessLetter(wchar_t letter) = 0;
+  virtual bool ProcessSeparator() = 0;
   virtual bool Backspace() = 0;
   virtual bool PageUp() = 0;
   virtual bool PageDown() = 0;

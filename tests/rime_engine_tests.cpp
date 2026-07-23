@@ -102,11 +102,28 @@ int main(int argument_count, char* arguments[]) {
          "PageUp should return to the first candidate page");
   engine->Reset();
 
+  for (const wchar_t letter : std::wstring_view(L"xi")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume manual-split input");
+  }
+  Expect(engine->ProcessSeparator(), "Rime should consume a manual pinyin separator");
+  for (const wchar_t letter : std::wstring_view(L"an")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume input after a manual separator");
+  }
+  const auto manual_split = engine->Snapshot();
+  Expect(manual_split.preedit == L"xi'an",
+         "manual pinyin splitting should be displayed with an apostrophe");
+  Expect(std::ranges::any_of(manual_split.candidates,
+                            [](const auto& candidate) { return candidate.text == L"西安"; }),
+         "manual pinyin splitting should retain matching candidates");
+  engine->Reset();
+
   for (const wchar_t letter : std::wstring_view(L"zhongguo")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume a pinyin letter");
   }
 
   const auto snapshot = engine->Snapshot();
+  Expect(snapshot.preedit == L"zhong'guo",
+         "automatic pinyin splitting should be displayed with an apostrophe");
   const auto china = std::ranges::find_if(snapshot.candidates, [](const auto& candidate) {
     return candidate.text == L"中国";
   });

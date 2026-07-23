@@ -97,6 +97,26 @@ std::wstring FromUtf8(const char* value) {
   return result;
 }
 
+std::wstring FormatPreedit(std::wstring_view preedit) {
+  std::wstring result;
+  result.reserve(preedit.size());
+  bool pending_separator = false;
+  for (const wchar_t character : preedit) {
+    const bool whitespace =
+        character == L' ' || character == L'\t' || character == L'\r' || character == L'\n';
+    if (whitespace) {
+      pending_separator = !result.empty();
+      continue;
+    }
+    if (pending_separator && result.back() != L'\'' && character != L'\'') {
+      result.push_back(L'\'');
+    }
+    pending_separator = false;
+    result.push_back(character);
+  }
+  return result;
+}
+
 std::filesystem::path ExecutableDirectory() {
   std::wstring path(32768, L'\0');
   const DWORD length = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
@@ -270,6 +290,14 @@ class RimeEngine final : public core::Engine {
     return consumed;
   }
 
+  bool ProcessSeparator() override {
+    const bool consumed = api_->process_key(session_id_, '\'', 0) != False;
+    if (consumed) {
+      ResetPaging();
+    }
+    return consumed;
+  }
+
   bool Backspace() override {
     const bool consumed = api_->process_key(session_id_, kRimeBackspace, 0) != False;
     if (consumed) {
@@ -355,7 +383,7 @@ class RimeEngine final : public core::Engine {
     if (!api_->get_context(session_id_, &context)) {
       return snapshot;
     }
-    snapshot.preedit = FromUtf8(context.composition.preedit);
+    snapshot.preedit = FormatPreedit(FromUtf8(context.composition.preedit));
     const bool has_menu = context.menu.num_candidates > 0;
     api_->free_context(&context);
 
