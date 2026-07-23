@@ -1,7 +1,9 @@
 #include "ziliu/broker/rime_engine.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -16,10 +18,56 @@ void Expect(bool condition, std::string_view message) {
   }
 }
 
+std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>>
+PrepareUnchangedOverlays(const std::filesystem::path& executable_path) {
+  std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> timestamps;
+  char* user_data_value = nullptr;
+  std::size_t user_data_length = 0;
+  if (_dupenv_s(&user_data_value, &user_data_length, "ZILIU_RIME_USER_DATA_DIR") != 0 ||
+      user_data_value == nullptr) {
+    std::free(user_data_value);
+    return timestamps;
+  }
+
+  const std::filesystem::path user_data_path(user_data_value);
+  std::free(user_data_value);
+  const auto shared_data_path = executable_path.parent_path() / "data" / "rime";
+  std::error_code file_error;
+  std::filesystem::create_directories(user_data_path, file_error);
+  Expect(!file_error, "Rime test user data directory should be available");
+  const auto sentinel = std::filesystem::file_time_type::clock::now() - std::chrono::hours(48);
+  for (const auto* overlay : {"default.custom.yaml", "rime_ice.custom.yaml"}) {
+    const auto source = shared_data_path / overlay;
+    if (!std::filesystem::is_regular_file(source, file_error) || file_error) {
+      timestamps.clear();
+      return timestamps;
+    }
+    const auto destination = user_data_path / overlay;
+    file_error.clear();
+    std::filesystem::copy_file(source, destination,
+                               std::filesystem::copy_options::overwrite_existing, file_error);
+    Expect(!file_error, "Rime test overlay should be prepared");
+    std::filesystem::last_write_time(destination, sentinel, file_error);
+    Expect(!file_error, "Rime test overlay timestamp should be adjustable");
+    timestamps.emplace_back(destination, sentinel);
+  }
+  return timestamps;
+}
+
 }  // namespace
 
-int main() {
+int main(int argument_count, char* arguments[]) {
+  Expect(argument_count > 0 && arguments[0] != nullptr,
+         "Rime test executable path should be available");
+  const auto overlay_timestamps =
+      PrepareUnchangedOverlays(std::filesystem::absolute(arguments[0]));
   auto engine = ziliu::broker::CreateEngine();
+  for (const auto& [overlay, expected_timestamp] : overlay_timestamps) {
+    std::error_code file_error;
+    const auto actual_timestamp = std::filesystem::last_write_time(overlay, file_error);
+    Expect(!file_error && actual_timestamp == expected_timestamp,
+           "An unchanged Rime overlay should not be rewritten during cold start");
+  }
   engine->SetCandidatePageSize(7);
 
   for (const wchar_t letter : std::wstring_view(L"shi")) {

@@ -17,6 +17,7 @@ int RunBroker() {
     return 0;
   }
 
+  ziliu::broker::WarmUpEngineRuntime();
   ziliu::ipc::PipeServer server(ziliu::ipc::kBrokerPipeName, ziliu::broker::CreateEngine);
   const int result = server.Run();
   CloseHandle(mutex);

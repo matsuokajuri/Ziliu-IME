@@ -13,6 +13,8 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
@@ -23,6 +25,40 @@ namespace ziliu::broker {
 namespace {
 
 constexpr int kRimeBackspace = 0xFF08;
+
+bool FilesHaveSameContents(const std::filesystem::path& source,
+                           const std::filesystem::path& destination) {
+  std::error_code file_error;
+  const auto source_size = std::filesystem::file_size(source, file_error);
+  if (file_error) {
+    return false;
+  }
+  const auto destination_size = std::filesystem::file_size(destination, file_error);
+  if (file_error || source_size != destination_size) {
+    return false;
+  }
+
+  std::ifstream source_stream(source, std::ios::binary);
+  std::ifstream destination_stream(destination, std::ios::binary);
+  if (!source_stream || !destination_stream) {
+    return false;
+  }
+  return std::equal(std::istreambuf_iterator<char>(source_stream),
+                    std::istreambuf_iterator<char>(),
+                    std::istreambuf_iterator<char>(destination_stream));
+}
+
+bool CopyFileIfDifferent(const std::filesystem::path& source,
+                         const std::filesystem::path& destination) {
+  if (FilesHaveSameContents(source, destination)) {
+    return true;
+  }
+  std::error_code copy_error;
+  return std::filesystem::copy_file(source, destination,
+                                    std::filesystem::copy_options::overwrite_existing,
+                                    copy_error) &&
+         !copy_error;
+}
 
 std::string ToUtf8(std::wstring_view value) {
   if (value.empty()) {
@@ -138,10 +174,7 @@ class RimeRuntime final {
       return;
     }
     for (const auto* overlay : {L"default.custom.yaml", L"rime_ice.custom.yaml"}) {
-      std::error_code copy_error;
-      std::filesystem::copy_file(shared_data_path / overlay, user_data_path / overlay,
-                                 std::filesystem::copy_options::overwrite_existing, copy_error);
-      if (copy_error) {
+      if (!CopyFileIfDifferent(shared_data_path / overlay, user_data_path / overlay)) {
         return;
       }
     }
@@ -186,7 +219,10 @@ class RimeRuntime final {
     traits.min_log_level = 2;
     api_->setup(&traits);
     api_->initialize(&traits);
-    if (api_->start_maintenance(True)) {
+    // Full maintenance rebuilds the Rime workspace on every Broker cold start.
+    // The non-full path checks source timestamps and only schedules deployment
+    // after an install, bundled-data update, or user configuration change.
+    if (api_->start_maintenance(False)) {
       api_->join_maintenance_thread();
     }
   }
@@ -368,6 +404,10 @@ std::unique_ptr<core::Engine> TryCreateRimeEngine() {
 }
 
 }  // namespace
+
+void WarmUpEngineRuntime() {
+  static_cast<void>(RimeRuntime::Instance());
+}
 
 std::unique_ptr<core::Engine> CreateEngine() {
   auto engine = TryCreateRimeEngine();
