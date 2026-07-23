@@ -8,8 +8,10 @@
 #include "ziliu/core/settings.h"
 
 #include <dwmapi.h>
+#include <dwrite.h>
 #include <microsoft.ui.xaml.window.h>
 #include <shellapi.h>
+#include <wrl/client.h>
 
 #include <algorithm>
 #include <chrono>
@@ -19,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace winrt::ZiliuSettings::implementation {
 namespace {
@@ -118,6 +121,142 @@ winrt::Windows::UI::Color ToColor(std::uint32_t rgb) {
 std::uint32_t FromColor(winrt::Windows::UI::Color color) {
   return (static_cast<std::uint32_t>(color.R) << 16) |
          (static_cast<std::uint32_t>(color.G) << 8) | static_cast<std::uint32_t>(color.B);
+}
+
+std::optional<std::wstring> LocalizedFontFamilyName(IDWriteFontFamily* family) {
+  ::Microsoft::WRL::ComPtr<IDWriteLocalizedStrings> names;
+  if (family == nullptr || FAILED(family->GetFamilyNames(names.GetAddressOf())) ||
+      names->GetCount() == 0) {
+    return std::nullopt;
+  }
+
+  UINT32 name_index = 0;
+  BOOL locale_exists = FALSE;
+  wchar_t locale_name[LOCALE_NAME_MAX_LENGTH]{};
+  if (GetUserDefaultLocaleName(locale_name, LOCALE_NAME_MAX_LENGTH) > 0) {
+    static_cast<void>(names->FindLocaleName(locale_name, &name_index, &locale_exists));
+  }
+  if (locale_exists == FALSE) {
+    static_cast<void>(names->FindLocaleName(L"en-us", &name_index, &locale_exists));
+  }
+  if (locale_exists == FALSE) {
+    name_index = 0;
+  }
+
+  UINT32 name_length = 0;
+  if (FAILED(names->GetStringLength(name_index, &name_length))) {
+    return std::nullopt;
+  }
+  std::wstring name(static_cast<std::size_t>(name_length) + 1, L'\0');
+  if (FAILED(names->GetString(name_index, name.data(), name_length + 1))) {
+    return std::nullopt;
+  }
+  name.resize(name_length);
+  return name.empty() ? std::nullopt : std::optional<std::wstring>(std::move(name));
+}
+
+bool FontFamilyLess(const std::wstring& left, const std::wstring& right) {
+  const int comparison =
+      CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE);
+  return comparison == CSTR_LESS_THAN || (comparison == 0 && left < right);
+}
+
+bool FontFamilyEqual(const std::wstring& left, const std::wstring& right) {
+  return CompareStringOrdinal(left.c_str(), -1, right.c_str(), -1, TRUE) == CSTR_EQUAL;
+}
+
+std::vector<std::wstring> EnumerateSystemFontFamilies() {
+  std::vector<std::wstring> families;
+  ::Microsoft::WRL::ComPtr<IDWriteFactory> factory;
+  const HRESULT factory_result =
+      DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                          reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
+  if (SUCCEEDED(factory_result)) {
+    ::Microsoft::WRL::ComPtr<IDWriteFontCollection> collection;
+    if (SUCCEEDED(factory->GetSystemFontCollection(collection.GetAddressOf(), FALSE))) {
+      const UINT32 family_count = collection->GetFontFamilyCount();
+      families.reserve(family_count);
+      for (UINT32 index = 0; index < family_count; ++index) {
+        ::Microsoft::WRL::ComPtr<IDWriteFontFamily> family;
+        if (SUCCEEDED(collection->GetFontFamily(index, family.GetAddressOf()))) {
+          const auto name = LocalizedFontFamilyName(family.Get());
+          if (name.has_value()) {
+            families.push_back(*name);
+          }
+        }
+      }
+    }
+  }
+
+  if (families.empty()) {
+    families = {L"Microsoft YaHei UI", L"Segoe UI Variable Text", L"Arial", L"SimSun"};
+  }
+  std::sort(families.begin(), families.end(), FontFamilyLess);
+  families.erase(std::unique(families.begin(), families.end(), FontFamilyEqual), families.end());
+  return families;
+}
+
+int FindFontFamilyIndex(const std::vector<std::wstring>& families,
+                        const std::wstring& requested_family) {
+  for (std::size_t index = 0; index < families.size(); ++index) {
+    if (FontFamilyEqual(families[index], requested_family)) {
+      return static_cast<int>(index);
+    }
+  }
+  return -1;
+}
+
+void PopulateFontComboBox(Microsoft::UI::Xaml::Controls::ComboBox const& combo_box,
+                          const std::vector<std::wstring>& families,
+                          const std::string& selected_family,
+                          std::wstring_view fallback_family) {
+  combo_box.Items().Clear();
+  for (const auto& family : families) {
+    combo_box.Items().Append(winrt::box_value(winrt::hstring(family)));
+  }
+
+  int selected_index =
+      FindFontFamilyIndex(families, std::wstring(winrt::to_hstring(selected_family)));
+  if (selected_index < 0) {
+    selected_index = FindFontFamilyIndex(families, std::wstring(fallback_family));
+  }
+  if (selected_index < 0 && !families.empty()) {
+    selected_index = 0;
+  }
+  combo_box.SelectedIndex(selected_index);
+}
+
+void SelectFontComboBox(Microsoft::UI::Xaml::Controls::ComboBox const& combo_box,
+                        std::string_view requested_family,
+                        std::wstring_view fallback_family) {
+  const auto requested = winrt::to_hstring(std::string(requested_family));
+  int fallback_index = -1;
+  for (UINT32 index = 0; index < combo_box.Items().Size(); ++index) {
+    const auto name = winrt::unbox_value_or<winrt::hstring>(
+        combo_box.Items().GetAt(index), winrt::hstring{});
+    if (CompareStringOrdinal(name.c_str(), -1, requested.c_str(), -1, TRUE) == CSTR_EQUAL) {
+      combo_box.SelectedIndex(static_cast<int>(index));
+      return;
+    }
+    if (fallback_index < 0 &&
+        CompareStringOrdinal(name.c_str(), -1, fallback_family.data(),
+                             static_cast<int>(fallback_family.size()), TRUE) == CSTR_EQUAL) {
+      fallback_index = static_cast<int>(index);
+    }
+  }
+  combo_box.SelectedIndex(fallback_index >= 0 ? fallback_index
+                                              : (combo_box.Items().Size() > 0 ? 0 : -1));
+}
+
+std::string SelectedFontFamily(Microsoft::UI::Xaml::Controls::ComboBox const& combo_box,
+                               const std::string& fallback_family) {
+  const auto selected = combo_box.SelectedItem();
+  if (selected == nullptr) {
+    return fallback_family;
+  }
+  const auto name =
+      winrt::unbox_value_or<winrt::hstring>(selected, winrt::hstring{});
+  return name.empty() ? fallback_family : winrt::to_string(name);
 }
 
 }  // namespace
@@ -290,10 +429,11 @@ void MainWindow::InitializeSettingsControls() {
   CandidateTextColorPicker().Color(ToColor(settings_.candidate_text_color));
   BackgroundColorPicker().Color(ToColor(settings_.candidate_background_color));
   CustomFontsToggle().IsOn(settings_.custom_candidate_fonts);
-  CandidateChineseFontCombo().SelectedIndex(
-      static_cast<int>(settings_.candidate_chinese_font_family));
-  CandidateEnglishFontCombo().SelectedIndex(
-      static_cast<int>(settings_.candidate_english_font_family));
+  const auto system_font_families = EnumerateSystemFontFamilies();
+  PopulateFontComboBox(CandidateChineseFontCombo(), system_font_families,
+                       settings_.candidate_chinese_font_family, L"Microsoft YaHei UI");
+  PopulateFontComboBox(CandidateEnglishFontCombo(), system_font_families,
+                       settings_.candidate_english_font_family, L"Segoe UI Variable Text");
   CustomFontSizeToggle().IsOn(settings_.custom_candidate_font_size);
   CandidateFontSizeCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_size) - 14);
   CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
@@ -353,8 +493,11 @@ void MainWindow::InitializeNavigation() {
     CandidateTextColorPicker().Color(ToColor(0x202124));
     BackgroundColorPicker().Color(ToColor(0xFAFAFA));
     CustomFontsToggle().IsOn(false);
-    CandidateChineseFontCombo().SelectedIndex(0);
-    CandidateEnglishFontCombo().SelectedIndex(0);
+    const ziliu::core::Settings defaults;
+    SelectFontComboBox(CandidateChineseFontCombo(), defaults.candidate_chinese_font_family,
+                       L"Microsoft YaHei UI");
+    SelectFontComboBox(CandidateEnglishFontCombo(), defaults.candidate_english_font_family,
+                       L"Segoe UI Variable Text");
     CustomFontSizeToggle().IsOn(false);
     CandidateFontSizeCombo().SelectedIndex(3);
     CandidateScaleToggle().IsOn(true);
@@ -523,11 +666,9 @@ void MainWindow::SaveFromControls() {
   settings_.candidate_background_color = FromColor(BackgroundColorPicker().Color());
   settings_.custom_candidate_fonts = CustomFontsToggle().IsOn();
   settings_.candidate_chinese_font_family =
-      static_cast<ziliu::core::CandidateChineseFontFamily>(
-          CandidateChineseFontCombo().SelectedIndex());
+      SelectedFontFamily(CandidateChineseFontCombo(), settings_.candidate_chinese_font_family);
   settings_.candidate_english_font_family =
-      static_cast<ziliu::core::CandidateEnglishFontFamily>(
-          CandidateEnglishFontCombo().SelectedIndex());
+      SelectedFontFamily(CandidateEnglishFontCombo(), settings_.candidate_english_font_family);
   settings_.custom_candidate_font_size = CustomFontSizeToggle().IsOn();
   settings_.candidate_font_size =
       static_cast<std::size_t>(CandidateFontSizeCombo().SelectedIndex() + 14);

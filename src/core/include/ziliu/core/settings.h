@@ -49,18 +49,6 @@ enum class CandidatePageMode {
   kMultiLine,
 };
 
-enum class CandidateChineseFontFamily {
-  kSourceHanSans,
-  kMicrosoftYaHei,
-  kSimSun,
-};
-
-enum class CandidateEnglishFontFamily {
-  kSegoeUi,
-  kArial,
-  kSourceHanSans,
-};
-
 struct Settings {
   CandidateLayout candidate_layout = CandidateLayout::kVertical;
   std::size_t candidate_count = 5;
@@ -97,10 +85,8 @@ struct Settings {
   std::uint32_t candidate_text_color = 0x202124;
   std::uint32_t candidate_background_color = 0xFAFAFA;
   bool custom_candidate_fonts = false;
-  CandidateChineseFontFamily candidate_chinese_font_family =
-      CandidateChineseFontFamily::kSourceHanSans;
-  CandidateEnglishFontFamily candidate_english_font_family =
-      CandidateEnglishFontFamily::kSegoeUi;
+  std::string candidate_chinese_font_family = "Source Han Sans SC";
+  std::string candidate_english_font_family = "Segoe UI Variable Text";
   bool custom_candidate_font_size = false;
   std::size_t candidate_font_size = 17;
   bool candidate_scale_with_text = true;

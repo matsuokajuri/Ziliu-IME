@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <numeric>
 #include <string>
+#include <string_view>
 
 namespace ziliu::ui {
 namespace {
@@ -80,24 +82,23 @@ std::uint32_t BlendColor(std::uint32_t background, std::uint32_t foreground, flo
   return (red << 16) | (green << 8) | blue;
 }
 
-const wchar_t* ChineseFontFamily(core::CandidateChineseFontFamily family) {
-  if (family == core::CandidateChineseFontFamily::kMicrosoftYaHei) {
-    return L"Microsoft YaHei UI";
+std::wstring Utf8ToWide(std::string_view value) {
+  if (value.empty() ||
+      value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return {};
   }
-  if (family == core::CandidateChineseFontFamily::kSimSun) {
-    return L"SimSun";
+  const int input_length = static_cast<int>(value.size());
+  const int output_length =
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), input_length, nullptr, 0);
+  if (output_length <= 0) {
+    return {};
   }
-  return L"Source Han Sans SC";
-}
-
-const wchar_t* EnglishFontFamily(core::CandidateEnglishFontFamily family) {
-  if (family == core::CandidateEnglishFontFamily::kArial) {
-    return L"Arial";
+  std::wstring result(static_cast<std::size_t>(output_length), L'\0');
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), input_length,
+                          result.data(), output_length) != output_length) {
+    return {};
   }
-  if (family == core::CandidateEnglishFontFamily::kSourceHanSans) {
-    return L"Source Han Sans SC";
-  }
-  return L"Segoe UI Variable Text";
+  return result;
 }
 
 bool RegisterCandidateWindowClass() {
@@ -415,11 +416,17 @@ bool CandidateWindow::EnsureDeviceResources() {
     return false;
   }
 
-  const wchar_t* chinese_font_family = L"Source Han Sans SC";
-  const wchar_t* english_font_family = L"Segoe UI Variable Text";
+  std::wstring chinese_font_family = L"Source Han Sans SC";
+  std::wstring english_font_family = L"Segoe UI Variable Text";
   if (settings_.custom_candidate_fonts) {
-    chinese_font_family = ChineseFontFamily(settings_.candidate_chinese_font_family);
-    english_font_family = EnglishFontFamily(settings_.candidate_english_font_family);
+    std::wstring configured_chinese = Utf8ToWide(settings_.candidate_chinese_font_family);
+    std::wstring configured_english = Utf8ToWide(settings_.candidate_english_font_family);
+    if (!configured_chinese.empty()) {
+      chinese_font_family = std::move(configured_chinese);
+    }
+    if (!configured_english.empty()) {
+      english_font_family = std::move(configured_english);
+    }
   }
   const float font_size = static_cast<float>(
       settings_.custom_candidate_font_size
@@ -427,15 +434,15 @@ bool CandidateWindow::EnsureDeviceResources() {
                        core::kMaximumCandidateFontSize)
           : 17);
   if (FAILED(dwrite_factory_->CreateTextFormat(
-          english_font_family, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
+          english_font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size + 1.0F, L"zh-CN",
           preedit_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          chinese_font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          chinese_font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"zh-CN",
           candidate_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
-          chinese_font_family, nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+          chinese_font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
           DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
           std::max(font_size - 5.0F, 10.0F), L"zh-CN",
           annotation_format_.ReleaseAndGetAddressOf()))) {

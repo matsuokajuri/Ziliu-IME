@@ -50,6 +50,25 @@ std::string SerializeColor(std::uint32_t color) {
   return result;
 }
 
+void ParseFontFamily(std::string_view value, std::string* destination) {
+  if (value.empty()) {
+    return;
+  }
+  if (value == "source_han_sans") {
+    *destination = "Source Han Sans SC";
+  } else if (value == "microsoft_yahei") {
+    *destination = "Microsoft YaHei UI";
+  } else if (value == "simsun") {
+    *destination = "SimSun";
+  } else if (value == "segoe_ui") {
+    *destination = "Segoe UI Variable Text";
+  } else if (value == "arial") {
+    *destination = "Arial";
+  } else {
+    *destination = value;
+  }
+}
+
 }  // namespace
 
 Settings ParseSettings(std::string_view text) {
@@ -184,25 +203,13 @@ Settings ParseSettings(std::string_view text) {
     } else if (key == "custom_candidate_fonts") {
       ParseBoolean(value, &settings.custom_candidate_fonts);
     } else if (key == "candidate_chinese_font_family") {
-      if (value == "source_han_sans") {
-        settings.candidate_chinese_font_family = CandidateChineseFontFamily::kSourceHanSans;
-      } else if (value == "microsoft_yahei") {
-        settings.candidate_chinese_font_family = CandidateChineseFontFamily::kMicrosoftYaHei;
-      } else if (value == "simsun") {
-        settings.candidate_chinese_font_family = CandidateChineseFontFamily::kSimSun;
-      }
+      ParseFontFamily(value, &settings.candidate_chinese_font_family);
     } else if (key == "candidate_english_font_family") {
-      if (value == "segoe_ui") {
-        settings.candidate_english_font_family = CandidateEnglishFontFamily::kSegoeUi;
-      } else if (value == "arial") {
-        settings.candidate_english_font_family = CandidateEnglishFontFamily::kArial;
-      } else if (value == "source_han_sans") {
-        settings.candidate_english_font_family = CandidateEnglishFontFamily::kSourceHanSans;
-      }
+      ParseFontFamily(value, &settings.candidate_english_font_family);
     } else if (key == "candidate_font_family") {
       settings.custom_candidate_fonts = value != "system";
       if (value == "microsoft_yahei") {
-        settings.candidate_chinese_font_family = CandidateChineseFontFamily::kMicrosoftYaHei;
+        settings.candidate_chinese_font_family = "Microsoft YaHei UI";
       }
     } else if (key == "candidate_color_scheme") {
       settings.custom_candidate_colors = value != "system";
@@ -258,23 +265,10 @@ std::string SerializeSettings(const Settings& settings) {
   const char* candidate_page_mode =
       settings.candidate_page_mode == CandidatePageMode::kMultiLine ? "multi_line"
                                                                     : "single_line";
-  const char* candidate_chinese_font_family = "source_han_sans";
-  if (settings.candidate_chinese_font_family == CandidateChineseFontFamily::kMicrosoftYaHei) {
-    candidate_chinese_font_family = "microsoft_yahei";
-  } else if (settings.candidate_chinese_font_family == CandidateChineseFontFamily::kSimSun) {
-    candidate_chinese_font_family = "simsun";
-  }
-  const char* candidate_english_font_family = "segoe_ui";
-  if (settings.candidate_english_font_family == CandidateEnglishFontFamily::kArial) {
-    candidate_english_font_family = "arial";
-  } else if (settings.candidate_english_font_family ==
-             CandidateEnglishFontFamily::kSourceHanSans) {
-    candidate_english_font_family = "source_han_sans";
-  }
   const std::size_t candidate_count = std::clamp(
       settings.candidate_count, kMinimumCandidateCount, kMaximumCandidateCount);
 
-  return std::string("version=3\n") + "candidate_layout=" + layout + "\n" +
+  return std::string("version=4\n") + "candidate_layout=" + layout + "\n" +
          "candidate_count=" + std::to_string(candidate_count) + "\n" +
          "input_mode_switch_key=" + switch_key + "\n" +
          "punctuation_style=" + punctuation + "\n" + "auto_pair_punctuation=" +
@@ -311,8 +305,8 @@ std::string SerializeSettings(const Settings& settings) {
          "candidate_background_color=" + SerializeColor(settings.candidate_background_color) +
          "\n" + "custom_candidate_fonts=" +
          (settings.custom_candidate_fonts ? "true" : "false") + "\n" +
-         "candidate_chinese_font_family=" + candidate_chinese_font_family + "\n" +
-         "candidate_english_font_family=" + candidate_english_font_family + "\n" +
+         "candidate_chinese_font_family=" + settings.candidate_chinese_font_family + "\n" +
+         "candidate_english_font_family=" + settings.candidate_english_font_family + "\n" +
          "custom_candidate_font_size=" +
          (settings.custom_candidate_font_size ? "true" : "false") + "\n" +
          "candidate_font_size=" +

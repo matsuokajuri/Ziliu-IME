@@ -130,10 +130,8 @@ int main() {
              parsed_settings.candidate_text_color == 0x334455 &&
              parsed_settings.candidate_background_color == 0xF0F1F2 &&
              parsed_settings.custom_candidate_fonts &&
-             parsed_settings.candidate_chinese_font_family ==
-                 ziliu::core::CandidateChineseFontFamily::kMicrosoftYaHei &&
-             parsed_settings.candidate_english_font_family ==
-                 ziliu::core::CandidateEnglishFontFamily::kArial &&
+             parsed_settings.candidate_chinese_font_family == "Microsoft YaHei UI" &&
+             parsed_settings.candidate_english_font_family == "Arial" &&
              parsed_settings.custom_candidate_font_size &&
              parsed_settings.candidate_font_size == 20 &&
              !parsed_settings.candidate_scale_with_text,
@@ -141,6 +139,14 @@ int main() {
   Expect(ziliu::core::ParseSettings(ziliu::core::SerializeSettings(parsed_settings)) ==
              parsed_settings,
          "settings should survive a deterministic serialization round trip");
+  const auto custom_font_settings =
+      ziliu::core::ParseSettings("candidate_chinese_font_family=霞鹜文楷\n"
+                                 "candidate_english_font_family=IBM Plex Sans\n");
+  Expect(custom_font_settings.candidate_chinese_font_family == "霞鹜文楷" &&
+             custom_font_settings.candidate_english_font_family == "IBM Plex Sans" &&
+             ziliu::core::ParseSettings(
+                 ziliu::core::SerializeSettings(custom_font_settings)) == custom_font_settings,
+         "settings should preserve installed font family names as UTF-8");
   Expect(ziliu::core::ParseSettings("candidate_count=99\n").candidate_count ==
              ziliu::core::kMaximumCandidateCount,
          "candidate count should be clamped to the supported range");
