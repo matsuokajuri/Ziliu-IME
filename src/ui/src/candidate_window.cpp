@@ -546,7 +546,7 @@ void CandidateWindow::Paint() {
       const float row_height =
           (horizontal ? kHorizontalCandidateHeight : kCandidateHeight) * layout_scale_;
       const D2D1_RECT_F row =
-          D2D1::RectF(left, top - 2.0F, right, top + row_height - 4.0F);
+          D2D1::RectF(left, top + 1.0F, right, top + row_height - 1.0F);
       if (candidate_index == snapshot_.highlighted_index) {
         render_target_->FillRoundedRectangle(D2D1::RoundedRect(row, kCornerRadius, kCornerRadius),
                                              accent_brush_.Get());
