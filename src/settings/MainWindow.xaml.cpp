@@ -12,6 +12,7 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -131,6 +132,7 @@ MainWindow::MainWindow() {
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     QuickMenuRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
     InitializeQuickMenuControls();
+    PrepareQuickMenuOpenAnimation();
   } else {
     Title(L"字流 Ziliu 设置");
     SettingsRoot().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
@@ -148,9 +150,13 @@ MainWindow::MainWindow() {
     Activated(
         [this](winrt::Windows::Foundation::IInspectable const&,
                Microsoft::UI::Xaml::WindowActivatedEventArgs const& args) {
-          if (args.WindowActivationState() ==
+          const auto activation_state = args.WindowActivationState();
+          if (activation_state ==
               Microsoft::UI::Xaml::WindowActivationState::Deactivated) {
             Close();
+          } else if (!quick_menu_animation_started_) {
+            quick_menu_animation_started_ = true;
+            PlayQuickMenuOpenAnimation();
           }
         });
   }
@@ -436,6 +442,36 @@ void MainWindow::InitializeQuickMenuControls() {
         ShellExecuteW(nullptr, L"open", executable.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
         Close();
       });
+}
+
+void MainWindow::PrepareQuickMenuOpenAnimation() {
+  const auto visual =
+      Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::GetElementVisual(RootGrid());
+  visual.Opacity(0.0f);
+  visual.Offset({0.0f, 12.0f, 0.0f});
+}
+
+void MainWindow::PlayQuickMenuOpenAnimation() {
+  const auto visual =
+      Microsoft::UI::Xaml::Hosting::ElementCompositionPreview::GetElementVisual(RootGrid());
+  const auto compositor = visual.Compositor();
+  const auto easing =
+      compositor.CreateCubicBezierEasingFunction({0.1f, 0.9f}, {0.2f, 1.0f});
+
+  const auto opacity_animation = compositor.CreateScalarKeyFrameAnimation();
+  opacity_animation.InsertKeyFrame(0.0f, 0.0f);
+  opacity_animation.InsertKeyFrame(1.0f, 1.0f, easing);
+  opacity_animation.Duration(std::chrono::milliseconds(180));
+
+  const auto offset_animation = compositor.CreateVector3KeyFrameAnimation();
+  offset_animation.InsertKeyFrame(0.0f, {0.0f, 12.0f, 0.0f});
+  offset_animation.InsertKeyFrame(1.0f, {0.0f, 0.0f, 0.0f}, easing);
+  offset_animation.Duration(std::chrono::milliseconds(180));
+
+  visual.Opacity(1.0f);
+  visual.Offset({0.0f, 0.0f, 0.0f});
+  visual.StartAnimation(L"Opacity", opacity_animation);
+  visual.StartAnimation(L"Offset", offset_animation);
 }
 
 void MainWindow::SaveFromControls() {

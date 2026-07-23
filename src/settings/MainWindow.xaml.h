@@ -14,6 +14,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y);
   void InitializeSettingsControls();
   void InitializeQuickMenuControls();
+  void PrepareQuickMenuOpenAnimation();
+  void PlayQuickMenuOpenAnimation();
   void InitializeNavigation();
   void ShowSettingsPage(std::wstring_view page);
   void ApplyThemeFromControls();
@@ -22,6 +24,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void SaveFromControls();
 
   ziliu::core::Settings settings_;
+  bool quick_menu_animation_started_ = false;
 };
 
 }  // namespace winrt::ZiliuSettings::implementation
