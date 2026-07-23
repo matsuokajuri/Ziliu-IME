@@ -543,10 +543,14 @@ void MainWindow::InitializeNavigation() {
       [this](auto const&, auto const&) { ShowSettingsPage(L"fuzzy"); });
   PunctuationSettingsButton().Click(
       [this](auto const&, auto const&) { ShowSettingsPage(L"punctuation"); });
+  ThemeSettingsButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"theme"); });
   CorrectionBackButton().Click([this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
   FuzzyBackButton().Click([this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
   PunctuationBackButton().Click(
       [this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
+  ThemeBackButton().Click(
+      [this](auto const&, auto const&) { ShowSettingsPage(L"appearance"); });
   ThemeCombo().SelectionChanged([this](auto const&, auto const&) {
     ApplyThemeFromControls();
     UpdateCandidatePreview();
@@ -606,6 +610,7 @@ void MainWindow::ShowSettingsPage(std::wstring_view page) {
   FuzzyPage().Visibility(collapsed);
   PunctuationPage().Visibility(collapsed);
   AppearancePage().Visibility(collapsed);
+  ThemePage().Visibility(collapsed);
   DictionaryPage().Visibility(collapsed);
   KeysPage().Visibility(collapsed);
   AdvancedPage().Visibility(collapsed);
@@ -625,6 +630,8 @@ void MainWindow::ShowSettingsPage(std::wstring_view page) {
     FuzzyPage().Visibility(visible);
   } else if (page == L"punctuation") {
     PunctuationPage().Visibility(visible);
+  } else if (page == L"theme") {
+    ThemePage().Visibility(visible);
   } else {
     CommonPage().Visibility(visible);
   }
