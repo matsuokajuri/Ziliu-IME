@@ -100,14 +100,29 @@ bool SaveSettings(const ziliu::core::Settings& settings) {
   if (directory_error) {
     return false;
   }
-  std::ofstream stream(*path, std::ios::binary | std::ios::trunc);
+  std::filesystem::path temporary_path = *path;
+  temporary_path += L".tmp";
+  std::ofstream stream(temporary_path, std::ios::binary | std::ios::trunc);
   if (!stream) {
     return false;
   }
   const std::string serialized = ziliu::core::SerializeSettings(settings);
   stream.write(serialized.data(), static_cast<std::streamsize>(serialized.size()));
   stream.flush();
-  return stream.good();
+  const bool write_succeeded = stream.good();
+  stream.close();
+  if (!write_succeeded || stream.fail()) {
+    std::error_code remove_error;
+    std::filesystem::remove(temporary_path, remove_error);
+    return false;
+  }
+  if (!MoveFileExW(temporary_path.c_str(), path->c_str(),
+                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    std::error_code remove_error;
+    std::filesystem::remove(temporary_path, remove_error);
+    return false;
+  }
+  return true;
 }
 
 LaunchOptions ParseLaunchOptions() {

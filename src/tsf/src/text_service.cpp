@@ -673,15 +673,19 @@ void TextService::RefreshSettings(bool force) {
   if (!contents.has_value()) {
     return;
   }
+  const core::Settings updated_settings = core::ParseSettings(*contents);
+  state_->settings_write_time = write_time;
+  state_->settings_file_known = true;
+  if (updated_settings == state_->settings) {
+    return;
+  }
   const core::CharacterSet previous_character_set = state_->settings.character_set;
   const std::size_t previous_candidate_count = state_->settings.candidate_count;
   const core::CandidatePageMode previous_page_mode =
       state_->settings.candidate_page_mode;
   const bool previous_chinese_candidates_only =
       state_->settings.chinese_candidates_only;
-  state_->settings = core::ParseSettings(*contents);
-  state_->settings_write_time = write_time;
-  state_->settings_file_known = true;
+  state_->settings = updated_settings;
   state_->candidate_page_offset = 0;
 
   if (state_->session_id != 0 && previous_character_set != state_->settings.character_set) {
@@ -967,6 +971,10 @@ void TextService::ShowCandidateWindow() {
 
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
   if (foreground) {
+    RefreshSettings(true);
+    if (!state_->snapshot.empty()) {
+      ShowCandidateWindow();
+    }
     PublishInputMode();
   } else {
     state_->candidate_window.Hide();
@@ -986,6 +994,10 @@ STDMETHODIMP TextService::OnChange(REFGUID guid) {
 }
 
 STDMETHODIMP TextService::OnSetThreadFocus() {
+  RefreshSettings(true);
+  if (!state_->snapshot.empty()) {
+    ShowCandidateWindow();
+  }
   PublishInputMode();
   return S_OK;
 }
@@ -1002,9 +1014,7 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
-  if (state_->snapshot.empty()) {
-    RefreshSettings(false);
-  }
+  RefreshSettings(false);
   if (state_->switch_key_down && !IsInputModeSwitchKey(wparam)) {
     state_->switch_key_used = true;
   }
