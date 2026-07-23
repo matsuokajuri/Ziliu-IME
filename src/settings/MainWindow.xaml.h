@@ -26,6 +26,8 @@ struct MainWindow : MainWindowT<MainWindow> {
 
   ziliu::core::Settings settings_;
   bool quick_menu_animation_started_ = false;
+  bool quick_menu_close_armed_ = false;
+  Microsoft::UI::Dispatching::DispatcherQueueTimer quick_menu_close_arm_timer_{nullptr};
 };
 
 }  // namespace winrt::ZiliuSettings::implementation

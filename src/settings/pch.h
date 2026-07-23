@@ -12,6 +12,7 @@
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Composition.h>
 #include <winrt/Microsoft.UI.Xaml.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>

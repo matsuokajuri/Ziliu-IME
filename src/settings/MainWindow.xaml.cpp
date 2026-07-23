@@ -303,13 +303,24 @@ MainWindow::MainWindow() {
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
   if (options.quick_menu) {
+    quick_menu_close_arm_timer_ =
+        Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread().CreateTimer();
+    quick_menu_close_arm_timer_.Interval(std::chrono::milliseconds(400));
+    quick_menu_close_arm_timer_.IsRepeating(false);
+    quick_menu_close_arm_timer_.Tick([this](auto const&, auto const&) {
+      quick_menu_close_armed_ = true;
+      quick_menu_close_arm_timer_ = nullptr;
+    });
+    quick_menu_close_arm_timer_.Start();
     Activated(
         [this](winrt::Windows::Foundation::IInspectable const&,
                Microsoft::UI::Xaml::WindowActivatedEventArgs const& args) {
           const auto activation_state = args.WindowActivationState();
           if (activation_state ==
               Microsoft::UI::Xaml::WindowActivationState::Deactivated) {
-            Close();
+            if (quick_menu_close_armed_) {
+              Close();
+            }
           } else if (!quick_menu_animation_started_) {
             quick_menu_animation_started_ = true;
             PlayQuickMenuOpenAnimation();

@@ -52,6 +52,8 @@ class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
   std::function<HRESULT()> toggle_input_mode_;
   HWND quick_menu_dispatch_window_ = nullptr;
   ULONGLONG last_menu_request_tick_ = 0;
+  LONG pending_quick_menu_x_ = 0;
+  LONG pending_quick_menu_y_ = 0;
   ITfLangBarItemSink* sink_ = nullptr;
   bool chinese_mode_ = true;
   bool visible_ = true;

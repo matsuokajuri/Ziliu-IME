@@ -3,6 +3,7 @@
 #include "App.xaml.h"
 #include "MainWindow.xaml.h"
 
+#include <microsoft.ui.xaml.window.h>
 #include <shellapi.h>
 
 #include <algorithm>
@@ -107,6 +108,14 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
         });
   }
   window_.Activate();
+  if (options.quick_menu) {
+    HWND window_handle = nullptr;
+    if (SUCCEEDED(window_.as<::IWindowNative>()->get_WindowHandle(&window_handle)) &&
+        window_handle != nullptr) {
+      ShowWindow(window_handle, SW_SHOWNORMAL);
+      static_cast<void>(SetForegroundWindow(window_handle));
+    }
+  }
 }
 
 void App::ReleaseQuickMenuInstance() {

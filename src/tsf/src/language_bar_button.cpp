@@ -18,12 +18,8 @@ namespace {
 
 constexpr wchar_t kQuickMenuDispatchWindowClass[] =
     L"Ziliu.LanguageBarButton.QuickMenuDispatch.v1";
-constexpr UINT kOpenQuickMenuMessage = WM_APP + 1;
-
-struct QuickMenuRequest {
-  LONG x = 0;
-  LONG y = 0;
-};
+constexpr UINT_PTR kOpenQuickMenuTimer = 1;
+constexpr UINT kQuickMenuOpenDelayMilliseconds = 200;
 
 HICON CreateModeIcon(bool chinese_mode) {
   constexpr int size = 32;
@@ -225,17 +221,11 @@ HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
   if (quick_menu_dispatch_window_ == nullptr) {
     return OpenQuickMenu(x, y);
   }
-  auto* request = new (std::nothrow) QuickMenuRequest{x, y};
-  if (request == nullptr) {
-    return E_OUTOFMEMORY;
-  }
-  AddRef();
-  if (!PostMessageW(quick_menu_dispatch_window_, kOpenQuickMenuMessage, 0,
-                    reinterpret_cast<LPARAM>(request))) {
-    const HRESULT post_result = HRESULT_FROM_WIN32(GetLastError());
-    delete request;
-    Release();
-    return post_result;
+  pending_quick_menu_x_ = x;
+  pending_quick_menu_y_ = y;
+  if (SetTimer(quick_menu_dispatch_window_, kOpenQuickMenuTimer,
+               kQuickMenuOpenDelayMilliseconds, nullptr) == 0) {
+    return HRESULT_FROM_WIN32(GetLastError());
   }
   return S_OK;
 }
@@ -278,13 +268,10 @@ LRESULT CALLBACK LanguageBarButton::QuickMenuDispatchWindowProcedure(
 
   auto* self = reinterpret_cast<LanguageBarButton*>(
       GetWindowLongPtrW(window, GWLP_USERDATA));
-  if (message == kOpenQuickMenuMessage && self != nullptr) {
-    auto* request = reinterpret_cast<QuickMenuRequest*>(lparam);
-    if (request != nullptr) {
-      static_cast<void>(self->OpenQuickMenu(request->x, request->y));
-      delete request;
-    }
-    self->Release();
+  if (message == WM_TIMER && wparam == kOpenQuickMenuTimer && self != nullptr) {
+    KillTimer(window, kOpenQuickMenuTimer);
+    static_cast<void>(
+        self->OpenQuickMenu(self->pending_quick_menu_x_, self->pending_quick_menu_y_));
     return 0;
   }
   if (message == WM_NCDESTROY && self != nullptr) {
