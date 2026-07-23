@@ -9,11 +9,13 @@
 namespace ziliu::ipc {
 
 inline constexpr wchar_t kBrokerPipeName[] = L"\\\\.\\pipe\\Ziliu.Broker.v1";
+inline constexpr std::uint32_t kDefaultBrokerTimeoutMilliseconds = 100;
 
 class PipeClient final {
  public:
   explicit PipeClient(std::wstring pipe_name = kBrokerPipeName,
-                      std::uint32_t timeout_milliseconds = 8);
+                      std::uint32_t timeout_milliseconds =
+                          kDefaultBrokerTimeoutMilliseconds);
 
   [[nodiscard]] std::optional<core::ipc::Response> Exchange(
       const core::ipc::Request& request) const;

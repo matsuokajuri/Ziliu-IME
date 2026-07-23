@@ -1,3 +1,4 @@
+#include "ziliu/core/engine.h"
 #include "ziliu/core/ipc_protocol.h"
 #include "ziliu/ipc/pipe_client.h"
 #include "ziliu/ipc/pipe_server.h"
@@ -13,6 +14,48 @@
 #include <thread>
 
 namespace {
+
+class DelayedEngine final : public ziliu::core::Engine {
+ public:
+  DelayedEngine() : engine_(ziliu::core::CreateStubEngine()) {}
+
+  void Reset() override { engine_->Reset(); }
+
+  bool ProcessLetter(wchar_t letter) override {
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    return engine_->ProcessLetter(letter);
+  }
+
+  bool ProcessSeparator() override { return engine_->ProcessSeparator(); }
+  bool Backspace() override { return engine_->Backspace(); }
+  bool PageUp() override { return engine_->PageUp(); }
+  bool PageDown() override { return engine_->PageDown(); }
+
+  void SetCandidatePageSize(std::size_t page_size) override {
+    engine_->SetCandidatePageSize(page_size);
+  }
+
+  void SetTraditional(bool enabled) override { engine_->SetTraditional(enabled); }
+
+  void SetChineseCandidatesOnly(bool enabled) override {
+    engine_->SetChineseCandidatesOnly(enabled);
+  }
+
+  ziliu::core::SelectionResult Select(std::size_t candidate_index) override {
+    return engine_->Select(candidate_index);
+  }
+
+  [[nodiscard]] ziliu::core::CompositionSnapshot Snapshot() const override {
+    return engine_->Snapshot();
+  }
+
+ private:
+  std::unique_ptr<ziliu::core::Engine> engine_;
+};
+
+std::unique_ptr<ziliu::core::Engine> CreateDelayedEngine() {
+  return std::make_unique<DelayedEngine>();
+}
 
 void Expect(bool condition, std::string_view message) {
   if (!condition) {
@@ -30,9 +73,9 @@ int main() {
 
   const std::wstring pipe_name =
       L"\\\\.\\pipe\\Ziliu.Tests." + std::to_wstring(GetCurrentProcessId());
-  ziliu::ipc::PipeServer server(pipe_name);
+  ziliu::ipc::PipeServer server(pipe_name, CreateDelayedEngine);
   std::jthread server_thread([&server] { Expect(server.Run() == 0, "server should stop cleanly"); });
-  ziliu::ipc::PipeClient client(pipe_name, 5000);
+  ziliu::ipc::PipeClient client(pipe_name);
 
   std::uint64_t request_id = 1;
   std::optional<ziliu::core::ipc::Response> response;
@@ -52,7 +95,7 @@ int main() {
     response = client.Exchange(
         Request{request_id++, session_id, Command::kInputLetter,
                 static_cast<std::uint32_t>(letter)});
-    Expect(response.has_value(), "letter request should receive a response");
+    Expect(response.has_value(), "a 25 ms letter response should not time out");
     Expect(response->status == Status::kOk, "letter request should keep the session");
     Expect(response->session_id == session_id, "letter response should match the session");
     Expect(response->consumed, "letters should be consumed");
