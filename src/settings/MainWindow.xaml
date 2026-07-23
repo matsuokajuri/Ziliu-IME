@@ -9,7 +9,10 @@
         <MicaBackdrop Kind="Base" />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="RootGrid" Background="{ThemeResource LayerFillColorDefaultBrush}">
+    <Grid
+        x:Name="RootGrid"
+        Language="zh-CN"
+        Background="{ThemeResource LayerFillColorDefaultBrush}">
         <Grid.Resources>
             <Style x:Key="ZiliuTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
                 <Setter Property="FontFamily" Value="{StaticResource ZiliuContentFontFamily}" />

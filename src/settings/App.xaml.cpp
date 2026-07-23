@@ -80,7 +80,10 @@ bool ActivateExistingQuickMenu(const QuickMenuLaunchOptions& options) {
 
 }  // namespace
 
-App::App() { InitializeComponent(); }
+App::App() {
+  winrt::Windows::Globalization::ApplicationLanguages::PrimaryLanguageOverride(L"zh-CN");
+  InitializeComponent();
+}
 
 void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
   const QuickMenuLaunchOptions options = ParseQuickMenuLaunchOptions();
