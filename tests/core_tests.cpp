@@ -204,6 +204,7 @@ int main() {
       "fuzzy_z_zh=true\n"
       "smart_numeric_punctuation=false\n"
       "theme_mode=dark\n"
+      "active_theme_id=org.example.clean\n"
       "candidate_page_mode=multi_line\n"
       "custom_candidate_colors=true\n"
       "preedit_color=#112233\n"
@@ -228,6 +229,7 @@ int main() {
              !parsed_settings.chinese_candidates_only &&
              parsed_settings.fuzzy_z_zh && !parsed_settings.smart_numeric_punctuation &&
              parsed_settings.theme_mode == ziliu::core::ThemeMode::kDark &&
+             parsed_settings.active_theme_id == "org.example.clean" &&
              parsed_settings.candidate_page_mode ==
                  ziliu::core::CandidatePageMode::kMultiLine &&
              parsed_settings.custom_candidate_colors &&
@@ -259,6 +261,9 @@ int main() {
   Expect(ziliu::core::ParseSettings("candidate_font_size=99\n").candidate_font_size ==
              ziliu::core::kMaximumCandidateFontSize,
          "candidate font size should be clamped to the supported range");
+  Expect(ziliu::core::ParseSettings("active_theme_id=../unsafe\n").active_theme_id ==
+             "org.ziliu.default",
+         "unsafe theme identifiers should fall back to the built-in theme");
   Expect(ziliu::core::MakeCandidatePageSlice(9, 5, 0) ==
              ziliu::core::CandidatePageSlice{0, 5} &&
              ziliu::core::MakeCandidatePageSlice(9, 5, 5) ==
