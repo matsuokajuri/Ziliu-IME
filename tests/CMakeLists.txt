@@ -13,6 +13,15 @@ add_test(
   NAME ziliu_ui_coordinate_space_tests
   COMMAND ziliu_ui_coordinate_space_tests)
 
+add_executable(
+  ziliu_ui_sogou_surface_scaler_tests
+  ui_sogou_surface_scaler_tests.cpp)
+ziliu_configure_target(ziliu_ui_sogou_surface_scaler_tests)
+
+add_test(
+  NAME ziliu_ui_sogou_surface_scaler_tests
+  COMMAND ziliu_ui_sogou_surface_scaler_tests)
+
 if(WIN32)
   add_executable(ziliu_sogou_ssf_container_tests
     sogou_ssf_container_tests.cpp
