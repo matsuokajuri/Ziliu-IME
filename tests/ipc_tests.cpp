@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -73,7 +74,63 @@ void Expect(bool condition, std::string_view message) {
 int main() {
   using ziliu::core::ipc::Command;
   using ziliu::core::ipc::Request;
+  using ziliu::core::ipc::Response;
   using ziliu::core::ipc::Status;
+
+  Response expected_pager_response;
+  expected_pager_response.request_id = 7;
+  expected_pager_response.session_id = 11;
+  expected_pager_response.consumed = true;
+  expected_pager_response.snapshot.preedit = L"shi";
+  expected_pager_response.snapshot.candidates = {{L"是", L"shi", 1.0}};
+  expected_pager_response.snapshot.has_previous_page = true;
+  expected_pager_response.snapshot.has_next_page = true;
+  std::vector<std::byte> encoded_pager_response;
+  Expect(ziliu::core::ipc::EncodeResponse(expected_pager_response, &encoded_pager_response),
+         "pager availability should encode into an IPC response");
+  Response decoded_pager_response;
+  Expect(ziliu::core::ipc::DecodeResponse(encoded_pager_response, &decoded_pager_response),
+         "pager availability should decode from an IPC response");
+  Expect(decoded_pager_response.snapshot.has_previous_page &&
+             decoded_pager_response.snapshot.has_next_page,
+         "both pager availability flags should survive the IPC round trip");
+
+  Request legacy_request{41, 0, Command::kPing, 0};
+  std::vector<std::byte> encoded_legacy_request;
+  Expect(ziliu::core::ipc::EncodeRequest(
+             legacy_request,
+             ziliu::core::ipc::kOldestCompatibleProtocolVersion,
+             &encoded_legacy_request),
+         "the current broker should encode the previous compatible request");
+  Request decoded_legacy_request;
+  std::uint16_t decoded_legacy_request_version = 0;
+  Expect(ziliu::core::ipc::DecodeRequest(
+             encoded_legacy_request, &decoded_legacy_request,
+             &decoded_legacy_request_version) &&
+             decoded_legacy_request_version ==
+                 ziliu::core::ipc::kOldestCompatibleProtocolVersion &&
+             decoded_legacy_request.request_id == legacy_request.request_id,
+         "the current broker should accept the previous compatible request");
+
+  Response legacy_response = expected_pager_response;
+  legacy_response.request_id = legacy_request.request_id;
+  std::vector<std::byte> encoded_legacy_response;
+  Expect(ziliu::core::ipc::EncodeResponse(
+             legacy_response,
+             ziliu::core::ipc::kOldestCompatibleProtocolVersion,
+             &encoded_legacy_response),
+         "the current broker should encode a response in the caller's version");
+  Response decoded_legacy_response;
+  std::uint16_t decoded_legacy_response_version = 0;
+  Expect(ziliu::core::ipc::DecodeResponse(
+             encoded_legacy_response, &decoded_legacy_response,
+             &decoded_legacy_response_version) &&
+             decoded_legacy_response_version ==
+                 ziliu::core::ipc::kOldestCompatibleProtocolVersion &&
+             decoded_legacy_response.request_id == legacy_request.request_id &&
+             !decoded_legacy_response.snapshot.has_previous_page &&
+             !decoded_legacy_response.snapshot.has_next_page,
+         "v4 responses should omit pager flags while retaining the shared payload");
 
   const std::wstring pipe_name =
       L"\\\\.\\pipe\\Ziliu.Tests." + std::to_wstring(GetCurrentProcessId());

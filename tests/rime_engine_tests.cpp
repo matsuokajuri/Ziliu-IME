@@ -75,6 +75,8 @@ int main(int argument_count, char* arguments[]) {
   }
   const auto first_page = engine->Snapshot();
   Expect(first_page.candidates.size() == 7, "Rime should honor the configured candidate page size");
+  Expect(!first_page.has_previous_page && first_page.has_next_page,
+         "the first Rime page should expose only a next-page affordance");
   const auto candidate_texts = [](const auto& snapshot) {
     std::vector<std::wstring> texts;
     texts.reserve(snapshot.candidates.size());
@@ -93,13 +95,18 @@ int main(int argument_count, char* arguments[]) {
   Expect(engine->PageDown(), "Rime should consume PageDown when more candidates exist");
   const auto second_page = engine->Snapshot();
   Expect(!second_page.candidates.empty(), "PageDown should retain candidate results");
+  Expect(second_page.has_previous_page,
+         "the second Rime page should expose a previous-page affordance");
   Expect(!contains_non_chinese(second_page),
          "later visible pages should contain only Chinese candidates");
   Expect(candidate_texts(second_page) != candidate_texts(first_page),
          "PageDown should advance to a different candidate page");
   Expect(engine->PageUp(), "Rime should consume PageUp on the second page");
-  Expect(candidate_texts(engine->Snapshot()) == candidate_texts(first_page),
+  const auto returned_first_page = engine->Snapshot();
+  Expect(candidate_texts(returned_first_page) == candidate_texts(first_page),
          "PageUp should return to the first candidate page");
+  Expect(!returned_first_page.has_previous_page && returned_first_page.has_next_page,
+         "returning to the first page should restore the pager affordances");
   engine->SetCandidateWindowPageCount(5);
   const auto expanded_first_page = engine->Snapshot();
   Expect(expanded_first_page.candidates.size() > 14 &&
