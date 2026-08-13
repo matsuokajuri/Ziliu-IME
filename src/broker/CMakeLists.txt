@@ -1,7 +1,17 @@
 add_library(ziliu_broker_engine STATIC src/rime_engine.cpp)
 target_include_directories(ziliu_broker_engine PUBLIC include)
-target_include_directories(ziliu_broker_engine SYSTEM PRIVATE
-  "${PROJECT_SOURCE_DIR}/third_party/librime/src")
+if(ZILIU_ENABLE_RIME)
+  set(ZILIU_RIME_API_HEADER
+      "${PROJECT_SOURCE_DIR}/third_party/librime/src/rime_api.h")
+  if(NOT EXISTS "${ZILIU_RIME_API_HEADER}")
+    message(FATAL_ERROR
+      "ZILIU_ENABLE_RIME=ON requires the initialized librime submodule: "
+      "${ZILIU_RIME_API_HEADER}")
+  endif()
+  target_include_directories(ziliu_broker_engine SYSTEM PRIVATE
+    "${PROJECT_SOURCE_DIR}/third_party/librime/src")
+  target_compile_definitions(ziliu_broker_engine PRIVATE ZILIU_ENABLE_RIME=1)
+endif()
 target_link_libraries(ziliu_broker_engine PUBLIC ziliu_core PRIVATE ole32 shell32)
 ziliu_configure_target(ziliu_broker_engine)
 
@@ -9,6 +19,7 @@ add_executable(ZiliuBroker WIN32 src/broker_main.cpp)
 target_link_libraries(ZiliuBroker PRIVATE ziliu_broker_engine ziliu_ipc_server)
 ziliu_configure_target(ZiliuBroker)
 
+if(ZILIU_ENABLE_RIME)
 add_custom_target(ziliu_stage_rime_data ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZiliuBroker>/data/rime"
   COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
@@ -33,4 +44,5 @@ else()
   message(STATUS
     "Verified librime runtime not found; run scripts/fetch-librime-runtime.ps1. "
     "Broker will use the deterministic fallback engine.")
+endif()
 endif()

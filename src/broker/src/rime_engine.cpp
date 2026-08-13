@@ -1,5 +1,19 @@
 #include "ziliu/broker/rime_engine.h"
 
+#if !defined(ZILIU_ENABLE_RIME)
+
+namespace ziliu::broker {
+
+void WarmUpEngineRuntime() {}
+
+std::unique_ptr<core::Engine> CreateEngine() {
+  return core::CreateStubEngine();
+}
+
+}  // namespace ziliu::broker
+
+#else
+
 #include "ziliu/core/ipc_protocol.h"
 
 #include <windows.h>
@@ -654,3 +668,5 @@ std::unique_ptr<core::Engine> CreateEngine() {
 }
 
 }  // namespace ziliu::broker
+
+#endif
