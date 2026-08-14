@@ -16,6 +16,26 @@ ziliu_configure_target(ziliu_sogou_theme_tests)
 
 add_test(NAME ziliu_sogou_theme_tests COMMAND ziliu_sogou_theme_tests)
 
+if(TARGET ZiliuTextRaster)
+  add_executable(ziliu_text_raster_math_tests text_raster_math_tests.cpp)
+  target_include_directories(
+    ziliu_text_raster_math_tests
+    PRIVATE ../src/text-raster/src)
+  ziliu_configure_target(ziliu_text_raster_math_tests)
+
+  add_test(
+    NAME ziliu_text_raster_math_tests
+    COMMAND ziliu_text_raster_math_tests)
+
+  add_executable(ziliu_text_raster_api_tests text_raster_api_tests.cpp)
+  target_link_libraries(ziliu_text_raster_api_tests PRIVATE ZiliuTextRaster)
+  ziliu_configure_target(ziliu_text_raster_api_tests)
+
+  add_test(
+    NAME ziliu_text_raster_api_tests
+    COMMAND ziliu_text_raster_api_tests)
+endif()
+
 add_executable(
   ziliu_ui_coordinate_space_tests
   ui_coordinate_space_tests.cpp)

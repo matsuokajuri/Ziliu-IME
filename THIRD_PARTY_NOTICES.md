@@ -5,6 +5,7 @@ librime 官方运行时：
 
 | 项目 | 用途 | 许可证 | 固定 commit |
 |---|---|---|---|
+| FreeType | 通用字体文件加载与字形光栅化 | FreeType License (FTL) | `VER-2-14-3` |
 | rime/librime | 输入引擎 | BSD-3-Clause | `33e78140250125871856cdc5b42ddc6a5fcd3cd4` |
 | iDvel/rime-ice | 默认拼音方案与词库 | GPL-3.0 | `b681a34f788795034b3b288830f4861980bc8b0d` |
 | amzxyz/rime-wanxiang | 用户学习长度参数参考 | CC BY 4.0 | `wanxiang` 分支（2026-07-23） |
@@ -12,6 +13,12 @@ librime 官方运行时：
 librime Windows MSVC x64 运行时取自官方 `1.17.0` Release，资产名
 `rime-33e7814-Windows-msvc-x64.7z`，SHA-256 为
 `7478c7caa4ff6b37de86daba1f7ce4a994a4f5ba24872a820fb2b3a9b01fed15`。
+
+FreeType 源码取自官方托管的 `2.14.3` 归档
+`freetype-2.14.3.tar.xz`，SHA-256 为
+`36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f`。
+`ZiliuTextRaster.dll` 静态链接所需的 FreeType 模块；发行包必须保留本声明以及上游
+`docs/FTL.TXT` 的完整许可文本。
 
 雾凇拼音内部数据还包括 Unicode License、Public Domain、MIT、LGPL-3.0、CC BY 3.0
 等来源。发行前必须从上游 `Credits.md` 生成完整、逐项可追溯的声明，不能只保留本表。

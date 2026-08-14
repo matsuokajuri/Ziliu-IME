@@ -1,0 +1,10 @@
+LIBRARY ZiliuTextRaster
+EXPORTS
+    ZiliuTextRasterGetAbiVersion
+    ZiliuTextRasterCreate
+    ZiliuTextRasterConfigureFont
+    ZiliuTextRasterDecodeUtf16
+    ZiliuTextRasterLookupGlyph
+    ZiliuTextRasterRenderGlyph
+    ZiliuTextRasterCompositeCoverageBgra
+    ZiliuTextRasterDestroy
