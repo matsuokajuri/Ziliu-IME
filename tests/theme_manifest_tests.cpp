@@ -51,7 +51,7 @@ ziliu::core::ThemeManifest MakeManifest() {
   manifest.appearance.palette.caret_text = 0xFF302010U;
 
   ThemeSurface horizontal;
-  horizontal.anchor = {11, 47};
+  horizontal.anchor = ThemePoint{11, 47};
   horizontal.background = ThemeImage{"assets/horizontal.png",
                                      {38, 33, 192, 11},
                                      ThemeImageLayout::kStretch,
@@ -65,7 +65,7 @@ ziliu::core::ThemeManifest MakeManifest() {
   manifest.appearance.horizontal = horizontal;
 
   ThemeSurface vertical;
-  vertical.anchor = {-6, 66};
+  vertical.anchor = ThemePoint{-6, 66};
   vertical.overlays.push_back(
       {"assets/overlay.png", 0, 0,
        std::array<std::int32_t, 10>{0, -1, 2, -3, 4, -5, 6, -7, 8, -9}});

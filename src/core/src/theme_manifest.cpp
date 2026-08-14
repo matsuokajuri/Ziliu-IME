@@ -175,10 +175,11 @@ void ValidateButton(std::vector<ThemeManifestIssue>* issues,
 void ValidateSurface(std::vector<ThemeManifestIssue>* issues,
                      const ThemeSurface& surface, std::string path) {
   constexpr auto kMaximumAnchor = static_cast<std::int32_t>(kMaximumInset);
-  if (surface.anchor.x < -kMaximumAnchor ||
-      surface.anchor.x > kMaximumAnchor ||
-      surface.anchor.y < -kMaximumAnchor ||
-      surface.anchor.y > kMaximumAnchor) {
+  if (surface.anchor.has_value() &&
+      (surface.anchor->x < -kMaximumAnchor ||
+       surface.anchor->x > kMaximumAnchor ||
+       surface.anchor->y < -kMaximumAnchor ||
+       surface.anchor->y > kMaximumAnchor)) {
     AddIssue(issues, ThemeManifestIssueCode::kInvalidProperty,
              path + ".anchor", "anchor must be between -4096 and 4096");
   }
@@ -187,10 +188,14 @@ void ValidateSurface(std::vector<ThemeManifestIssue>* issues,
                   path + ".background.asset", true);
     ValidateInsets(issues, surface.background->stretch,
                    path + ".background.stretch");
-    ValidateLayout(issues, surface.background->horizontal_layout,
-                   path + ".background.horizontal_layout");
-    ValidateLayout(issues, surface.background->vertical_layout,
-                   path + ".background.vertical_layout");
+    if (surface.background->horizontal_layout.has_value()) {
+      ValidateLayout(issues, *surface.background->horizontal_layout,
+                     path + ".background.horizontal_layout");
+    }
+    if (surface.background->vertical_layout.has_value()) {
+      ValidateLayout(issues, *surface.background->vertical_layout,
+                     path + ".background.vertical_layout");
+    }
   }
   if (surface.overlays.size() > kMaximumThemeSurfaceOverlays) {
     AddIssue(issues, ThemeManifestIssueCode::kInvalidProperty,

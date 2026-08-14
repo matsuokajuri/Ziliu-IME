@@ -50,8 +50,8 @@ struct ThemePoint {
 struct ThemeImage {
   std::string asset;
   ThemeInsets stretch;
-  ThemeImageLayout horizontal_layout = ThemeImageLayout::kStretch;
-  ThemeImageLayout vertical_layout = ThemeImageLayout::kStretch;
+  std::optional<ThemeImageLayout> horizontal_layout;
+  std::optional<ThemeImageLayout> vertical_layout;
 
   bool operator==(const ThemeImage&) const = default;
 };
@@ -85,7 +85,7 @@ struct ThemeOverlay {
 };
 
 struct ThemeSurface {
-  ThemePoint anchor;
+  std::optional<ThemePoint> anchor;
   std::optional<ThemeImage> background;
   std::vector<ThemeOverlay> overlays;
   std::optional<ThemeInsets> preedit_insets;

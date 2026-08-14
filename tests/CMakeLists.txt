@@ -10,6 +10,12 @@ ziliu_configure_target(ziliu_theme_manifest_tests)
 
 add_test(NAME ziliu_theme_manifest_tests COMMAND ziliu_theme_manifest_tests)
 
+add_executable(ziliu_sogou_theme_tests sogou_theme_tests.cpp)
+target_link_libraries(ziliu_sogou_theme_tests PRIVATE ziliu_core)
+ziliu_configure_target(ziliu_sogou_theme_tests)
+
+add_test(NAME ziliu_sogou_theme_tests COMMAND ziliu_sogou_theme_tests)
+
 add_executable(
   ziliu_ui_coordinate_space_tests
   ui_coordinate_space_tests.cpp)
