@@ -38,7 +38,7 @@ if(WIN32)
   add_executable(ziliu_sogou_ssf_container_tests
     sogou_ssf_container_tests.cpp
     ../src/settings/sogou_ssf_container.cpp)
-  target_link_libraries(ziliu_sogou_ssf_container_tests PRIVATE bcrypt)
+  target_link_libraries(ziliu_sogou_ssf_container_tests PRIVATE bcrypt ziliu_core)
   ziliu_configure_target(ziliu_sogou_ssf_container_tests)
 
   add_test(

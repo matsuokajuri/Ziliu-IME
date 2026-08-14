@@ -1,4 +1,5 @@
 #include "../src/settings/sogou_ssf_container.h"
+#include "ziliu/core/sogou_theme.h"
 
 #include <Windows.h>
 #include <bcrypt.h>
@@ -422,6 +423,88 @@ int wmain(int argument_count, wchar_t* arguments[]) {
            "UTF-16 filename should become UTF-8 with forward slashes");
     Expect(decoded.entries.front().bytes == entries.front().bytes,
            "stored DEFLATE entry bytes should round-trip");
+  }
+
+  {
+    constexpr std::string_view kSkinIni =
+        "[General]\n"
+        "skin_name=Pipeline\n"
+        "[Display]\n"
+        "font_ch=Test Sans\n"
+        "font_size=19\n"
+        "pinyin_color=0x0080FF\n"
+        "zhongwen_color=0x030201\n"
+        "[Scheme_H1]\n"
+        "pic=images/background.png\n"
+        "layout_horizontal=0,8,9\n"
+        "layout_vertical=1,10,11\n"
+        "pinyin_marge=1,2,3,4\n"
+        "zhongwen_marge=5,6,7,8\n";
+    const std::array entries = {
+        TestEntry{u"skin.ini",
+                  std::vector<std::uint8_t>(kSkinIni.begin(), kSkinIni.end())},
+        TestEntry{u"images/background.png", {0x89, 0x50, 0x4E, 0x47}},
+    };
+    const auto blob = BuildBlob(entries);
+    TemporarySsf file = WriteSsf(MakeStoredZlib(blob), blob.size());
+    const auto package_sha =
+        ziliu::settings::Sha256SogouSsfFile(file.path());
+    const auto decoded = ziliu::settings::DecodeSogouSsfV3(file.path());
+    Expect(package_sha.has_value() && decoded.ok(),
+           "synthetic custom SSF should decode with a package identity");
+    const auto skin_entry = std::find_if(
+        decoded.entries.begin(), decoded.entries.end(),
+        [](const ziliu::settings::SogouSsfEntry& entry) {
+          return entry.relative_path == "skin.ini";
+        });
+    Expect(skin_entry != decoded.entries.end(),
+           "decoded custom SSF should expose skin.ini");
+    const std::string skin_ini(
+        reinterpret_cast<const char*>(skin_entry->bytes.data()),
+        skin_entry->bytes.size());
+    const auto conversion = ziliu::core::ConvertSogouThemeIni(
+        skin_ini, "pipeline.ssf", *package_sha);
+    Expect(conversion.ok() &&
+               conversion.manifest.source_package_sha256 == *package_sha &&
+               conversion.manifest.id ==
+                   "sogou.pipeline-" + package_sha->substr(0, 16U),
+           "decoded package identity should bind the converted manifest");
+    Expect(conversion.manifest.appearance.horizontal.has_value() &&
+               !conversion.manifest.appearance.vertical.has_value() &&
+               conversion.manifest.appearance.horizontal->background
+                   .has_value() &&
+               conversion.manifest.appearance.horizontal->background->asset ==
+                   "assets/ssf-000.png" &&
+               conversion.manifest.appearance.horizontal->background
+                       ->horizontal_layout ==
+                   ziliu::core::ThemeImageLayout::kStretch &&
+               conversion.manifest.appearance.horizontal->background
+                       ->vertical_layout ==
+                   ziliu::core::ThemeImageLayout::kTile,
+           "decoded H1 should reach the custom manifest without another surface");
+    Expect(conversion.manifest.appearance.typography.chinese_font_family ==
+                   "Test Sans" &&
+               conversion.manifest.appearance.typography.font_size == 19U &&
+               conversion.manifest.appearance.palette.preedit_text ==
+                   0xFFFF8000U &&
+               conversion.manifest.appearance.palette.candidate_text ==
+                   0xFF010203U &&
+               conversion.manifest.appearance.horizontal->preedit_insets ==
+                   ziliu::core::ThemeInsets{3, 1, 4, 2} &&
+               conversion.manifest.appearance.horizontal->candidate_insets ==
+                   ziliu::core::ThemeInsets{7, 5, 8, 6},
+           "font, colors and margins should survive decode-to-model mapping");
+    Expect(conversion.assets.size() == 1U &&
+               conversion.assets.front().source_path ==
+                   "images/background.png" &&
+               std::any_of(decoded.entries.begin(), decoded.entries.end(),
+                           [&](const ziliu::settings::SogouSsfEntry& entry) {
+                             return entry.relative_path ==
+                                    conversion.assets.front().source_path;
+                           }) &&
+               !conversion.manifest.appearance.palette.highlighted_background
+                    .has_value(),
+           "resource references should resolve to decoded entries without appearance injection");
   }
 
   constexpr std::string_view kFixedZlib =
