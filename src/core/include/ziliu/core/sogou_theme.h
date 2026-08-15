@@ -77,6 +77,22 @@ struct SogouThemePackageConversion {
   [[nodiscard]] bool ok() const noexcept { return conversion.ok(); }
 };
 
+struct SogouThemeResolvedAsset {
+  std::string source_path;
+  std::string target_path;
+  std::vector<std::uint8_t> bytes;
+
+  bool operator==(const SogouThemeResolvedAsset&) const = default;
+};
+
+struct SogouThemeResourceBinding {
+  std::string source_package_sha256;
+  std::vector<SogouThemeResolvedAsset> assets;
+  std::string error;
+
+  [[nodiscard]] bool ok() const noexcept { return error.empty(); }
+};
+
 // Converts raw skin.ini bytes to strict UTF-8 without changing text semantics.
 // Accepted encodings are UTF-8 (with or without BOM) and BOM-marked UTF-16LE.
 [[nodiscard]] SogouThemeTextNormalization NormalizeSogouThemeIniText(
@@ -93,5 +109,11 @@ struct SogouThemePackageConversion {
 [[nodiscard]] SogouThemePackageConversion ConvertSogouThemePackage(
     std::span<const SogouThemePackageEntryView> entries,
     std::string_view source_hint, std::string_view source_package_sha256);
+
+// Resolves every manifest source asset to exactly one decoded package entry.
+// Returned bytes are owned so that they remain valid after decoder storage dies.
+[[nodiscard]] SogouThemeResourceBinding ResolveSogouThemePackageResources(
+    const SogouThemePackageConversion& package,
+    std::span<const SogouThemePackageEntryView> entries);
 
 }  // namespace ziliu::core

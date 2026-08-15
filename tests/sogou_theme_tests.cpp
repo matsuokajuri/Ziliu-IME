@@ -4,6 +4,7 @@
 #include "../src/settings/sogou_ssf_container.h"
 
 #include <windows.h>
+#include <bcrypt.h>
 #endif
 
 #include <array>
@@ -60,6 +61,22 @@ std::vector<std::uint8_t> Bytes(std::string_view text) {
         static_cast<std::uint8_t>(static_cast<unsigned char>(character)));
   }
   return bytes;
+}
+
+struct OwnedPackageEntry {
+  std::string relative_path;
+  std::vector<std::uint8_t> bytes;
+};
+
+std::vector<ziliu::core::SogouThemePackageEntryView> EntryViews(
+    const std::vector<OwnedPackageEntry>& entries) {
+  std::vector<ziliu::core::SogouThemePackageEntryView> views;
+  views.reserve(entries.size());
+  for (const auto& entry : entries) {
+    views.push_back({entry.relative_path,
+                     std::span<const std::uint8_t>(entry.bytes)});
+  }
+  return views;
 }
 
 std::vector<std::uint8_t> Utf16LeBom(std::u16string_view text) {
@@ -146,58 +163,88 @@ void AppendPath(std::vector<std::uint8_t>& output, std::string_view path) {
   }
 }
 
-std::vector<std::uint8_t> BuildStoredZip(std::string_view path,
-                                         std::span<const std::uint8_t> bytes) {
-  Expect(path.size() <= 0xFFFFU && bytes.size() <= 0xFFFFFFFFULL,
-         "synthetic ZIP fields should fit their fixed widths");
-  const auto size = static_cast<std::uint32_t>(bytes.size());
-  const auto path_size = static_cast<std::uint16_t>(path.size());
-  const std::uint32_t crc = Crc32(bytes);
+std::vector<std::uint8_t> BuildStoredZip(
+    std::span<const OwnedPackageEntry> entries) {
+  Expect(entries.size() <= 0xFFFFU,
+         "synthetic ZIP entry count should fit its fixed width");
+  struct CentralRecord {
+    const OwnedPackageEntry* entry = nullptr;
+    std::uint32_t crc = 0;
+    std::uint32_t local_offset = 0;
+  };
+  std::vector<CentralRecord> central_records;
+  central_records.reserve(entries.size());
   std::vector<std::uint8_t> archive;
-  AppendLe32(archive, 0x04034B50U);
-  AppendLe16(archive, 20U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe32(archive, crc);
-  AppendLe32(archive, size);
-  AppendLe32(archive, size);
-  AppendLe16(archive, path_size);
-  AppendLe16(archive, 0U);
-  AppendPath(archive, path);
-  archive.insert(archive.end(), bytes.begin(), bytes.end());
+  for (const OwnedPackageEntry& entry : entries) {
+    Expect(entry.relative_path.size() <= 0xFFFFU &&
+               entry.bytes.size() <= 0xFFFFFFFFULL &&
+               archive.size() <= 0xFFFFFFFFULL,
+           "synthetic ZIP fields should fit their fixed widths");
+    const auto size = static_cast<std::uint32_t>(entry.bytes.size());
+    const auto path_size =
+        static_cast<std::uint16_t>(entry.relative_path.size());
+    const std::uint32_t crc = Crc32(entry.bytes);
+    central_records.push_back(
+        {&entry, crc, static_cast<std::uint32_t>(archive.size())});
+    AppendLe32(archive, 0x04034B50U);
+    AppendLe16(archive, 20U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, crc);
+    AppendLe32(archive, size);
+    AppendLe32(archive, size);
+    AppendLe16(archive, path_size);
+    AppendLe16(archive, 0U);
+    AppendPath(archive, entry.relative_path);
+    archive.insert(archive.end(), entry.bytes.begin(), entry.bytes.end());
+  }
 
   const auto central_offset = static_cast<std::uint32_t>(archive.size());
-  AppendLe32(archive, 0x02014B50U);
-  AppendLe16(archive, 0x0314U);
-  AppendLe16(archive, 20U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe32(archive, crc);
-  AppendLe32(archive, size);
-  AppendLe32(archive, size);
-  AppendLe16(archive, path_size);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe16(archive, 0U);
-  AppendLe32(archive, 0x81B60020U);
-  AppendLe32(archive, 0U);
-  AppendPath(archive, path);
+  for (const CentralRecord& record : central_records) {
+    const auto size = static_cast<std::uint32_t>(record.entry->bytes.size());
+    const auto path_size =
+        static_cast<std::uint16_t>(record.entry->relative_path.size());
+    AppendLe32(archive, 0x02014B50U);
+    AppendLe16(archive, 0x0314U);
+    AppendLe16(archive, 20U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, record.crc);
+    AppendLe32(archive, size);
+    AppendLe32(archive, size);
+    AppendLe16(archive, path_size);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, 0x81B60020U);
+    AppendLe32(archive, record.local_offset);
+    AppendPath(archive, record.entry->relative_path);
+  }
   const auto central_size =
       static_cast<std::uint32_t>(archive.size()) - central_offset;
+  const auto entry_count = static_cast<std::uint16_t>(entries.size());
   AppendLe32(archive, 0x06054B50U);
   AppendLe16(archive, 0U);
   AppendLe16(archive, 0U);
-  AppendLe16(archive, 1U);
-  AppendLe16(archive, 1U);
+  AppendLe16(archive, entry_count);
+  AppendLe16(archive, entry_count);
   AppendLe32(archive, central_size);
   AppendLe32(archive, central_offset);
   AppendLe16(archive, 0U);
   return archive;
+}
+
+std::vector<std::uint8_t> BuildStoredZip(std::string_view path,
+                                         std::span<const std::uint8_t> bytes) {
+  const std::vector<OwnedPackageEntry> entries = {
+      {std::string(path), std::vector<std::uint8_t>(bytes.begin(), bytes.end())},
+  };
+  return BuildStoredZip(entries);
 }
 
 class TemporaryZip {
@@ -247,7 +294,53 @@ std::vector<ziliu::core::SogouThemePackageEntryView> EntryViews(
   return views;
 }
 
-int InspectRealSsf(const std::filesystem::path& path) {
+std::string Sha256Bytes(std::span<const std::uint8_t> bytes) {
+  BCRYPT_ALG_HANDLE algorithm = nullptr;
+  BCRYPT_HASH_HANDLE hash = nullptr;
+  Expect(BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM,
+                                     nullptr, 0) >= 0,
+         "SHA-256 provider should open");
+  Expect(BCryptCreateHash(algorithm, &hash, nullptr, 0, nullptr, 0, 0) >= 0,
+         "SHA-256 state should initialize");
+  Expect(BCryptHashData(
+             hash,
+             bytes.empty()
+                 ? nullptr
+                 : const_cast<PUCHAR>(
+                       reinterpret_cast<const UCHAR*>(bytes.data())),
+             static_cast<ULONG>(bytes.size()), 0) >= 0,
+         "SHA-256 input should be accepted");
+  std::array<UCHAR, 32> digest{};
+  Expect(BCryptFinishHash(hash, digest.data(),
+                          static_cast<ULONG>(digest.size()), 0) >= 0,
+         "SHA-256 digest should finish");
+  BCryptDestroyHash(hash);
+  BCryptCloseAlgorithmProvider(algorithm, 0);
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string encoded;
+  encoded.reserve(digest.size() * 2U);
+  for (const UCHAR byte : digest) {
+    encoded.push_back(kHex[byte >> 4U]);
+    encoded.push_back(kHex[byte & 0x0FU]);
+  }
+  return encoded;
+}
+
+const ziliu::core::SogouThemeResolvedAsset* FindResolvedSource(
+    const ziliu::core::SogouThemeResourceBinding& binding,
+    std::string_view source_path) {
+  for (const auto& asset : binding.assets) {
+    if (asset.source_path == source_path) {
+      return &asset;
+    }
+  }
+  return nullptr;
+}
+
+int InspectRealSsf(const std::filesystem::path& path,
+                   std::string_view expected_package_sha,
+                   std::string_view expected_h1_sha,
+                   std::string_view expected_v1_sha) {
   const auto package_sha = ziliu::settings::Sha256SogouSsfFile(path);
   const auto decoded = ziliu::settings::DecodeSogouSsf(path);
   if (!package_sha.has_value() || !decoded.ok()) {
@@ -261,6 +354,14 @@ int InspectRealSsf(const std::filesystem::path& path) {
     for (const auto& issue : package.conversion.issues) {
       std::cerr << "FAILED: " << issue.path << ": " << issue.message << '\n';
     }
+    return EXIT_FAILURE;
+  }
+  const auto binding =
+      ziliu::core::ResolveSogouThemePackageResources(package, views);
+  if (!binding.ok() ||
+      binding.assets.size() != package.conversion.assets.size()) {
+    std::cerr << "FAILED: real package resource binding: " << binding.error
+              << '\n';
     return EXIT_FAILURE;
   }
   const auto& manifest = package.conversion.manifest;
@@ -277,6 +378,21 @@ int InspectRealSsf(const std::filesystem::path& path) {
           ? SourceForTarget(package.conversion,
                             appearance.vertical->background->asset)
           : std::string{};
+  const auto* horizontal_asset =
+      FindResolvedSource(binding, horizontal_source);
+  const auto* vertical_asset = FindResolvedSource(binding, vertical_source);
+  if (horizontal_asset == nullptr || vertical_asset == nullptr) {
+    std::cerr << "FAILED: real H1/V1 background bytes were not bound\n";
+    return EXIT_FAILURE;
+  }
+  const std::string horizontal_sha = Sha256Bytes(horizontal_asset->bytes);
+  const std::string vertical_sha = Sha256Bytes(vertical_asset->bytes);
+  if ((!expected_package_sha.empty() && *package_sha != expected_package_sha) ||
+      (!expected_h1_sha.empty() && horizontal_sha != expected_h1_sha) ||
+      (!expected_v1_sha.empty() && vertical_sha != expected_v1_sha)) {
+    std::cerr << "FAILED: real package or bound resource identity drifted\n";
+    return EXIT_FAILURE;
+  }
   std::string_view renderer = "unset";
   if (appearance.typography.text_renderer ==
       ziliu::core::ThemeTextRenderer::kSogouGdiPlus) {
@@ -299,6 +415,11 @@ int InspectRealSsf(const std::filesystem::path& path) {
   std::cout << "author=" << manifest.author << '\n';
   std::cout << "h1_source=" << horizontal_source << '\n';
   std::cout << "v1_source=" << vertical_source << '\n';
+  std::cout << "h1_bound_sha=" << horizontal_sha << '\n';
+  std::cout << "v1_bound_sha=" << vertical_sha << '\n';
+  std::cout << "manifest_asset_count=" << package.conversion.assets.size()
+            << '\n';
+  std::cout << "resolved_asset_count=" << binding.assets.size() << '\n';
   std::cout << "font=" << appearance.typography.chinese_font_family << '\n';
   std::cout << "font_size="
             << appearance.typography.font_size.value_or(0U) << '\n';
@@ -391,11 +512,25 @@ constexpr std::u16string_view kBindingIniUtf16 =
 
 #ifdef _WIN32
 int wmain(int argument_count, wchar_t* arguments[]) {
-  if (argument_count == 2) {
-    return InspectRealSsf(std::filesystem::path(arguments[1]));
+  if (argument_count == 2 || argument_count == 5) {
+    const auto narrow = [](const wchar_t* value) {
+      std::string result;
+      while (*value != L'\0') {
+        Expect(*value <= 0x7F,
+               "expected real-package identities should be ASCII");
+        result.push_back(static_cast<char>(*value));
+        ++value;
+      }
+      return result;
+    };
+    return InspectRealSsf(
+        std::filesystem::path(arguments[1]),
+        argument_count == 5 ? narrow(arguments[2]) : std::string{},
+        argument_count == 5 ? narrow(arguments[3]) : std::string{},
+        argument_count == 5 ? narrow(arguments[4]) : std::string{});
   }
   Expect(argument_count == 1 && arguments[0] != nullptr,
-         "test executable accepts at most one real SSF path");
+         "test executable accepts a real SSF path and optional identities");
 #else
 int main() {
 #endif
@@ -515,26 +650,174 @@ int main() {
                  "SKIN_INI_AMBIGUOUS") != std::string::npos,
          "case-insensitive root skin.ini ambiguity should fail closed");
 
+  const std::vector<OwnedPackageEntry> binding_entries = {
+      {"skin.ini", utf8_bytes},
+      {"skin1.png", {0x10U, 0x20U, 0x30U}},
+      {"skin2.png", {}},
+  };
+  const auto binding_views = EntryViews(binding_entries);
+  const auto binding_package = ConvertSogouThemePackage(
+      binding_views, "resources.ssf", kPackageSha);
+  const auto resource_binding =
+      ResolveSogouThemePackageResources(binding_package, binding_views);
+  Expect(binding_package.ok() && resource_binding.ok() &&
+             resource_binding.source_package_sha256 == kPackageSha &&
+             resource_binding.assets.size() == 2U &&
+             resource_binding.assets[0].source_path == "skin1.png" &&
+             resource_binding.assets[0].target_path ==
+                 "assets/ssf-000.png" &&
+             resource_binding.assets[0].bytes ==
+                 std::vector<std::uint8_t>({0x10U, 0x20U, 0x30U}) &&
+             resource_binding.assets[1].source_path == "skin2.png" &&
+             resource_binding.assets[1].bytes.empty(),
+         "resource binding should preserve manifest order, package identity, "
+         "exact bytes and zero-byte resources");
+
+  const std::vector<OwnedPackageEntry> missing_resource_entries = {
+      {"skin.ini", utf8_bytes},
+      {"skin1.png", {0x10U}},
+  };
+  const auto missing_resource_views = EntryViews(missing_resource_entries);
+  const auto missing_resource_package = ConvertSogouThemePackage(
+      missing_resource_views, "missing-resource.ssf", kPackageSha);
+  const auto missing_resource = ResolveSogouThemePackageResources(
+      missing_resource_package, missing_resource_views);
+  Expect(!missing_resource.ok() && missing_resource.assets.empty() &&
+             missing_resource.error.find("PACKAGE_RESOURCE_NOT_FOUND") !=
+                 std::string::npos,
+         "a missing manifest resource should fail without partial output");
+
+  const std::vector<OwnedPackageEntry> case_collision_entries = {
+      {"skin.ini", utf8_bytes},
+      {"skin1.png", {0x10U}},
+      {"SKIN1.PNG", {0x11U}},
+      {"skin2.png", {0x20U}},
+  };
+  const auto case_collision_views = EntryViews(case_collision_entries);
+  const auto case_collision_package = ConvertSogouThemePackage(
+      case_collision_views, "case-collision.ssf", kPackageSha);
+  const auto case_collision = ResolveSogouThemePackageResources(
+      case_collision_package, case_collision_views);
+  Expect(!case_collision.ok() && case_collision.assets.empty() &&
+             case_collision.error.find("PACKAGE_RESOURCE_AMBIGUOUS") !=
+                 std::string::npos,
+         "Windows case-equivalent package resources should be ambiguous");
+
+  const std::vector<std::uint8_t> nested_ini = Bytes(
+      "[General]\nskin_name=Nested\n[Scheme_H1]\n"
+      "pic=images/skin.png\n");
+  const std::vector<OwnedPackageEntry> slash_collision_entries = {
+      {"skin.ini", nested_ini},
+      {"images/skin.png", {0x10U}},
+      {"images\\skin.png", {0x11U}},
+  };
+  const auto slash_collision_views = EntryViews(slash_collision_entries);
+  const auto slash_collision_package = ConvertSogouThemePackage(
+      slash_collision_views, "slash-collision.ssf", kPackageSha);
+  const auto slash_collision = ResolveSogouThemePackageResources(
+      slash_collision_package, slash_collision_views);
+  Expect(!slash_collision.ok() && slash_collision.assets.empty() &&
+             slash_collision.error.find("PACKAGE_RESOURCE_AMBIGUOUS") !=
+                 std::string::npos,
+         "slash-normalized package resource collisions should fail closed");
+
+  for (const std::string_view unsafe_path : {"../escape.png",
+                                              "C:/absolute.png"}) {
+    std::vector<OwnedPackageEntry> unsafe_entries = binding_entries;
+    unsafe_entries.push_back({std::string(unsafe_path), {0x40U}});
+    const auto unsafe_views = EntryViews(unsafe_entries);
+    const auto unsafe_package = ConvertSogouThemePackage(
+        unsafe_views, "unsafe-resource.ssf", kPackageSha);
+    const auto unsafe_binding =
+        ResolveSogouThemePackageResources(unsafe_package, unsafe_views);
+    Expect(!unsafe_binding.ok() && unsafe_binding.assets.empty() &&
+               unsafe_binding.error.find("PACKAGE_RESOURCE_PATH_INVALID") !=
+                   std::string::npos,
+           "unsafe decoded package paths should fail before resource output");
+  }
+
+  auto empty_source_package = binding_package;
+  empty_source_package.conversion.assets.front().source_path.clear();
+  const auto empty_source = ResolveSogouThemePackageResources(
+      empty_source_package, binding_views);
+  Expect(!empty_source.ok() && empty_source.assets.empty() &&
+             empty_source.error.find("PACKAGE_RESOURCE_PATH_INVALID") !=
+                 std::string::npos,
+         "an empty manifest source path should fail closed");
+
+  auto duplicate_target_package = binding_package;
+  duplicate_target_package.conversion.assets[1].target_path =
+      duplicate_target_package.conversion.assets[0].target_path;
+  const auto duplicate_target = ResolveSogouThemePackageResources(
+      duplicate_target_package, binding_views);
+  Expect(!duplicate_target.ok() && duplicate_target.assets.empty() &&
+             duplicate_target.error.find("THEME_TARGET_ASSET_COLLISION") !=
+                 std::string::npos,
+         "two manifest assets must not share one target path");
+
+  const std::vector<OwnedPackageEntry> reordered_entries = {
+      binding_entries[2], binding_entries[0], binding_entries[1]};
+  const auto reordered_views = EntryViews(reordered_entries);
+  const auto reordered_package = ConvertSogouThemePackage(
+      reordered_views, "reordered.ssf", kPackageSha);
+  const auto reordered_binding = ResolveSogouThemePackageResources(
+      reordered_package, reordered_views);
+  Expect(reordered_binding.ok() &&
+             reordered_binding.assets == resource_binding.assets,
+         "decoded entry order must not change manifest resource order");
+
 #ifdef _WIN32
   const auto verify_decoded_zip = [&](const std::vector<std::uint8_t>& ini,
                                       SogouThemeIniEncoding encoding) {
-    const std::vector<std::uint8_t> archive = BuildStoredZip("skin.ini", ini);
+    const std::vector<OwnedPackageEntry> archive_entries = {
+        {"skin.ini", ini},
+        {"skin1.png", {0x01U, 0x02U, 0x03U}},
+        {"skin2.png", {0xA0U, 0xB0U}},
+    };
+    const std::vector<std::uint8_t> archive = BuildStoredZip(archive_entries);
     TemporaryZip file(archive);
+    const auto package_sha =
+        ziliu::settings::Sha256SogouSsfFile(file.path());
     const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
-    Expect(decoded.ok() &&
+    Expect(package_sha.has_value() && decoded.ok() &&
                decoded.kind ==
                    ziliu::settings::SogouSsfContainerKind::kZip,
            "synthetic ZIP should use the product container decoder");
     const auto views = EntryViews(decoded);
     const auto bound = ConvertSogouThemePackage(
-        views, "decoded.ssf", kPackageSha);
+        views, "decoded.ssf", *package_sha);
+    const auto resources = ResolveSogouThemePackageResources(bound, views);
     Expect(bound.ok() && bound.skin_ini_encoding == encoding &&
                bound.conversion.manifest.appearance.horizontal.has_value() &&
-               bound.conversion.manifest.appearance.vertical.has_value(),
-           "decoded ZIP should reach H1/V1 conversion through product APIs");
+               bound.conversion.manifest.appearance.vertical.has_value() &&
+               resources.ok() && resources.source_package_sha256 == *package_sha &&
+               resources.assets.size() == 2U &&
+               resources.assets[0].bytes == archive_entries[1].bytes &&
+               resources.assets[1].bytes == archive_entries[2].bytes,
+           "decoded ZIP should bind H1/V1 bytes through the full product chain");
   };
   verify_decoded_zip(utf8_bytes, SogouThemeIniEncoding::kUtf8);
   verify_decoded_zip(utf16_bytes, SogouThemeIniEncoding::kUtf16LeBom);
+
+  ziliu::settings::SogouSsfDecodeResult skin_v3_decoded;
+  skin_v3_decoded.kind =
+      ziliu::settings::SogouSsfContainerKind::kSkinV3;
+  skin_v3_decoded.entries = {
+      {"skin.ini", utf8_bytes},
+      {"skin1.png", {0x31U, 0x32U}},
+      {"skin2.png", {0x41U, 0x42U}},
+  };
+  const auto skin_v3_views = EntryViews(skin_v3_decoded);
+  const auto skin_v3_package = ConvertSogouThemePackage(
+      skin_v3_views, "skin-v3.ssf", kPackageSha);
+  const auto skin_v3_binding = ResolveSogouThemePackageResources(
+      skin_v3_package, skin_v3_views);
+  Expect(skin_v3_binding.ok() && skin_v3_binding.assets.size() == 2U &&
+             skin_v3_binding.assets[0].bytes ==
+                 skin_v3_decoded.entries[1].bytes &&
+             skin_v3_binding.assets[1].bytes ==
+                 skin_v3_decoded.entries[2].bytes,
+         "resource binding must not depend on the decoded container kind");
 #endif
 
   const auto conversion =

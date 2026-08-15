@@ -13,6 +13,16 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace ziliu::core {
 namespace {
 
@@ -20,6 +30,7 @@ constexpr std::size_t kMaximumIniLines = 4096;
 constexpr std::size_t kMaximumIniLineBytes = 8192;
 constexpr std::size_t kMaximumIniProperties = 4096;
 constexpr std::uint32_t kMaximumMappedInset = 4096;
+constexpr std::size_t kMaximumPackageEntryPathBytes = 32 * 1024;
 
 struct IniValue {
   std::string value;
@@ -544,7 +555,8 @@ bool IsSupportedSourceImage(std::string_view path) {
 bool IsWindowsReservedComponent(std::string_view component) {
   const std::size_t dot = component.find('.');
   const std::string base = AsciiLowerCopy(component.substr(0, dot));
-  if (base == "con" || base == "prn" || base == "aux" || base == "nul") {
+  if (base == "con" || base == "prn" || base == "aux" || base == "nul" ||
+      base == "conin$" || base == "conout$") {
     return true;
   }
   return base.size() == 4U &&
@@ -552,15 +564,24 @@ bool IsWindowsReservedComponent(std::string_view component) {
          base[3] >= '1' && base[3] <= '9';
 }
 
-std::optional<std::string> NormalizeSourceAssetPath(std::string_view path) {
-  path = Trim(path);
-  if (path.empty() || path.size() > 240U || path.front() == '/' ||
+std::optional<std::string> NormalizeWindowsRelativePath(
+    std::string_view path, std::size_t maximum_bytes,
+    bool require_supported_image) {
+  if (path.empty() || path.size() > maximum_bytes || !IsValidUtf8(path) ||
+      path.front() == '/' ||
       path.front() == '\\' || path.back() == '/' || path.back() == '\\' ||
       path.find(':') != std::string_view::npos) {
     return std::nullopt;
   }
   std::string normalized(path);
   std::replace(normalized.begin(), normalized.end(), '\\', '/');
+  if (std::any_of(normalized.begin(), normalized.end(), [](char value) {
+        const auto byte = static_cast<unsigned char>(value);
+        return byte < 0x20U || value == '<' || value == '>' || value == '"' ||
+               value == '|' || value == '?' || value == '*';
+      })) {
+    return std::nullopt;
+  }
   std::size_t begin = 0;
   while (begin < normalized.size()) {
     const std::size_t end = normalized.find('/', begin);
@@ -578,10 +599,52 @@ std::optional<std::string> NormalizeSourceAssetPath(std::string_view path) {
     }
     begin = end + 1U;
   }
-  if (!IsSupportedSourceImage(normalized)) {
+  if (require_supported_image && !IsSupportedSourceImage(normalized)) {
     return std::nullopt;
   }
   return normalized;
+}
+
+std::optional<std::string> NormalizeSourceAssetPath(std::string_view path) {
+  return NormalizeWindowsRelativePath(Trim(path), 240U, true);
+}
+
+std::optional<std::string> NormalizePackageEntryPath(std::string_view path) {
+  return NormalizeWindowsRelativePath(path, kMaximumPackageEntryPathBytes,
+                                      false);
+}
+
+bool WindowsPathsEqual(std::string_view left, std::string_view right) {
+#ifdef _WIN32
+  const auto to_wide = [](std::string_view value) -> std::optional<std::wstring> {
+    if (value.empty()) {
+      return std::wstring();
+    }
+    const int input_size = static_cast<int>(value.size());
+    const int required = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+                                             value.data(), input_size, nullptr,
+                                             0);
+    if (required <= 0) {
+      return std::nullopt;
+    }
+    std::wstring result(static_cast<std::size_t>(required), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                            input_size, result.data(), required) != required) {
+      return std::nullopt;
+    }
+    return result;
+  };
+  const auto wide_left = to_wide(left);
+  const auto wide_right = to_wide(right);
+  return wide_left.has_value() && wide_right.has_value() &&
+         CompareStringOrdinal(wide_left->data(),
+                              static_cast<int>(wide_left->size()),
+                              wide_right->data(),
+                              static_cast<int>(wide_right->size()), TRUE) ==
+             CSTR_EQUAL;
+#else
+  return AsciiLowerCopy(left) == AsciiLowerCopy(right);
+#endif
 }
 
 class AssetCollector {
@@ -1143,6 +1206,96 @@ SogouThemePackageConversion ConvertSogouThemePackage(
   }
   result.conversion = ConvertSogouThemeIni(
       normalized.utf8, source_hint, source_package_sha256);
+  return result;
+}
+
+SogouThemeResourceBinding ResolveSogouThemePackageResources(
+    const SogouThemePackageConversion& package,
+    std::span<const SogouThemePackageEntryView> entries) {
+  SogouThemeResourceBinding result;
+  result.source_package_sha256 =
+      package.conversion.manifest.source_package_sha256;
+  if (!package.ok() || !IsLowerSha256(result.source_package_sha256)) {
+    result.error = "PACKAGE_CONVERSION_INVALID";
+    return result;
+  }
+
+  struct IndexedEntry {
+    std::string canonical_path;
+    const SogouThemePackageEntryView* entry = nullptr;
+  };
+  std::vector<IndexedEntry> indexed_entries;
+  indexed_entries.reserve(entries.size());
+  for (const SogouThemePackageEntryView& entry : entries) {
+    const auto normalized = NormalizePackageEntryPath(entry.relative_path);
+    if (!normalized.has_value()) {
+      result.error = "PACKAGE_RESOURCE_PATH_INVALID: " +
+                     std::string(entry.relative_path);
+      return result;
+    }
+    if (std::any_of(indexed_entries.begin(), indexed_entries.end(),
+                    [&](const IndexedEntry& existing) {
+                      return WindowsPathsEqual(existing.canonical_path,
+                                               *normalized);
+                    })) {
+      result.error = "PACKAGE_RESOURCE_AMBIGUOUS: " + *normalized;
+      return result;
+    }
+    indexed_entries.push_back({*normalized, &entry});
+  }
+
+  std::vector<std::string> target_paths;
+  target_paths.reserve(package.conversion.assets.size());
+  for (const SogouThemeAsset& asset : package.conversion.assets) {
+    const auto normalized_target = NormalizeWindowsRelativePath(
+        asset.target_path, kMaximumPackageEntryPathBytes, false);
+    if (!normalized_target.has_value()) {
+      result.error = "THEME_TARGET_ASSET_INVALID: " + asset.target_path;
+      return result;
+    }
+    if (std::any_of(target_paths.begin(), target_paths.end(),
+                    [&](const std::string& existing) {
+                      return WindowsPathsEqual(existing, *normalized_target);
+                    })) {
+      result.error = "THEME_TARGET_ASSET_COLLISION: " + *normalized_target;
+      return result;
+    }
+    target_paths.push_back(*normalized_target);
+  }
+
+  std::vector<SogouThemeResolvedAsset> resolved;
+  resolved.reserve(package.conversion.assets.size());
+  for (std::size_t index = 0; index < package.conversion.assets.size();
+       ++index) {
+    const SogouThemeAsset& asset = package.conversion.assets[index];
+    const auto normalized_source = NormalizeSourceAssetPath(asset.source_path);
+    if (!normalized_source.has_value()) {
+      result.error = "PACKAGE_RESOURCE_PATH_INVALID: " + asset.source_path;
+      return result;
+    }
+
+    const IndexedEntry* match = nullptr;
+    for (const IndexedEntry& candidate : indexed_entries) {
+      if (!WindowsPathsEqual(candidate.canonical_path, *normalized_source)) {
+        continue;
+      }
+      if (match != nullptr) {
+        result.error = "PACKAGE_RESOURCE_AMBIGUOUS: " + *normalized_source;
+        return result;
+      }
+      match = &candidate;
+    }
+    if (match == nullptr) {
+      result.error = "PACKAGE_RESOURCE_NOT_FOUND: " + *normalized_source;
+      return result;
+    }
+    resolved.push_back(
+        {*normalized_source, target_paths[index],
+         std::vector<std::uint8_t>(match->entry->bytes.begin(),
+                                   match->entry->bytes.end())});
+  }
+
+  result.assets = std::move(resolved);
   return result;
 }
 
