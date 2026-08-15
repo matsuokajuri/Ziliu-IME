@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <cstdint>
+#include <initializer_list>
 #include <map>
 #include <optional>
 #include <set>
@@ -107,6 +108,46 @@ bool IsValidUtf8(std::string_view text) {
     index += continuation_count + 1;
   }
   return true;
+}
+
+bool AppendUtf8(std::uint32_t code_point, std::string* output) {
+  std::array<char, 4> encoded{};
+  std::size_t count = 0;
+  if (code_point <= 0x7FU) {
+    encoded[0] = static_cast<char>(code_point);
+    count = 1U;
+  } else if (code_point <= 0x7FFU) {
+    encoded[0] = static_cast<char>(0xC0U | (code_point >> 6U));
+    encoded[1] = static_cast<char>(0x80U | (code_point & 0x3FU));
+    count = 2U;
+  } else if (code_point <= 0xFFFFU) {
+    encoded[0] = static_cast<char>(0xE0U | (code_point >> 12U));
+    encoded[1] =
+        static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU));
+    encoded[2] = static_cast<char>(0x80U | (code_point & 0x3FU));
+    count = 3U;
+  } else if (code_point <= 0x10FFFFU) {
+    encoded[0] = static_cast<char>(0xF0U | (code_point >> 18U));
+    encoded[1] =
+        static_cast<char>(0x80U | ((code_point >> 12U) & 0x3FU));
+    encoded[2] =
+        static_cast<char>(0x80U | ((code_point >> 6U) & 0x3FU));
+    encoded[3] = static_cast<char>(0x80U | (code_point & 0x3FU));
+    count = 4U;
+  } else {
+    return false;
+  }
+  if (output->size() > kMaximumSogouThemeIniBytes ||
+      count > kMaximumSogouThemeIniBytes - output->size()) {
+    return false;
+  }
+  output->append(encoded.data(), count);
+  return true;
+}
+
+bool IsRootSkinIni(std::string_view path) {
+  return path.find_first_of("/\\") == std::string_view::npos &&
+         AsciiLowerCopy(path) == "skin.ini";
 }
 
 bool HasUnsupportedControl(std::string_view text) {
@@ -943,6 +984,105 @@ void AppendManifestIssues(SogouThemeConversion* conversion) {
 
 }  // namespace
 
+SogouThemeTextNormalization NormalizeSogouThemeIniText(
+    std::span<const std::uint8_t> bytes) {
+  SogouThemeTextNormalization result;
+  const auto has_prefix = [&](std::initializer_list<std::uint8_t> prefix) {
+    return bytes.size() >= prefix.size() &&
+           std::equal(prefix.begin(), prefix.end(), bytes.begin());
+  };
+  if (has_prefix({0x00U, 0x00U, 0xFEU, 0xFFU}) ||
+      has_prefix({0xFFU, 0xFEU, 0x00U, 0x00U})) {
+    result.error = "skin.ini UTF-32 encoding is unsupported";
+    return result;
+  }
+  if (has_prefix({0xFEU, 0xFFU})) {
+    result.error = "skin.ini UTF-16BE encoding is unsupported";
+    return result;
+  }
+
+  if (has_prefix({0xFFU, 0xFEU})) {
+    result.encoding = SogouThemeIniEncoding::kUtf16LeBom;
+    const auto payload = bytes.subspan(2U);
+    if (payload.size() % 2U != 0U) {
+      result.error = "skin.ini UTF-16LE payload has an odd byte length";
+      return result;
+    }
+    result.utf8.reserve((std::min)(payload.size(),
+                                   kMaximumSogouThemeIniBytes));
+    for (std::size_t offset = 0; offset < payload.size(); offset += 2U) {
+      const std::uint16_t first =
+          static_cast<std::uint16_t>(payload[offset]) |
+          static_cast<std::uint16_t>(
+              static_cast<std::uint16_t>(payload[offset + 1U]) << 8U);
+      if (first == 0U) {
+        result.error = "skin.ini contains an embedded NUL";
+        result.utf8.clear();
+        return result;
+      }
+      std::uint32_t code_point = first;
+      if (first >= 0xD800U && first <= 0xDBFFU) {
+        if (offset + 3U >= payload.size()) {
+          result.error = "skin.ini contains an unpaired UTF-16 high surrogate";
+          result.utf8.clear();
+          return result;
+        }
+        const std::uint16_t second =
+            static_cast<std::uint16_t>(payload[offset + 2U]) |
+            static_cast<std::uint16_t>(
+                static_cast<std::uint16_t>(payload[offset + 3U]) << 8U);
+        if (second < 0xDC00U || second > 0xDFFFU) {
+          result.error = "skin.ini contains an unpaired UTF-16 high surrogate";
+          result.utf8.clear();
+          return result;
+        }
+        code_point = 0x10000U +
+                     ((static_cast<std::uint32_t>(first) - 0xD800U) << 10U) +
+                     (static_cast<std::uint32_t>(second) - 0xDC00U);
+        offset += 2U;
+      } else if (first >= 0xDC00U && first <= 0xDFFFU) {
+        result.error = "skin.ini contains an unpaired UTF-16 low surrogate";
+        result.utf8.clear();
+        return result;
+      }
+      if (!AppendUtf8(code_point, &result.utf8)) {
+        result.error = "normalized skin.ini exceeds the 256 KiB limit";
+        result.utf8.clear();
+        return result;
+      }
+    }
+    return result;
+  }
+
+  std::size_t offset = 0;
+  if (has_prefix({0xEFU, 0xBBU, 0xBFU})) {
+    result.encoding = SogouThemeIniEncoding::kUtf8Bom;
+    offset = 3U;
+  } else {
+    result.encoding = SogouThemeIniEncoding::kUtf8;
+  }
+  const auto payload = bytes.subspan(offset);
+  if (payload.size() > kMaximumSogouThemeIniBytes) {
+    result.error = "skin.ini exceeds the 256 KiB limit";
+    return result;
+  }
+  if (!payload.empty()) {
+    result.utf8.assign(reinterpret_cast<const char*>(payload.data()),
+                       payload.size());
+  }
+  if (!IsValidUtf8(result.utf8)) {
+    result.error = "skin.ini is not valid UTF-8";
+    result.utf8.clear();
+    return result;
+  }
+  if (result.utf8.find('\0') != std::string::npos) {
+    result.error = "skin.ini contains an embedded NUL";
+    result.utf8.clear();
+    return result;
+  }
+  return result;
+}
+
 SogouThemeConversion ConvertSogouThemeIni(
     std::string_view utf8_ini, std::string_view source_hint,
     std::string_view source_package_sha256) {
@@ -967,6 +1107,43 @@ SogouThemeConversion ConvertSogouThemeIni(
              &assets, &conversion);
   AppendManifestIssues(&conversion);
   return conversion;
+}
+
+SogouThemePackageConversion ConvertSogouThemePackage(
+    std::span<const SogouThemePackageEntryView> entries,
+    std::string_view source_hint, std::string_view source_package_sha256) {
+  SogouThemePackageConversion result;
+  const SogouThemePackageEntryView* skin_ini = nullptr;
+  for (const SogouThemePackageEntryView& entry : entries) {
+    if (!IsRootSkinIni(entry.relative_path)) {
+      continue;
+    }
+    if (skin_ini != nullptr) {
+      AddIssue(&result.conversion, SogouThemeIssueCode::kDuplicateProperty, 0,
+               "$.skin.ini",
+               "SKIN_INI_AMBIGUOUS: package contains multiple root skin.ini entries");
+      return result;
+    }
+    skin_ini = &entry;
+  }
+  if (skin_ini == nullptr) {
+    AddIssue(&result.conversion, SogouThemeIssueCode::kMissingProperty, 0,
+             "$.skin.ini",
+             "SKIN_INI_MISSING: package has no root skin.ini entry");
+    return result;
+  }
+
+  SogouThemeTextNormalization normalized =
+      NormalizeSogouThemeIniText(skin_ini->bytes);
+  result.skin_ini_encoding = normalized.encoding;
+  if (!normalized.ok()) {
+    AddIssue(&result.conversion, SogouThemeIssueCode::kInvalidEncoding, 0,
+             "$.skin.ini", std::move(normalized.error));
+    return result;
+  }
+  result.conversion = ConvertSogouThemeIni(
+      normalized.utf8, source_hint, source_package_sha256);
+  return result;
 }
 
 }  // namespace ziliu::core

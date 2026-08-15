@@ -3,6 +3,8 @@
 #include "ziliu/core/theme_manifest.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,6 +16,7 @@ inline constexpr std::size_t kMaximumSogouThemeIniBytes = 256 * 1024;
 enum class SogouThemeIssueCode {
   kIniTooLarge,
   kInvalidUtf8,
+  kInvalidEncoding,
   kMalformedIni,
   kDuplicateProperty,
   kMissingProperty,
@@ -46,10 +49,49 @@ struct SogouThemeConversion {
   [[nodiscard]] bool ok() const noexcept { return issues.empty(); }
 };
 
+enum class SogouThemeIniEncoding {
+  kUnknown,
+  kUtf8,
+  kUtf8Bom,
+  kUtf16LeBom,
+};
+
+struct SogouThemeTextNormalization {
+  SogouThemeIniEncoding encoding = SogouThemeIniEncoding::kUnknown;
+  std::string utf8;
+  std::string error;
+
+  [[nodiscard]] bool ok() const noexcept { return error.empty(); }
+};
+
+struct SogouThemePackageEntryView {
+  std::string_view relative_path;
+  std::span<const std::uint8_t> bytes;
+};
+
+struct SogouThemePackageConversion {
+  SogouThemeIniEncoding skin_ini_encoding =
+      SogouThemeIniEncoding::kUnknown;
+  SogouThemeConversion conversion;
+
+  [[nodiscard]] bool ok() const noexcept { return conversion.ok(); }
+};
+
+// Converts raw skin.ini bytes to strict UTF-8 without changing text semantics.
+// Accepted encodings are UTF-8 (with or without BOM) and BOM-marked UTF-16LE.
+[[nodiscard]] SogouThemeTextNormalization NormalizeSogouThemeIniText(
+    std::span<const std::uint8_t> bytes);
+
 // Converts a decoded UTF-8 skin.ini into the custom-SSF model. Source images
 // receive controlled PNG destinations; image decoding is a separate boundary.
 [[nodiscard]] SogouThemeConversion ConvertSogouThemeIni(
     std::string_view utf8_ini, std::string_view source_hint,
     std::string_view source_package_sha256);
+
+// Locates the unique root skin.ini in decoded package entries, normalizes its
+// text, and delegates all SSF semantics to ConvertSogouThemeIni.
+[[nodiscard]] SogouThemePackageConversion ConvertSogouThemePackage(
+    std::span<const SogouThemePackageEntryView> entries,
+    std::string_view source_hint, std::string_view source_package_sha256);
 
 }  // namespace ziliu::core
