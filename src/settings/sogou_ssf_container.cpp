@@ -40,6 +40,11 @@ constexpr std::size_t kMaximumEntryContentBytes = 8U * 1024U * 1024U;
 constexpr std::size_t kMaximumFilenameBytes = 32U * 1024U;
 constexpr std::size_t kMaximumDeflateBlocks = 1024U * 1024U;
 constexpr std::uint32_t kAdlerModulus = 65521;
+constexpr std::uint32_t kZipLocalHeaderSignature = 0x04034B50U;
+constexpr std::uint32_t kZipCentralHeaderSignature = 0x02014B50U;
+constexpr std::uint32_t kZipEndSignature = 0x06054B50U;
+constexpr std::size_t kZipEndBytes = 22U;
+constexpr std::size_t kMaximumZipCommentBytes = 65535U;
 
 constexpr std::array<std::uint8_t, 32> kAesKey = {
     0x52, 0x36, 0x46, 0x1A, 0xD3, 0x85, 0x03, 0x66,
@@ -74,6 +79,13 @@ constexpr std::array<std::uint8_t, 30> kDistanceExtraBits = {
     0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6,
     6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
 };
+
+[[nodiscard]] std::uint16_t ReadLe16(
+    std::span<const std::uint8_t> bytes, std::size_t offset) noexcept {
+  return static_cast<std::uint16_t>(bytes[offset]) |
+         static_cast<std::uint16_t>(
+             static_cast<std::uint16_t>(bytes[offset + 1U]) << 8U);
+}
 
 [[nodiscard]] std::uint32_t ReadLe32(std::span<const std::uint8_t> bytes,
                                      std::size_t offset) noexcept {
@@ -178,8 +190,8 @@ struct HashHandle {
     error = WindowsErrorMessage("无法读取 SSF 文件大小", GetLastError());
     return false;
   }
-  if (file_size.QuadPart < static_cast<LONGLONG>(kHeaderBytes + kAesBlockBytes)) {
-    error = "SSF 文件过短，缺少完整文件头或加密数据。";
+  if (file_size.QuadPart < 4) {
+    error = "SSF 文件过短，缺少可识别的容器文件头。";
     return false;
   }
   if (file_size.QuadPart > static_cast<LONGLONG>(kMaximumArchiveBytes)) {
@@ -877,6 +889,39 @@ class HuffmanTree {
   return true;
 }
 
+[[nodiscard]] bool FinalizeWidePath(std::wstring_view wide_path,
+                                    std::string& utf8_path,
+                                    std::string& error) {
+  if (!ValidateWindowsRelativePath(wide_path, error)) {
+    return false;
+  }
+  if (wide_path.size() >
+      static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
+    error = "SSF 条目文件名过长，无法转换为 UTF-8。";
+    return false;
+  }
+  const int wide_length = static_cast<int>(wide_path.size());
+  const int utf8_length =
+      WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_path.data(),
+                          wide_length, nullptr, 0, nullptr, nullptr);
+  if (utf8_length <= 0) {
+    error = WindowsErrorMessage("SSF 条目文件名无法严格转换为 UTF-8",
+                                GetLastError());
+    return false;
+  }
+  utf8_path.resize(static_cast<std::size_t>(utf8_length));
+  const int converted =
+      WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_path.data(),
+                          wide_length, utf8_path.data(), utf8_length, nullptr,
+                          nullptr);
+  if (converted != utf8_length) {
+    error = WindowsErrorMessage("SSF 条目文件名 UTF-8 转换不完整",
+                                GetLastError());
+    return false;
+  }
+  return true;
+}
+
 [[nodiscard]] bool DecodeStrictUtf16(std::span<const std::uint8_t> bytes,
                                      std::wstring& wide_path,
                                      std::string& utf8_path,
@@ -923,29 +968,7 @@ class HuffmanTree {
     wide_path.push_back(static_cast<wchar_t>(code_unit));
   }
 
-  if (!ValidateWindowsRelativePath(wide_path, error)) {
-    return false;
-  }
-  const int wide_length = static_cast<int>(wide_path.size());
-  const int utf8_length =
-      WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_path.data(),
-                          wide_length, nullptr, 0, nullptr, nullptr);
-  if (utf8_length <= 0) {
-    error = WindowsErrorMessage("SSF 条目文件名无法严格转换为 UTF-8",
-                                GetLastError());
-    return false;
-  }
-  utf8_path.resize(static_cast<std::size_t>(utf8_length));
-  const int converted =
-      WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide_path.data(),
-                          wide_length, utf8_path.data(), utf8_length, nullptr,
-                          nullptr);
-  if (converted != utf8_length) {
-    error = WindowsErrorMessage("SSF 条目文件名 UTF-8 转换不完整",
-                                GetLastError());
-    return false;
-  }
-  return true;
+  return FinalizeWidePath(wide_path, utf8_path, error);
 }
 
 [[nodiscard]] bool PathsCollide(std::wstring_view left,
@@ -1104,58 +1127,521 @@ class HuffmanTree {
   return true;
 }
 
-}  // namespace
+[[nodiscard]] std::uint32_t ComputeCrc32(
+    std::span<const std::uint8_t> bytes) noexcept {
+  std::uint32_t crc = 0xFFFFFFFFU;
+  for (const std::uint8_t byte : bytes) {
+    crc ^= byte;
+    for (unsigned bit = 0; bit < 8U; ++bit) {
+      const std::uint32_t mask =
+          0U - static_cast<std::uint32_t>(crc & 1U);
+      crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+    }
+  }
+  return ~crc;
+}
 
-SogouSsfDecodeResult DecodeSogouSsfV3(
-    const std::filesystem::path& source_path) {
+[[nodiscard]] bool ValidateZipExtraFields(
+    std::span<const std::uint8_t> extra, std::string& error) {
+  std::size_t cursor = 0;
+  while (cursor < extra.size()) {
+    if (extra.size() - cursor < 4U) {
+      error = "ZIP extra field 头被截断。";
+      return false;
+    }
+    const std::uint16_t identifier = ReadLe16(extra, cursor);
+    const std::size_t payload_bytes = ReadLe16(extra, cursor + 2U);
+    cursor += 4U;
+    if (payload_bytes > extra.size() - cursor) {
+      error = "ZIP extra field 内容越过条目边界。";
+      return false;
+    }
+    if (identifier == 0x0001U) {
+      error = "ZIP64 SSF 暂不受支持。";
+      return false;
+    }
+    cursor += payload_bytes;
+  }
+  return true;
+}
+
+[[nodiscard]] bool DecodeZipPath(std::span<const std::uint8_t> bytes,
+                                 bool utf8, std::wstring& wide_path,
+                                 std::string& utf8_path, bool& directory,
+                                 std::string& error) {
+  if (bytes.empty() || bytes.size() > kMaximumFilenameBytes ||
+      bytes.size() >
+          static_cast<std::size_t>((std::numeric_limits<int>::max)())) {
+    error = "ZIP 条目文件名长度无效。";
+    return false;
+  }
+  const UINT code_page = utf8 ? CP_UTF8 : 437U;
+  const DWORD flags = utf8 ? MB_ERR_INVALID_CHARS : 0U;
+  const int byte_count = static_cast<int>(bytes.size());
+  const auto* characters = reinterpret_cast<const char*>(bytes.data());
+  const int wide_length = MultiByteToWideChar(
+      code_page, flags, characters, byte_count, nullptr, 0);
+  if (wide_length <= 0) {
+    error = WindowsErrorMessage(
+        utf8 ? "ZIP UTF-8 条目名无效" : "ZIP CP437 条目名无法解码",
+        GetLastError());
+    return false;
+  }
+  wide_path.resize(static_cast<std::size_t>(wide_length));
+  if (MultiByteToWideChar(code_page, flags, characters, byte_count,
+                          wide_path.data(), wide_length) != wide_length) {
+    error = "ZIP 条目名转换不完整。";
+    return false;
+  }
+  std::replace(wide_path.begin(), wide_path.end(), L'\\', L'/');
+  directory = !wide_path.empty() && wide_path.back() == L'/';
+  if (directory) {
+    wide_path.pop_back();
+  }
+  return FinalizeWidePath(wide_path, utf8_path, error);
+}
+
+[[nodiscard]] bool FindZipEnd(std::span<const std::uint8_t> archive,
+                              std::size_t& end_offset,
+                              std::string& error) {
+  if (archive.size() < kZipEndBytes) {
+    error = "ZIP SSF 过短，缺少 end-of-central-directory。";
+    return false;
+  }
+  const std::size_t search_bytes =
+      (std::min)(archive.size(), kZipEndBytes + kMaximumZipCommentBytes);
+  const std::size_t search_start = archive.size() - search_bytes;
+  std::size_t cursor = archive.size() - kZipEndBytes;
+  while (true) {
+    if (ReadLe32(archive, cursor) == kZipEndSignature) {
+      const std::size_t comment_bytes = ReadLe16(archive, cursor + 20U);
+      if (comment_bytes == archive.size() - cursor - kZipEndBytes) {
+        end_offset = cursor;
+        return true;
+      }
+    }
+    if (cursor == search_start) {
+      break;
+    }
+    --cursor;
+  }
+  error = "ZIP SSF 缺少精确闭合的 end-of-central-directory。";
+  return false;
+}
+
+struct ZipEntryMetadata {
+  std::wstring wide_path;
+  std::string utf8_path;
+  std::size_t central_name_offset = 0;
+  std::size_t name_bytes = 0;
+  std::size_t local_offset = 0;
+  std::size_t data_offset = 0;
+  std::size_t compressed_bytes = 0;
+  std::size_t uncompressed_bytes = 0;
+  std::uint32_t crc32 = 0;
+  std::uint32_t external_attributes = 0;
+  std::uint16_t version_needed = 0;
+  std::uint16_t flags = 0;
+  std::uint16_t method = 0;
+  bool directory = false;
+};
+
+struct ZipRange {
+  std::size_t begin = 0;
+  std::size_t end = 0;
+};
+
+[[nodiscard]] bool ParseZipArchive(
+    std::span<const std::uint8_t> archive,
+    std::vector<SogouSsfEntry>& entries, std::string& error) {
+  std::size_t end_offset = 0;
+  if (!FindZipEnd(archive, end_offset, error)) {
+    return false;
+  }
+
+  const std::uint16_t disk_number = ReadLe16(archive, end_offset + 4U);
+  const std::uint16_t central_disk = ReadLe16(archive, end_offset + 6U);
+  const std::uint16_t entries_on_disk = ReadLe16(archive, end_offset + 8U);
+  const std::uint16_t entry_count = ReadLe16(archive, end_offset + 10U);
+  const std::uint32_t central_bytes32 = ReadLe32(archive, end_offset + 12U);
+  const std::uint32_t central_offset32 = ReadLe32(archive, end_offset + 16U);
+  if (disk_number != 0U || central_disk != 0U ||
+      entries_on_disk != entry_count) {
+    error = "多磁盘 ZIP SSF 不受支持。";
+    return false;
+  }
+  if (entry_count == 0U) {
+    error = "ZIP SSF 不包含文件条目。";
+    return false;
+  }
+  if (entry_count == 0xFFFFU || central_bytes32 == 0xFFFFFFFFU ||
+      central_offset32 == 0xFFFFFFFFU) {
+    error = "ZIP64 SSF 暂不受支持。";
+    return false;
+  }
+  if (entry_count > kMaximumEntries) {
+    error = "ZIP SSF 条目数量超过 128 个安全上限。";
+    return false;
+  }
+  const std::size_t central_bytes = central_bytes32;
+  const std::size_t central_offset = central_offset32;
+  if (central_offset > end_offset ||
+      central_bytes > end_offset - central_offset ||
+      central_offset + central_bytes != end_offset) {
+    error = "ZIP central directory 边界不精确。";
+    return false;
+  }
+
+  std::vector<ZipEntryMetadata> metadata;
+  metadata.reserve(entry_count);
+  std::vector<std::wstring> file_paths;
+  std::vector<std::wstring> directory_paths;
+  std::size_t total_content_bytes = 0;
+  std::size_t cursor = central_offset;
+  constexpr std::uint16_t kSupportedFlags = 0x0806U;
+  for (std::size_t index = 0; index < entry_count; ++index) {
+    if (cursor > end_offset || end_offset - cursor < 46U ||
+        ReadLe32(archive, cursor) != kZipCentralHeaderSignature) {
+      error = "ZIP central directory 条目头无效或被截断。";
+      return false;
+    }
+    const std::uint16_t made_by = ReadLe16(archive, cursor + 4U);
+    const std::uint16_t version_needed = ReadLe16(archive, cursor + 6U);
+    const std::uint16_t flags = ReadLe16(archive, cursor + 8U);
+    const std::uint16_t method = ReadLe16(archive, cursor + 10U);
+    const std::uint32_t crc32 = ReadLe32(archive, cursor + 16U);
+    const std::uint32_t compressed32 = ReadLe32(archive, cursor + 20U);
+    const std::uint32_t uncompressed32 = ReadLe32(archive, cursor + 24U);
+    const std::size_t name_bytes = ReadLe16(archive, cursor + 28U);
+    const std::size_t extra_bytes = ReadLe16(archive, cursor + 30U);
+    const std::size_t comment_bytes = ReadLe16(archive, cursor + 32U);
+    const std::uint16_t disk_start = ReadLe16(archive, cursor + 34U);
+    const std::uint32_t external_attributes =
+        ReadLe32(archive, cursor + 38U);
+    const std::uint32_t local_offset32 = ReadLe32(archive, cursor + 42U);
+    const std::size_t variable_bytes =
+        name_bytes + extra_bytes + comment_bytes;
+    if (name_bytes == 0U || name_bytes > kMaximumFilenameBytes ||
+        variable_bytes > end_offset - cursor - 46U) {
+      error = "ZIP central directory 变长字段越过边界。";
+      return false;
+    }
+    if (version_needed > 20U) {
+      error = "ZIP SSF 需要未支持的 ZIP 版本。";
+      return false;
+    }
+    if ((flags & 0x2041U) != 0U) {
+      error = "加密 ZIP SSF 不受支持。";
+      return false;
+    }
+    if ((flags & 0x0008U) != 0U) {
+      error = "使用 data descriptor 的 ZIP SSF 暂不受支持。";
+      return false;
+    }
+    if ((flags & static_cast<std::uint16_t>(~kSupportedFlags)) != 0U) {
+      error = "ZIP SSF 使用了未支持的 general-purpose flag。";
+      return false;
+    }
+    if (method != 0U && method != 8U) {
+      error = "ZIP SSF 使用了未支持的压缩方法。";
+      return false;
+    }
+    if (method == 0U && (flags & 0x0006U) != 0U) {
+      error = "stored ZIP 条目包含仅适用于 DEFLATE 的 flag。";
+      return false;
+    }
+    if (disk_start != 0U || compressed32 == 0xFFFFFFFFU ||
+        uncompressed32 == 0xFFFFFFFFU || local_offset32 == 0xFFFFFFFFU) {
+      error = "ZIP64 或多磁盘条目不受支持。";
+      return false;
+    }
+    const std::size_t name_offset = cursor + 46U;
+    const auto extra = archive.subspan(name_offset + name_bytes, extra_bytes);
+    if (!ValidateZipExtraFields(extra, error)) {
+      return false;
+    }
+
+    ZipEntryMetadata item;
+    bool name_is_directory = false;
+    if (!DecodeZipPath(archive.subspan(name_offset, name_bytes),
+                       (flags & 0x0800U) != 0U, item.wide_path,
+                       item.utf8_path, name_is_directory, error)) {
+      return false;
+    }
+    const unsigned host_system = made_by >> 8U;
+    const std::uint32_t unix_type = (external_attributes >> 16U) & 0xF000U;
+    if (host_system == 3U && unix_type != 0U && unix_type != 0x8000U &&
+        unix_type != 0x4000U) {
+      error = "ZIP SSF 条目不是普通文件或目录。";
+      return false;
+    }
+    item.directory = name_is_directory ||
+                     (external_attributes & 0x10U) != 0U ||
+                     (host_system == 3U && unix_type == 0x4000U);
+    if (item.directory &&
+        (compressed32 != 0U || uncompressed32 != 0U || crc32 != 0U ||
+         method != 0U)) {
+      error = "ZIP 目录条目携带了文件内容。";
+      return false;
+    }
+    if (!item.directory && uncompressed32 > kMaximumEntryContentBytes) {
+      error = "ZIP SSF 单个条目超过 8 MiB 安全上限。";
+      return false;
+    }
+    if (!item.directory &&
+        uncompressed32 > kMaximumTotalContentBytes - total_content_bytes) {
+      error = "ZIP SSF 条目内容总量超过 32 MiB 安全上限。";
+      return false;
+    }
+
+    if (item.directory) {
+      for (const std::wstring& file_path : file_paths) {
+        if (PathsCollide(file_path, item.wide_path) ||
+            PathPrefixes(file_path, item.wide_path)) {
+          error = "ZIP 文件与目录路径在 Windows 规则下冲突。";
+          return false;
+        }
+      }
+      for (const std::wstring& directory_path : directory_paths) {
+        if (PathsCollide(directory_path, item.wide_path)) {
+          error = "ZIP 目录路径在 Windows 大小写规则下重复。";
+          return false;
+        }
+      }
+      directory_paths.push_back(item.wide_path);
+    } else {
+      for (const std::wstring& file_path : file_paths) {
+        if (PathsConflict(file_path, item.wide_path)) {
+          error = "ZIP 文件路径在 Windows 大小写或目录规则下冲突。";
+          return false;
+        }
+      }
+      for (const std::wstring& directory_path : directory_paths) {
+        if (PathsCollide(directory_path, item.wide_path) ||
+            PathPrefixes(item.wide_path, directory_path)) {
+          error = "ZIP 文件与目录路径在 Windows 规则下冲突。";
+          return false;
+        }
+      }
+      file_paths.push_back(item.wide_path);
+      total_content_bytes += uncompressed32;
+    }
+
+    item.central_name_offset = name_offset;
+    item.name_bytes = name_bytes;
+    item.local_offset = local_offset32;
+    item.compressed_bytes = compressed32;
+    item.uncompressed_bytes = uncompressed32;
+    item.crc32 = crc32;
+    item.external_attributes = external_attributes;
+    item.version_needed = version_needed;
+    item.flags = flags;
+    item.method = method;
+    metadata.push_back(std::move(item));
+    cursor += 46U + variable_bytes;
+  }
+  if (cursor != end_offset || file_paths.empty()) {
+    error = cursor != end_offset
+                ? "ZIP central directory 未精确消费。"
+                : "ZIP SSF 只包含目录，没有文件。";
+    return false;
+  }
+
+  std::vector<ZipRange> ranges;
+  ranges.reserve(metadata.size());
+  for (ZipEntryMetadata& item : metadata) {
+    if (item.local_offset > central_offset ||
+        central_offset - item.local_offset < 30U ||
+        ReadLe32(archive, item.local_offset) != kZipLocalHeaderSignature) {
+      error = "ZIP local file header 无效或越过 central directory。";
+      return false;
+    }
+    const std::uint16_t local_version =
+        ReadLe16(archive, item.local_offset + 4U);
+    const std::uint16_t local_flags =
+        ReadLe16(archive, item.local_offset + 6U);
+    const std::uint16_t local_method =
+        ReadLe16(archive, item.local_offset + 8U);
+    const std::uint32_t local_crc =
+        ReadLe32(archive, item.local_offset + 14U);
+    const std::uint32_t local_compressed =
+        ReadLe32(archive, item.local_offset + 18U);
+    const std::uint32_t local_uncompressed =
+        ReadLe32(archive, item.local_offset + 22U);
+    const std::size_t local_name_bytes =
+        ReadLe16(archive, item.local_offset + 26U);
+    const std::size_t local_extra_bytes =
+        ReadLe16(archive, item.local_offset + 28U);
+    if (local_version != item.version_needed || local_flags != item.flags ||
+        local_method != item.method || local_crc != item.crc32 ||
+        local_compressed != item.compressed_bytes ||
+        local_uncompressed != item.uncompressed_bytes ||
+        local_name_bytes != item.name_bytes) {
+      error = "ZIP local header 与 central directory 身份不一致。";
+      return false;
+    }
+    const std::size_t local_name_offset = item.local_offset + 30U;
+    if (local_name_bytes > central_offset - local_name_offset ||
+        local_extra_bytes >
+            central_offset - local_name_offset - local_name_bytes) {
+      error = "ZIP local header 变长字段越过 central directory。";
+      return false;
+    }
+    if (!std::equal(
+            archive.begin() + static_cast<std::ptrdiff_t>(local_name_offset),
+            archive.begin() + static_cast<std::ptrdiff_t>(local_name_offset +
+                                                          local_name_bytes),
+            archive.begin() +
+                static_cast<std::ptrdiff_t>(item.central_name_offset))) {
+      error = "ZIP local header 与 central directory 文件名不一致。";
+      return false;
+    }
+    if (!ValidateZipExtraFields(
+            archive.subspan(local_name_offset + local_name_bytes,
+                            local_extra_bytes),
+            error)) {
+      return false;
+    }
+    item.data_offset =
+        local_name_offset + local_name_bytes + local_extra_bytes;
+    if (item.compressed_bytes > central_offset - item.data_offset) {
+      error = "ZIP 条目压缩数据越过 central directory。";
+      return false;
+    }
+    ranges.push_back(
+        ZipRange{item.local_offset, item.data_offset + item.compressed_bytes});
+  }
+  std::sort(ranges.begin(), ranges.end(),
+            [](const ZipRange& left, const ZipRange& right) {
+              return left.begin < right.begin;
+            });
+  std::size_t range_cursor = 0;
+  for (const ZipRange& range : ranges) {
+    if (range.begin != range_cursor || range.end < range.begin) {
+      error = "ZIP local records 存在空洞、重叠或隐藏数据。";
+      return false;
+    }
+    range_cursor = range.end;
+  }
+  if (range_cursor != central_offset) {
+    error = "ZIP local records 与 central directory 之间存在额外数据。";
+    return false;
+  }
+
+  entries.clear();
+  entries.reserve(file_paths.size());
+  for (const ZipEntryMetadata& item : metadata) {
+    if (item.directory) {
+      continue;
+    }
+    const auto compressed =
+        archive.subspan(item.data_offset, item.compressed_bytes);
+    std::vector<std::uint8_t> content;
+    if (item.method == 0U) {
+      if (item.compressed_bytes != item.uncompressed_bytes) {
+        error = "stored ZIP 条目的压缩与原始长度不一致。";
+        entries.clear();
+        return false;
+      }
+      content.assign(compressed.begin(), compressed.end());
+    } else {
+      content.reserve(item.uncompressed_bytes);
+      if (!InflateDeflate(compressed, item.uncompressed_bytes, content, error)) {
+        entries.clear();
+        return false;
+      }
+    }
+    if (ComputeCrc32(content) != item.crc32) {
+      error = "ZIP 条目 CRC-32 校验失败。";
+      entries.clear();
+      return false;
+    }
+    entries.push_back(
+        SogouSsfEntry{item.utf8_path, std::move(content)});
+  }
+  return true;
+}
+
+[[nodiscard]] SogouSsfDecodeResult DecodeLoadedSogouSsf(
+    std::vector<std::uint8_t> archive, bool require_skin_v3) {
+  SogouSsfDecodeResult result;
+  const std::span<const std::uint8_t> archive_view(archive);
+  const bool skin_header =
+      archive_view.size() >= 4U &&
+      archive_view[0] == static_cast<std::uint8_t>('S') &&
+      archive_view[1] == static_cast<std::uint8_t>('k') &&
+      archive_view[2] == static_cast<std::uint8_t>('i') &&
+      archive_view[3] == static_cast<std::uint8_t>('n');
+  if (!skin_header) {
+    if (require_skin_v3) {
+      result.error = "SSF 文件头不是“Skin”。";
+      return result;
+    }
+    const bool zip_header =
+        archive_view.size() >= 4U &&
+        ReadLe32(archive_view, 0) == kZipLocalHeaderSignature;
+    if (!zip_header) {
+      result.error = "SSF 容器既不是 Skin v3，也不是受支持的 PK/ZIP。";
+      return result;
+    }
+    result.kind = SogouSsfContainerKind::kZip;
+    if (!ParseZipArchive(archive_view, result.entries, result.error)) {
+      result.entries.clear();
+      return result;
+    }
+    return result;
+  }
+
+  result.kind = SogouSsfContainerKind::kSkinV3;
+  if (archive_view.size() < kHeaderBytes + kAesBlockBytes) {
+    result.error = "SSF Skin v3 文件过短，缺少完整文件头或加密数据。";
+    return result;
+  }
+  if (ReadLe32(archive_view, 4) != 3) {
+    result.error = "仅支持当前 Sogou SSF Skin v3 格式。";
+    return result;
+  }
+
+  std::vector<std::uint8_t> plaintext;
+  if (!DecryptPayload(archive_view.subspan(kHeaderBytes), plaintext,
+                      result.error)) {
+    return result;
+  }
+  archive.clear();
+  archive.shrink_to_fit();
+  if (plaintext.size() < 4U) {
+    result.error = "SSF 解密结果缺少 zlib 精确输出长度。";
+    return result;
+  }
+
+  const std::size_t inflated_size = ReadLe32(plaintext, 0);
+  if (inflated_size > kMaximumInflatedBytes) {
+    result.error = "SSF 解压结果超过 64 MiB 安全上限。";
+    return result;
+  }
+  std::vector<std::uint8_t> blob;
+  if (!InflateZlib(std::span<const std::uint8_t>(plaintext).subspan(4),
+                   inflated_size, blob, result.error)) {
+    return result;
+  }
+  plaintext.clear();
+  plaintext.shrink_to_fit();
+  if (!ParseOutputBlob(blob, result.entries, result.error)) {
+    result.entries.clear();
+    return result;
+  }
+  return result;
+}
+
+[[nodiscard]] SogouSsfDecodeResult DecodeSogouSsfImpl(
+    const std::filesystem::path& source_path, bool require_skin_v3) {
   SogouSsfDecodeResult result;
   try {
     std::vector<std::uint8_t> archive;
     if (!ReadArchive(source_path, archive, result.error)) {
       return result;
     }
-    const std::span<const std::uint8_t> archive_view(archive);
-    if (archive_view[0] != static_cast<std::uint8_t>('S') ||
-        archive_view[1] != static_cast<std::uint8_t>('k') ||
-        archive_view[2] != static_cast<std::uint8_t>('i') ||
-        archive_view[3] != static_cast<std::uint8_t>('n')) {
-      result.error = "SSF 文件头不是“Skin”。";
-      return result;
-    }
-    if (ReadLe32(archive_view, 4) != 3) {
-      result.error = "仅支持当前 Sogou SSF Skin v3 格式。";
-      return result;
-    }
-
-    std::vector<std::uint8_t> plaintext;
-    if (!DecryptPayload(archive_view.subspan(kHeaderBytes), plaintext,
-                        result.error)) {
-      return result;
-    }
-    archive.clear();
-    archive.shrink_to_fit();
-    if (plaintext.size() < 4U) {
-      result.error = "SSF 解密结果缺少 zlib 精确输出长度。";
-      return result;
-    }
-
-    const std::size_t inflated_size = ReadLe32(plaintext, 0);
-    if (inflated_size > kMaximumInflatedBytes) {
-      result.error = "SSF 解压结果超过 64 MiB 安全上限。";
-      return result;
-    }
-    std::vector<std::uint8_t> blob;
-    if (!InflateZlib(std::span<const std::uint8_t>(plaintext).subspan(4),
-                     inflated_size, blob, result.error)) {
-      return result;
-    }
-    plaintext.clear();
-    plaintext.shrink_to_fit();
-    if (!ParseOutputBlob(blob, result.entries, result.error)) {
-      result.entries.clear();
-      return result;
-    }
-    return result;
+    return DecodeLoadedSogouSsf(std::move(archive), require_skin_v3);
   } catch (const std::bad_alloc&) {
     result.entries.clear();
     result.error = "内存不足，SSF 解码已安全终止。";
@@ -1169,6 +1655,18 @@ SogouSsfDecodeResult DecodeSogouSsfV3(
     result.error = "SSF 解码发生未知异常。";
     return result;
   }
+}
+
+}  // namespace
+
+SogouSsfDecodeResult DecodeSogouSsf(
+    const std::filesystem::path& source_path) {
+  return DecodeSogouSsfImpl(source_path, false);
+}
+
+SogouSsfDecodeResult DecodeSogouSsfV3(
+    const std::filesystem::path& source_path) {
+  return DecodeSogouSsfImpl(source_path, true);
 }
 
 std::optional<std::string> Sha256SogouSsfFile(

@@ -17,12 +17,24 @@ struct SogouSsfEntry {
   bool operator==(const SogouSsfEntry&) const = default;
 };
 
+enum class SogouSsfContainerKind {
+  kUnknown,
+  kSkinV3,
+  kZip,
+};
+
 struct SogouSsfDecodeResult {
+  SogouSsfContainerKind kind = SogouSsfContainerKind::kUnknown;
   std::vector<SogouSsfEntry> entries;
   std::string error;
 
   [[nodiscard]] bool ok() const noexcept { return error.empty(); }
 };
+
+// Decodes either the encrypted Skin-v3 container or a conventional PK/ZIP
+// container. Both paths enforce the same Windows path and resource limits.
+[[nodiscard]] SogouSsfDecodeResult DecodeSogouSsf(
+    const std::filesystem::path& source_path);
 
 [[nodiscard]] SogouSsfDecodeResult DecodeSogouSsfV3(
     const std::filesystem::path& source_path);

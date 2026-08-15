@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -48,6 +49,11 @@ void AppendLe32(std::vector<std::uint8_t>& bytes, std::uint32_t value) {
   bytes.push_back(static_cast<std::uint8_t>(value >> 24U));
 }
 
+void AppendLe16(std::vector<std::uint8_t>& bytes, std::uint16_t value) {
+  bytes.push_back(static_cast<std::uint8_t>(value));
+  bytes.push_back(static_cast<std::uint8_t>(value >> 8U));
+}
+
 void SetLe32(std::vector<std::uint8_t>& bytes, std::size_t offset,
              std::uint32_t value) {
   Expect(offset + 4U <= bytes.size(), "test LE32 write should be in bounds");
@@ -55,6 +61,15 @@ void SetLe32(std::vector<std::uint8_t>& bytes, std::size_t offset,
   bytes[offset + 1U] = static_cast<std::uint8_t>(value >> 8U);
   bytes[offset + 2U] = static_cast<std::uint8_t>(value >> 16U);
   bytes[offset + 3U] = static_cast<std::uint8_t>(value >> 24U);
+}
+
+std::uint32_t ReadLe32ForTest(std::span<const std::uint8_t> bytes,
+                              std::size_t offset) {
+  Expect(offset + 4U <= bytes.size(), "test LE32 read should be in bounds");
+  return static_cast<std::uint32_t>(bytes[offset]) |
+         (static_cast<std::uint32_t>(bytes[offset + 1U]) << 8U) |
+         (static_cast<std::uint32_t>(bytes[offset + 2U]) << 16U) |
+         (static_cast<std::uint32_t>(bytes[offset + 3U]) << 24U);
 }
 
 struct TestEntry {
@@ -136,6 +151,149 @@ std::vector<std::uint8_t> MakeStoredZlib(
   zlib.push_back(static_cast<std::uint8_t>(checksum >> 8U));
   zlib.push_back(static_cast<std::uint8_t>(checksum));
   return zlib;
+}
+
+std::uint32_t Crc32(std::span<const std::uint8_t> bytes) {
+  std::uint32_t crc = 0xFFFFFFFFU;
+  for (const std::uint8_t byte : bytes) {
+    crc ^= byte;
+    for (unsigned bit = 0; bit < 8U; ++bit) {
+      const std::uint32_t mask =
+          0U - static_cast<std::uint32_t>(crc & 1U);
+      crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+    }
+  }
+  return ~crc;
+}
+
+std::vector<std::uint8_t> MakeStoredDeflate(
+    std::span<const std::uint8_t> uncompressed) {
+  const std::vector<std::uint8_t> zlib = MakeStoredZlib(uncompressed);
+  Expect(zlib.size() >= 6U, "test zlib should contain a wrapper");
+  return std::vector<std::uint8_t>(zlib.begin() + 2, zlib.end() - 4);
+}
+
+std::vector<std::uint8_t> Utf16LeBytes(std::u16string_view text) {
+  std::vector<std::uint8_t> bytes{0xFFU, 0xFEU};
+  bytes.reserve(2U + text.size() * 2U);
+  for (const char16_t character : text) {
+    bytes.push_back(static_cast<std::uint8_t>(character));
+    bytes.push_back(static_cast<std::uint8_t>(character >> 8U));
+  }
+  return bytes;
+}
+
+struct ZipTestEntry {
+  std::string path;
+  std::vector<std::uint8_t> bytes;
+  std::uint16_t method = 0;
+  std::uint16_t flags = 0;
+  std::uint32_t external_attributes = 0x81B60020U;
+  std::optional<std::uint32_t> declared_compressed_bytes;
+  std::optional<std::uint32_t> declared_uncompressed_bytes;
+  std::optional<std::uint32_t> declared_crc32;
+};
+
+struct PreparedZipEntry {
+  const ZipTestEntry* source = nullptr;
+  std::vector<std::uint8_t> compressed;
+  std::uint32_t local_offset = 0;
+  std::uint32_t compressed_bytes = 0;
+  std::uint32_t uncompressed_bytes = 0;
+  std::uint32_t crc32 = 0;
+};
+
+std::vector<std::uint8_t> BuildZip(
+    std::span<const ZipTestEntry> entries) {
+  Expect(entries.size() <= (std::numeric_limits<std::uint16_t>::max)(),
+         "test ZIP entry count should fit u16");
+  std::vector<std::uint8_t> archive;
+  std::vector<PreparedZipEntry> prepared;
+  prepared.reserve(entries.size());
+  for (const ZipTestEntry& source : entries) {
+    Expect(!source.path.empty() &&
+               source.path.size() <=
+                   (std::numeric_limits<std::uint16_t>::max)(),
+           "test ZIP path should fit u16");
+    PreparedZipEntry item;
+    item.source = &source;
+    item.compressed = source.method == 8U
+                          ? MakeStoredDeflate(source.bytes)
+                          : source.bytes;
+    Expect(archive.size() <= (std::numeric_limits<std::uint32_t>::max)() &&
+               item.compressed.size() <=
+                   (std::numeric_limits<std::uint32_t>::max)() &&
+               source.bytes.size() <=
+                   (std::numeric_limits<std::uint32_t>::max)(),
+           "test ZIP sizes should fit u32");
+    item.local_offset = static_cast<std::uint32_t>(archive.size());
+    item.compressed_bytes = source.declared_compressed_bytes.value_or(
+        static_cast<std::uint32_t>(item.compressed.size()));
+    item.uncompressed_bytes = source.declared_uncompressed_bytes.value_or(
+        static_cast<std::uint32_t>(source.bytes.size()));
+    item.crc32 = source.declared_crc32.value_or(Crc32(source.bytes));
+
+    AppendLe32(archive, 0x04034B50U);
+    AppendLe16(archive, 20U);
+    AppendLe16(archive, source.flags);
+    AppendLe16(archive, source.method);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, item.crc32);
+    AppendLe32(archive, item.compressed_bytes);
+    AppendLe32(archive, item.uncompressed_bytes);
+    AppendLe16(archive, static_cast<std::uint16_t>(source.path.size()));
+    AppendLe16(archive, 0U);
+    for (const char character : source.path) {
+      archive.push_back(
+          static_cast<std::uint8_t>(static_cast<unsigned char>(character)));
+    }
+    archive.insert(archive.end(), item.compressed.begin(), item.compressed.end());
+    prepared.push_back(std::move(item));
+  }
+
+  Expect(archive.size() <= (std::numeric_limits<std::uint32_t>::max)(),
+         "test central offset should fit u32");
+  const std::uint32_t central_offset =
+      static_cast<std::uint32_t>(archive.size());
+  for (const PreparedZipEntry& item : prepared) {
+    const ZipTestEntry& source = *item.source;
+    AppendLe32(archive, 0x02014B50U);
+    AppendLe16(archive, 0x0314U);
+    AppendLe16(archive, 20U);
+    AppendLe16(archive, source.flags);
+    AppendLe16(archive, source.method);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, item.crc32);
+    AppendLe32(archive, item.compressed_bytes);
+    AppendLe32(archive, item.uncompressed_bytes);
+    AppendLe16(archive, static_cast<std::uint16_t>(source.path.size()));
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe16(archive, 0U);
+    AppendLe32(archive, source.external_attributes);
+    AppendLe32(archive, item.local_offset);
+    for (const char character : source.path) {
+      archive.push_back(
+          static_cast<std::uint8_t>(static_cast<unsigned char>(character)));
+    }
+  }
+  Expect(archive.size() - central_offset <=
+             (std::numeric_limits<std::uint32_t>::max)(),
+         "test central directory size should fit u32");
+  const std::uint32_t central_bytes =
+      static_cast<std::uint32_t>(archive.size() - central_offset);
+  AppendLe32(archive, 0x06054B50U);
+  AppendLe16(archive, 0U);
+  AppendLe16(archive, 0U);
+  AppendLe16(archive, static_cast<std::uint16_t>(entries.size()));
+  AppendLe16(archive, static_cast<std::uint16_t>(entries.size()));
+  AppendLe32(archive, central_bytes);
+  AppendLe32(archive, central_offset);
+  AppendLe16(archive, 0U);
+  return archive;
 }
 
 std::uint8_t HexNibble(char character) {
@@ -232,6 +390,53 @@ std::vector<std::uint8_t> Encrypt(std::span<const std::uint8_t> plaintext) {
   return ciphertext;
 }
 
+struct HashHandle {
+  BCRYPT_HASH_HANDLE value = nullptr;
+  ~HashHandle() {
+    if (value != nullptr) {
+      BCryptDestroyHash(value);
+    }
+  }
+};
+
+std::string Sha256Hex(std::span<const std::uint8_t> bytes) {
+  Expect(bytes.size() <= (std::numeric_limits<ULONG>::max)(),
+         "test SHA input should fit CNG");
+  AlgorithmHandle algorithm;
+  Expect(BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(
+             &algorithm.value, BCRYPT_SHA256_ALGORITHM, nullptr, 0)),
+         "test SHA provider should open");
+  ULONG object_bytes = 0;
+  ULONG returned_bytes = 0;
+  Expect(BCRYPT_SUCCESS(BCryptGetProperty(
+             algorithm.value, BCRYPT_OBJECT_LENGTH,
+             reinterpret_cast<PUCHAR>(&object_bytes), sizeof(object_bytes),
+             &returned_bytes, 0)) &&
+             returned_bytes == sizeof(object_bytes) && object_bytes != 0U,
+         "test SHA provider should report object size");
+  std::vector<std::uint8_t> object(object_bytes);
+  HashHandle hash;
+  Expect(BCRYPT_SUCCESS(BCryptCreateHash(
+             algorithm.value, &hash.value, object.data(), object_bytes, nullptr,
+             0, 0)),
+         "test SHA hash should initialize");
+  Expect(BCRYPT_SUCCESS(BCryptHashData(
+             hash.value, const_cast<PUCHAR>(bytes.data()),
+             static_cast<ULONG>(bytes.size()), 0)),
+         "test SHA data should hash");
+  std::array<std::uint8_t, 32> digest{};
+  Expect(BCRYPT_SUCCESS(BCryptFinishHash(
+             hash.value, digest.data(), static_cast<ULONG>(digest.size()), 0)),
+         "test SHA digest should finish");
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string result(digest.size() * 2U, '0');
+  for (std::size_t index = 0; index < digest.size(); ++index) {
+    result[index * 2U] = kHex[digest[index] >> 4U];
+    result[index * 2U + 1U] = kHex[digest[index] & 0x0FU];
+  }
+  return result;
+}
+
 class TemporarySsf {
  public:
   explicit TemporarySsf(std::span<const std::uint8_t> archive) {
@@ -297,6 +502,30 @@ TemporarySsf WriteSsf(std::span<const std::uint8_t> zlib,
   return TemporarySsf(archive);
 }
 
+void ExpectZipRejected(std::vector<std::uint8_t> archive,
+                       std::string_view error_fragment,
+                       std::string_view description) {
+  TemporarySsf file(archive);
+  const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
+  if (decoded.ok() || decoded.error.find(error_fragment) == std::string::npos) {
+    std::cerr << "FAILED: " << description << ": " << decoded.error << '\n';
+    std::exit(EXIT_FAILURE);
+  }
+}
+
+std::string_view ContainerKindName(
+    ziliu::settings::SogouSsfContainerKind kind) {
+  switch (kind) {
+    case ziliu::settings::SogouSsfContainerKind::kSkinV3:
+      return "skin-v3";
+    case ziliu::settings::SogouSsfContainerKind::kZip:
+      return "zip";
+    case ziliu::settings::SogouSsfContainerKind::kUnknown:
+      break;
+  }
+  return "unknown";
+}
+
 std::vector<std::uint8_t> BuildLargeContent() {
   constexpr std::string_view kPhrase =
       "the quick brown fox jumps over the lazy dog. the quick fox. ";
@@ -337,7 +566,7 @@ void VerifyCompressedVector(std::string_view vector_hex,
 int wmain(int argument_count, wchar_t* arguments[]) {
   if (argument_count == 4 && std::wstring_view(arguments[1]) == L"--extract") {
     const auto decoded =
-        ziliu::settings::DecodeSogouSsfV3(std::filesystem::path(arguments[2]));
+        ziliu::settings::DecodeSogouSsf(std::filesystem::path(arguments[2]));
     if (!decoded.ok()) {
       std::cerr << "FAILED: real SSF: " << decoded.error << '\n';
       return EXIT_FAILURE;
@@ -382,16 +611,18 @@ int wmain(int argument_count, wchar_t* arguments[]) {
         return EXIT_FAILURE;
       }
     }
+    std::cout << "container kind: " << ContainerKindName(decoded.kind) << '\n';
     std::cout << "extracted entries: " << decoded.entries.size() << '\n';
     return EXIT_SUCCESS;
   }
   if (argument_count == 2) {
     const auto decoded =
-        ziliu::settings::DecodeSogouSsfV3(std::filesystem::path(arguments[1]));
+        ziliu::settings::DecodeSogouSsf(std::filesystem::path(arguments[1]));
     if (!decoded.ok()) {
       std::cerr << "FAILED: real SSF: " << decoded.error << '\n';
       return EXIT_FAILURE;
     }
+    std::cout << "container kind: " << ContainerKindName(decoded.kind) << '\n';
     std::size_t total_bytes = 0;
     for (const auto& entry : decoded.entries) {
       total_bytes += entry.bytes.size();
@@ -402,8 +633,150 @@ int wmain(int argument_count, wchar_t* arguments[]) {
     return EXIT_SUCCESS;
   }
   Expect(argument_count == 1 && arguments[0] != nullptr,
-         "test executable should receive no arguments, one SSF path, or "
-         "--extract <SSF path> <output directory>");
+          "test executable should receive no arguments, one SSF path, or "
+          "--extract <SSF path> <output directory>");
+
+  {
+    const std::vector<std::uint8_t> skin_ini = Utf16LeBytes(
+        u"[General]\r\nskin_name=Zip Fixture\r\n[Scheme_H1]\r\npic=skin1.png\r\n");
+    const std::array entries = {
+        ZipTestEntry{"skin.ini", skin_ini, 8U},
+        ZipTestEntry{"skin1.png", {0x89U, 0x50U, 0x4EU, 0x47U}, 0U},
+    };
+    const std::vector<std::uint8_t> archive = BuildZip(entries);
+    const std::string expected_sha = Sha256Hex(archive);
+    TemporarySsf file(archive);
+    const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
+    const auto package_sha = ziliu::settings::Sha256SogouSsfFile(file.path());
+    Expect(decoded.ok() &&
+               decoded.kind == ziliu::settings::SogouSsfContainerKind::kZip,
+           "generic decoder should recognize a PK/ZIP SSF");
+    Expect(package_sha.has_value() && *package_sha == expected_sha,
+           "ZIP package identity should hash the original SSF bytes");
+    Expect(decoded.entries.size() == 2U &&
+               decoded.entries[0] ==
+                   ziliu::settings::SogouSsfEntry{"skin.ini", skin_ini} &&
+               decoded.entries[1] == ziliu::settings::SogouSsfEntry{
+                                         "skin1.png",
+                                         {0x89U, 0x50U, 0x4EU, 0x47U}},
+           "ZIP stored and raw-DEFLATE entries should round-trip exactly");
+    const auto v3_only = ziliu::settings::DecodeSogouSsfV3(file.path());
+    Expect(!v3_only.ok() && v3_only.error.find("Skin") != std::string::npos,
+           "Skin-v3-specific API should not silently accept ZIP");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"assets/", {}, 0U, 0U, 0x41ED0010U},
+        ZipTestEntry{"assets/skin.png", {1U, 2U, 3U}, 8U},
+    };
+    TemporarySsf file(BuildZip(entries));
+    const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
+    Expect(decoded.ok() && decoded.entries.size() == 1U &&
+               decoded.entries.front().relative_path == "assets/skin.png",
+            "safe ZIP directory entries should not become extracted files");
+  }
+
+  {
+    const std::string utf8_path =
+        "assets/\xE5\x80\x99\xE9\x80\x89.png";
+    const std::array entries = {
+        ZipTestEntry{utf8_path, {1U, 2U}, 0U, 0x0800U},
+    };
+    TemporarySsf file(BuildZip(entries));
+    const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
+    Expect(decoded.ok() && decoded.entries.size() == 1U &&
+               decoded.entries.front().relative_path == utf8_path,
+           "ZIP UTF-8 entry names should round-trip exactly");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"../evil.txt", {1U}, 0U},
+    };
+    ExpectZipRejected(BuildZip(entries), "上级目录", "ZIP traversal");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"/evil.txt", {1U}, 0U},
+    };
+    ExpectZipRejected(BuildZip(entries), "绝对路径", "ZIP absolute path");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"assets\\skin.png", {1U}, 0U},
+        ZipTestEntry{"assets/skin.png", {2U}, 0U},
+    };
+    ExpectZipRejected(BuildZip(entries), "冲突",
+                      "ZIP separator normalization collision");
+  }
+
+  {
+    ZipTestEntry entry{"large.bin", {}, 8U};
+    entry.declared_uncompressed_bytes = 8U * 1024U * 1024U + 1U;
+    const std::array entries = {entry};
+    ExpectZipRejected(BuildZip(entries), "8 MiB", "ZIP oversized entry");
+  }
+
+  {
+    std::vector<ZipTestEntry> entries;
+    for (unsigned index = 0; index < 5U; ++index) {
+      ZipTestEntry entry{"total" + std::to_string(index) + ".bin", {}, 8U};
+      entry.declared_uncompressed_bytes = 8U * 1024U * 1024U;
+      entries.push_back(std::move(entry));
+    }
+    ExpectZipRejected(BuildZip(entries), "32 MiB",
+                      "ZIP excessive total output");
+  }
+
+  {
+    const std::array entries = {ZipTestEntry{"valid.txt", {1U}, 0U}};
+    std::vector<std::uint8_t> archive = BuildZip(entries);
+    const std::size_t end_offset = archive.size() - 22U;
+    const std::size_t central_offset = ReadLe32ForTest(archive, end_offset + 16U);
+    SetLe32(archive, central_offset, 0U);
+    ExpectZipRejected(std::move(archive), "central directory",
+                      "ZIP malformed central directory");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"encrypted.txt", {1U}, 0U, 0x0001U},
+    };
+    ExpectZipRejected(BuildZip(entries), "加密", "ZIP encryption");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"method.bin", {1U}, 99U},
+    };
+    ExpectZipRejected(BuildZip(entries), "压缩方法",
+                      "ZIP unsupported compression method");
+  }
+
+  {
+    const std::array entries = {
+        ZipTestEntry{"descriptor.bin", {1U}, 0U, 0x0008U},
+    };
+    ExpectZipRejected(BuildZip(entries), "data descriptor",
+                      "ZIP data descriptor");
+  }
+
+  {
+    ZipTestEntry entry{"zip64.bin", {1U}, 0U};
+    entry.declared_compressed_bytes = 0xFFFFFFFFU;
+    const std::array entries = {entry};
+    ExpectZipRejected(BuildZip(entries), "ZIP64", "ZIP64 sentinel");
+  }
+
+  {
+    ZipTestEntry entry{"crc.bin", {1U, 2U, 3U}, 0U};
+    entry.declared_crc32 = 0U;
+    const std::array entries = {entry};
+    ExpectZipRejected(BuildZip(entries), "CRC-32", "ZIP CRC mismatch");
+  }
 
   {
     const std::array entries = {
@@ -412,11 +785,14 @@ int wmain(int argument_count, wchar_t* arguments[]) {
     const auto blob = BuildBlob(entries);
     const auto zlib = MakeStoredZlib(blob);
     TemporarySsf file = WriteSsf(zlib, blob.size());
-    const auto decoded = ziliu::settings::DecodeSogouSsfV3(file.path());
+    const auto decoded = ziliu::settings::DecodeSogouSsf(file.path());
     if (!decoded.ok()) {
       std::cerr << "FAILED: stored DEFLATE vector: " << decoded.error << '\n';
       return EXIT_FAILURE;
     }
+    Expect(decoded.kind ==
+               ziliu::settings::SogouSsfContainerKind::kSkinV3,
+           "generic decoder should preserve Skin-v3 dispatch");
     Expect(decoded.entries.size() == 1,
            "stored DEFLATE SSF should contain one entry");
     Expect(decoded.entries.front().relative_path == "assets/候选.png",
