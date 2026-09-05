@@ -1,3 +1,8 @@
+add_library(ziliu_bitmap STATIC src/bitmap.cpp)
+target_include_directories(ziliu_bitmap PUBLIC include)
+target_link_libraries(ziliu_bitmap PRIVATE ole32 shlwapi windowscodecs)
+ziliu_configure_target(ziliu_bitmap)
+
 add_library(ziliu_ui STATIC
   src/candidate_window.cpp)
 

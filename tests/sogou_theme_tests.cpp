@@ -1,4 +1,5 @@
 #include "ziliu/core/sogou_theme.h"
+#include "ziliu/ui/bitmap.h"
 
 #ifdef _WIN32
 #include "../src/settings/sogou_ssf_container.h"
@@ -393,6 +394,16 @@ int InspectRealSsf(const std::filesystem::path& path,
     std::cerr << "FAILED: real package or bound resource identity drifted\n";
     return EXIT_FAILURE;
   }
+  const auto horizontal_bitmap = ziliu::ui::DecodePngBitmap(horizontal_asset->bytes);
+  const auto vertical_bitmap = ziliu::ui::DecodePngBitmap(vertical_asset->bytes);
+  if (!horizontal_bitmap.ok() || !vertical_bitmap.ok()) {
+    std::cerr << "FAILED: bound PNG decode: h1="
+              << static_cast<int>(horizontal_bitmap.error) << ':'
+              << horizontal_bitmap.platform_error << " v1="
+              << static_cast<int>(vertical_bitmap.error) << ':'
+              << vertical_bitmap.platform_error << '\n';
+    return EXIT_FAILURE;
+  }
   std::string_view renderer = "unset";
   if (appearance.typography.text_renderer ==
       ziliu::core::ThemeTextRenderer::kSogouGdiPlus) {
@@ -417,6 +428,15 @@ int InspectRealSsf(const std::filesystem::path& path,
   std::cout << "v1_source=" << vertical_source << '\n';
   std::cout << "h1_bound_sha=" << horizontal_sha << '\n';
   std::cout << "v1_bound_sha=" << vertical_sha << '\n';
+  std::cout << "bitmap_format=RGBA8_STRAIGHT_TOP_DOWN\n";
+  std::cout << "h1_dimensions=" << horizontal_bitmap.bitmap.width << 'x'
+            << horizontal_bitmap.bitmap.height << '\n';
+  std::cout << "h1_stride=" << horizontal_bitmap.bitmap.stride << '\n';
+  std::cout << "h1_pixels_sha=" << Sha256Bytes(horizontal_bitmap.bitmap.pixels) << '\n';
+  std::cout << "v1_dimensions=" << vertical_bitmap.bitmap.width << 'x'
+            << vertical_bitmap.bitmap.height << '\n';
+  std::cout << "v1_stride=" << vertical_bitmap.bitmap.stride << '\n';
+  std::cout << "v1_pixels_sha=" << Sha256Bytes(vertical_bitmap.bitmap.pixels) << '\n';
   std::cout << "manifest_asset_count=" << package.conversion.assets.size()
             << '\n';
   std::cout << "resolved_asset_count=" << binding.assets.size() << '\n';

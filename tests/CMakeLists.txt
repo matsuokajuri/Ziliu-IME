@@ -12,6 +12,7 @@ add_test(NAME ziliu_theme_manifest_tests COMMAND ziliu_theme_manifest_tests)
 
 add_executable(ziliu_sogou_theme_tests sogou_theme_tests.cpp)
 target_link_libraries(ziliu_sogou_theme_tests PRIVATE ziliu_core)
+target_link_libraries(ziliu_sogou_theme_tests PRIVATE ziliu_bitmap)
 if(WIN32)
   target_sources(ziliu_sogou_theme_tests PRIVATE
     ../src/settings/sogou_ssf_container.cpp)
@@ -20,6 +21,11 @@ endif()
 ziliu_configure_target(ziliu_sogou_theme_tests)
 
 add_test(NAME ziliu_sogou_theme_tests COMMAND ziliu_sogou_theme_tests)
+
+add_executable(ziliu_ui_bitmap_tests ui_bitmap_tests.cpp)
+target_link_libraries(ziliu_ui_bitmap_tests PRIVATE ziliu_bitmap ziliu_core ole32)
+ziliu_configure_target(ziliu_ui_bitmap_tests)
+add_test(NAME ziliu_ui_bitmap_tests COMMAND ziliu_ui_bitmap_tests)
 
 if(TARGET ZiliuTextRaster)
   add_executable(ziliu_text_raster_math_tests text_raster_math_tests.cpp)
