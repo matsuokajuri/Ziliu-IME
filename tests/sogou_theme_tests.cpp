@@ -1,6 +1,7 @@
 #include "ziliu/core/sogou_theme.h"
 #include "ziliu/ui/bitmap.h"
 #include "../src/ui/src/sogou_bitmap_surface.h"
+#include "../src/ui/src/sogou_background.h"
 
 #ifdef _WIN32
 #include "../src/settings/sogou_ssf_container.h"
@@ -416,6 +417,40 @@ int InspectRealSsf(const std::filesystem::path& path,
     std::cerr << "FAILED: H1 bitmap-to-scaler adapter\n";
     return EXIT_FAILURE;
   }
+  const auto strict_background = ziliu::ui::detail::RenderSogouH1Background(
+      package, binding, horizontal_bitmap.bitmap.width, horizontal_bitmap.bitmap.height,
+      ziliu::ui::detail::BitmapSurfaceScale::kUnscaled,
+      ziliu::ui::detail::OverlappingBorderPolicy::kReject);
+  const auto h1_native = ziliu::ui::detail::RenderSogouH1Background(
+      package, binding, horizontal_bitmap.bitmap.width, horizontal_bitmap.bitmap.height,
+      ziliu::ui::detail::BitmapSurfaceScale::kUnscaled,
+      ziliu::ui::detail::OverlappingBorderPolicy::kWholeAxis);
+  const auto h1_wide = ziliu::ui::detail::RenderSogouH1Background(
+      package, binding, horizontal_bitmap.bitmap.width * 2U, horizontal_bitmap.bitmap.height,
+      ziliu::ui::detail::BitmapSurfaceScale::kUnscaled,
+      ziliu::ui::detail::OverlappingBorderPolicy::kWholeAxis);
+  if (!h1_native.ok() || !h1_wide.ok()) {
+    std::cerr << "FAILED: H1 background assembly: native="
+              << static_cast<int>(h1_native.error) << " expanded="
+              << static_cast<int>(h1_wide.error) << '\n';
+    return EXIT_FAILURE;
+  }
+  for (std::uint32_t y = 0; y < horizontal_surface.height; ++y) {
+    for (std::uint32_t x = 0; x < horizontal_surface.width; ++x) {
+      if (h1_native.background.pixels[static_cast<std::size_t>(y) * horizontal_surface.width + x] !=
+          horizontal_surface.pixels[
+              static_cast<std::size_t>(horizontal_surface.height - 1U - y) *
+                  horizontal_surface.width + x]) {
+        std::cerr << "FAILED: native-size H1 background changed source pixels\n";
+        return EXIT_FAILURE;
+      }
+    }
+  }
+  const auto background_sha = [](const ziliu::ui::detail::SogouH1Background& background) {
+    return Sha256Bytes(std::span<const std::uint8_t>(
+        reinterpret_cast<const std::uint8_t*>(background.pixels.data()),
+        background.pixels.size() * sizeof(ziliu::ui::detail::SogouPbgra8)));
+  };
   std::string_view renderer = "unset";
   if (appearance.typography.text_renderer ==
       ziliu::core::ThemeTextRenderer::kSogouGdiPlus) {
@@ -454,6 +489,17 @@ int InspectRealSsf(const std::filesystem::path& path,
             << horizontal_surface.height << '\n';
   std::cout << "h1_explicit_mitchell2x=" << horizontal_scaled.width << 'x'
             << horizontal_scaled.height << '\n';
+  std::cout << "h1_strict_background_error=" << static_cast<int>(strict_background.error) << '\n';
+  std::cout << "h1_border_policy=EXPLICIT_WHOLE_AXIS_UNVERIFIED\n";
+  std::cout << "h1_unsplit_axes=" << h1_native.background.unsplit_horizontal << ','
+            << h1_native.background.unsplit_vertical << '\n';
+  std::cout << "h1_background_format=PBGRA8_TOP_DOWN\n";
+  std::cout << "h1_background_native=" << h1_native.background.width << 'x'
+            << h1_native.background.height << '\n';
+  std::cout << "h1_background_native_sha=" << background_sha(h1_native.background) << '\n';
+  std::cout << "h1_background_expanded=" << h1_wide.background.width << 'x'
+            << h1_wide.background.height << '\n';
+  std::cout << "h1_background_expanded_sha=" << background_sha(h1_wide.background) << '\n';
   std::cout << "manifest_asset_count=" << package.conversion.assets.size()
             << '\n';
   std::cout << "resolved_asset_count=" << binding.assets.size() << '\n';
