@@ -1,5 +1,6 @@
 #include "ziliu/ui/bitmap.h"
 #include "ziliu/core/sogou_theme.h"
+#include "../src/ui/src/sogou_bitmap_surface.h"
 
 #include <windows.h>
 #include <objbase.h>
@@ -176,6 +177,47 @@ int main() {
          "converter and resource binder must deliver the declared image");
   Expect(IsExpectedRgba(DecodePngBitmap(resources.assets[0].bytes)),
          "decoder must consume binder-returned bytes without file extraction");
+
+  using namespace ziliu::ui::detail;
+  SogouSurfaceBitmap unscaled;
+  Expect(PrepareSogouBitmapSurface(owned.bitmap, BitmapSurfaceScale::kUnscaled, &unscaled),
+         "decoded bitmap should convert to the scaler's storage contract");
+  const std::vector<SogouPbgra8> kExpectedBottomUp{
+      {64U, 0U, 0U, 64U}, {0U, 0U, 0U, 0U},
+      {0U, 0U, 255U, 255U}, {0U, 128U, 0U, 128U}};
+  Expect(unscaled.width == 2U && unscaled.height == 2U && unscaled.stride == 8U &&
+             unscaled.pixels == kExpectedBottomUp,
+         "adapter should preserve channels, alpha and bottom-up row order");
+  std::vector<SogouPbgra8> top_down(4U);
+  Expect(CompositeSogouRgbaPatchNearest(
+             unscaled.pixels, 2U, 2U, {0U, 0U, 2U, 2U}, top_down, 2U, 2U,
+             {0U, 0U, 2U, 2U}, SogouPatchLayout::kFixed, SogouPatchLayout::kFixed) &&
+             top_down == std::vector<SogouPbgra8>{
+                 {0U, 0U, 255U, 255U}, {0U, 128U, 0U, 128U},
+                 {64U, 0U, 0U, 64U}, {0U, 0U, 0U, 0U}},
+         "existing patch compositor must consume the adapter's pixels directly");
+  const std::array<SogouRgba8, 4> logical_pixels{
+      SogouRgba8{255U, 0U, 0U, 255U}, SogouRgba8{0U, 255U, 0U, 128U},
+      SogouRgba8{0U, 0U, 255U, 64U}, SogouRgba8{20U, 30U, 40U, 0U}};
+  std::vector<SogouPbgra8> expected_scaled;
+  SogouSurfaceBitmap scaled;
+  Expect(ScaleSogouRgbaMitchell2x(logical_pixels, 2U, 2U, &expected_scaled) &&
+             PrepareSogouBitmapSurface(owned.bitmap, BitmapSurfaceScale::kMitchell2x, &scaled) &&
+             scaled.width == 4U && scaled.height == 4U && scaled.stride == 16U &&
+             scaled.pixels == expected_scaled,
+         "explicit 2x mode must pass identical logical pixels to the existing scaler");
+  RgbaBitmap invalid_bitmap = owned.bitmap;
+  invalid_bitmap.stride = 7U;
+  Expect(!PrepareSogouBitmapSurface(invalid_bitmap, BitmapSurfaceScale::kUnscaled, &unscaled),
+         "inconsistent input stride should be rejected");
+  invalid_bitmap = owned.bitmap;
+  invalid_bitmap.pixels.pop_back();
+  Expect(!PrepareSogouBitmapSurface(invalid_bitmap, BitmapSurfaceScale::kUnscaled, &unscaled) &&
+             !PrepareSogouBitmapSurface(owned.bitmap, BitmapSurfaceScale::kMitchell2x, &unscaled, 15U) &&
+             !PrepareSogouBitmapSurface(owned.bitmap, static_cast<BitmapSurfaceScale>(-1), &unscaled) &&
+             !PrepareSogouBitmapSurface(owned.bitmap, BitmapSurfaceScale::kUnscaled, nullptr) &&
+             unscaled.pixels == kExpectedBottomUp && unscaled.width == 2U,
+         "invalid buffers, modes and budgets must leave prior output intact");
 
   const HRESULT sta_status = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   Expect(SUCCEEDED(sta_status), "STA initialization should succeed");

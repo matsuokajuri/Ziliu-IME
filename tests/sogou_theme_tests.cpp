@@ -1,5 +1,6 @@
 #include "ziliu/core/sogou_theme.h"
 #include "ziliu/ui/bitmap.h"
+#include "../src/ui/src/sogou_bitmap_surface.h"
 
 #ifdef _WIN32
 #include "../src/settings/sogou_ssf_container.h"
@@ -404,6 +405,17 @@ int InspectRealSsf(const std::filesystem::path& path,
               << vertical_bitmap.platform_error << '\n';
     return EXIT_FAILURE;
   }
+  ziliu::ui::detail::SogouSurfaceBitmap horizontal_surface;
+  ziliu::ui::detail::SogouSurfaceBitmap horizontal_scaled;
+  if (!ziliu::ui::detail::PrepareSogouBitmapSurface(
+          horizontal_bitmap.bitmap, ziliu::ui::detail::BitmapSurfaceScale::kUnscaled,
+          &horizontal_surface) ||
+      !ziliu::ui::detail::PrepareSogouBitmapSurface(
+          horizontal_bitmap.bitmap, ziliu::ui::detail::BitmapSurfaceScale::kMitchell2x,
+          &horizontal_scaled)) {
+    std::cerr << "FAILED: H1 bitmap-to-scaler adapter\n";
+    return EXIT_FAILURE;
+  }
   std::string_view renderer = "unset";
   if (appearance.typography.text_renderer ==
       ziliu::core::ThemeTextRenderer::kSogouGdiPlus) {
@@ -437,6 +449,11 @@ int InspectRealSsf(const std::filesystem::path& path,
             << vertical_bitmap.bitmap.height << '\n';
   std::cout << "v1_stride=" << vertical_bitmap.bitmap.stride << '\n';
   std::cout << "v1_pixels_sha=" << Sha256Bytes(vertical_bitmap.bitmap.pixels) << '\n';
+  std::cout << "surface_format=PBGRA8_BOTTOM_UP\n";
+  std::cout << "h1_unscaled_surface=" << horizontal_surface.width << 'x'
+            << horizontal_surface.height << '\n';
+  std::cout << "h1_explicit_mitchell2x=" << horizontal_scaled.width << 'x'
+            << horizontal_scaled.height << '\n';
   std::cout << "manifest_asset_count=" << package.conversion.assets.size()
             << '\n';
   std::cout << "resolved_asset_count=" << binding.assets.size() << '\n';
