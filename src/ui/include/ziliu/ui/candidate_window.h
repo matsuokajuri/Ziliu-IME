@@ -85,6 +85,7 @@ class CandidateWindow final {
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
   void RefreshTheme(std::string_view theme_id);
   [[nodiscard]] bool UsesSogouRendering() const noexcept;
+  [[nodiscard]] bool UsesNativeDefaultTheme() const noexcept;
   void ApplyWindowRenderingMode();
   [[nodiscard]] const core::ThemeAppearance& ActiveThemeAppearance() const;
   [[nodiscard]] const core::ThemeSurface& ActiveThemeSurface() const;
@@ -170,6 +171,8 @@ class CandidateWindow final {
   Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> sogou_action_separator_brush_;
   SurfaceBitmaps surface_bitmaps_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> preedit_format_;
+  Microsoft::WRL::ComPtr<IDWriteTextLayout> native_preedit_layout_;
+  D2D1_POINT_2F native_preedit_origin_offset_{};
   Microsoft::WRL::ComPtr<IDWriteTextFormat> preedit_caret_format_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> candidate_format_;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> candidate_number_format_;

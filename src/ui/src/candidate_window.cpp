@@ -1,4 +1,5 @@
 #include "ziliu/ui/candidate_window.h"
+#include "native_candidate_geometry.h"
 #include "sogou_horizontal_layout.h"
 
 #include "sogou_overlay_layout.h"
@@ -90,6 +91,19 @@ float MeasureTextWidth(IDWriteFactory* factory, IDWriteTextFormat* format,
   }
   DWRITE_TEXT_METRICS metrics{};
   return SUCCEEDED(layout->GetMetrics(&metrics)) ? metrics.widthIncludingTrailingWhitespace : 0.0F;
+}
+
+void FillCandidateRoundedRect(ID2D1Factory* factory, ID2D1RenderTarget* target,
+                              const D2D1_RECT_F& bounds, float radius,
+                              ID2D1Brush* brush, bool cubic) {
+  if (cubic) {
+    const auto geometry = detail::CreateNativeRoundedGeometry(factory, bounds, radius);
+    if (geometry != nullptr) {
+      target->FillGeometry(geometry.Get(), brush);
+      return;
+    }
+  }
+  target->FillRoundedRectangle(D2D1::RoundedRect(bounds, radius, radius), brush);
 }
 
 bool UseDarkTheme(core::ThemeMode mode) {
@@ -367,6 +381,8 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                         static_cast<float>(insets.bottom) * scale};
   };
   const auto& surface = ActiveThemeSurface();
+  const bool native_default = UsesNativeDefaultTheme();
+  const bool compact = native_default && horizontal;
   preedit_insets_ =
       surface.preedit_insets.has_value()
           ? scale_insets(*surface.preedit_insets)
@@ -387,6 +403,12 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   candidate_row_height_ =
       std::max((horizontal ? kHorizontalCandidateHeight : kCandidateHeight) * layout_scale_,
                effective_font_size + 8.0F);
+  if (compact) {
+    preedit_insets_ = {10.0F * layout_scale_, 4.0F * layout_scale_,
+                      10.0F * layout_scale_, 3.0F * layout_scale_};
+    candidate_insets_ = {4.0F * layout_scale_, 2.0F * layout_scale_,
+                        4.0F * layout_scale_, 3.0F * layout_scale_};
+  }
   if (appearance_changed) {
     DiscardDeviceResources();
   }
@@ -468,9 +490,13 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
       horizontal && can_expand_ &&
       (use_native_actions || surface.expand_button.has_value() ||
        surface.collapse_button.has_value());
+  const float menu_width = compact ? 32.0F : kHorizontalMenuButtonWidth;
+  const float expand_width = compact ? 28.0F : kHorizontalExpandButtonWidth;
+  const float minimum_candidate_width = compact ? 48.0F : kMinimumHorizontalCandidateWidth;
+  const std::wstring_view label_gap = compact ? L" " : L"  ";
   const float reserved_action_width =
-      ((show_menu_action ? kHorizontalMenuButtonWidth : 0.0F) +
-       (show_expand_action ? kHorizontalExpandButtonWidth : 0.0F)) *
+      ((show_menu_action ? menu_width : 0.0F) +
+       (show_expand_action ? expand_width : 0.0F)) *
       layout_scale_;
   const std::size_t visible_columns =
       horizontal ? std::max<std::size_t>(
@@ -479,9 +505,32 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   fit_horizontal_insets(
       &candidate_insets_,
       maximum_window_width - reserved_action_width -
-          kMinimumHorizontalCandidateWidth * layout_scale_ *
+          minimum_candidate_width * layout_scale_ *
               static_cast<float>(visible_columns));
   const bool has_device_resources = EnsureDeviceResources();
+  float native_preedit_width = 0.0F;
+  native_preedit_layout_.Reset();
+  if (native_default && has_device_resources) {
+    auto preedit = detail::MeasureNativeTextLine(dwrite_factory_.Get(), preedit_format_.Get(),
+                                                snapshot_.preedit, maximum_window_width, dpi_scale_);
+    if (preedit.layout != nullptr) {
+      native_preedit_layout_ = std::move(preedit.layout);
+      native_preedit_origin_offset_ = preedit.origin_offset;
+      native_preedit_width = preedit.width;
+      preedit_height_ = preedit_insets_.top + preedit.height + preedit_insets_.bottom;
+    }
+    float candidate_ink_height = effective_font_size;
+    for (std::size_t index = slice.offset; index < slice.offset + slice.count; ++index) {
+      const std::wstring label = std::to_wstring(index - slice.offset + 1) +
+                                 std::wstring(label_gap) + snapshot_.candidates[index].text;
+      const auto candidate = detail::MeasureNativeTextLine(
+          dwrite_factory_.Get(), candidate_format_.Get(), label, maximum_window_width, dpi_scale_);
+      candidate_ink_height = std::max(candidate_ink_height, candidate.height);
+    }
+    candidate_row_height_ = compact
+        ? detail::NativeCandidateRowHeight(candidate_ink_height, layout_scale_)
+        : std::max(candidate_row_height_, candidate_ink_height + 4.0F * layout_scale_);
+  }
   D2D1_SIZE_F natural_background_size{};
   if (UsesSogouRendering() && surface.background.has_value() &&
       surface_bitmaps_.background != nullptr) {
@@ -491,7 +540,9 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                     bitmap_size.height * layout_scale_);
   }
   const float measured_preedit_width =
-      has_device_resources
+      native_default && native_preedit_layout_ != nullptr
+          ? native_preedit_width
+          : has_device_resources
           ? MeasureTextWidth(dwrite_factory_.Get(), preedit_format_.Get(), snapshot_.preedit,
                              maximum_window_width, preedit_height_)
           : 0.0F;
@@ -517,21 +568,21 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                             candidate_index < page_window.active.offset + page_window.active.count;
         const std::wstring label =
             active
-                ? std::to_wstring(candidate_index - page_window.active.offset + 1) + L"  " +
+                ? std::to_wstring(candidate_index - page_window.active.offset + 1) + std::wstring(label_gap) +
                       snapshot_.candidates[candidate_index].text
                 : snapshot_.candidates[candidate_index].text;
         const float measured_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
                              maximum_window_width, candidate_row_height_);
         const float width =
-            std::clamp(measured_width + 24.0F * layout_scale_,
-                       kMinimumHorizontalCandidateWidth * layout_scale_, maximum_window_width);
+            std::clamp(measured_width + (compact ? 16.0F : 24.0F) * layout_scale_,
+                       minimum_candidate_width * layout_scale_, maximum_window_width);
         candidate_widths_.push_back(width);
       }
     }
     if (candidate_widths_.empty() && slice.count != 0) {
       candidate_widths_.assign(slice.count,
-                               kMinimumHorizontalCandidateWidth * layout_scale_);
+                               minimum_candidate_width * layout_scale_);
     }
     const float outer_width = candidate_insets_.left + candidate_insets_.right;
     const float action_width = reserved_action_width;
@@ -550,7 +601,7 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
           candidate_indices_[begin] <= page_window.active.offset &&
           page_window.active.offset <= candidate_indices_[end - 1];
       FitCandidateWidths(&row_widths, maximum_window_width - outer_width - action_width,
-                         kMinimumHorizontalCandidateWidth * layout_scale_, active_row);
+                         minimum_candidate_width * layout_scale_, active_row);
       std::copy(row_widths.begin(), row_widths.end(),
                 candidate_widths_.begin() + static_cast<std::ptrdiff_t>(begin));
       widest_row = std::max(
@@ -558,7 +609,7 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     }
     window_width_ = std::clamp(
         std::max(outer_width + widest_row + action_width, desired_preedit_window_width),
-        std::min(kMinimumHorizontalWindowWidth * layout_scale_, maximum_window_width),
+        std::min((compact ? 180.0F : kMinimumHorizontalWindowWidth) * layout_scale_, maximum_window_width),
         maximum_window_width);
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
       float left = candidate_insets_.left;
@@ -603,8 +654,8 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
 
   float height_dip =
       slice.count == 0
-          ? std::max(preedit_height_,
-                     kHorizontalPreeditOnlyHeight * layout_scale_)
+          ? (compact ? preedit_height_ : std::max(preedit_height_,
+                     kHorizontalPreeditOnlyHeight * layout_scale_))
           : preedit_height_ + candidate_insets_.top +
                 candidate_row_height_ *
                     static_cast<float>(horizontal ? horizontal_rows : slice.count) +
@@ -627,7 +678,7 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     if (show_menu_action) {
       menu_button_bounds_ =
           D2D1::RectF(window_width_ -
-                          kHorizontalMenuButtonWidth * layout_scale_,
+                          menu_width * layout_scale_,
                       button_top, window_width_, button_bottom);
     }
     if (show_expand_action) {
@@ -635,7 +686,7 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
           show_menu_action ? menu_button_bounds_.left : window_width_;
       expand_button_bounds_ =
           D2D1::RectF(right -
-                          kHorizontalExpandButtonWidth * layout_scale_,
+                          expand_width * layout_scale_,
                       button_top, right, button_bottom);
     }
   }
@@ -867,6 +918,10 @@ void CandidateWindow::RefreshTheme(std::string_view theme_id) {
     }
   }
   theme_initialized_ = true;
+}
+
+bool CandidateWindow::UsesNativeDefaultTheme() const noexcept {
+  return theme_manifest_.id == core::kDefaultThemeId;
 }
 
 bool CandidateWindow::UsesSogouRendering() const noexcept {
@@ -1308,10 +1363,10 @@ void CandidateWindow::DrawSurfaceBackground() {
     }
     const D2D1_RECT_F outer_bounds =
         D2D1::RectF(0.0F, 0.0F, target_size.width, target_size.height);
-    render_target_->FillRoundedRectangle(
-        D2D1::RoundedRect(outer_bounds, kSurfaceCornerRadius,
-                          kSurfaceCornerRadius),
-        surface_border_brush_.Get());
+    const bool native_default = UsesNativeDefaultTheme();
+    const float corner_radius = native_default ? 12.0F * layout_scale_ : kSurfaceCornerRadius;
+    FillCandidateRoundedRect(d2d_factory_.Get(), render_target_.Get(), outer_bounds,
+                             corner_radius, surface_border_brush_.Get(), native_default);
 
     const float border_width =
         std::ceil(std::max(dpi_scale_, 1.0F)) /
@@ -1321,10 +1376,9 @@ void CandidateWindow::DrawSurfaceBackground() {
                     std::max(border_width, target_size.width - border_width),
                     std::max(border_width, target_size.height - border_width));
     const float inner_radius =
-        std::max(kSurfaceCornerRadius - border_width, 0.0F);
-    render_target_->FillRoundedRectangle(
-        D2D1::RoundedRect(inner_bounds, inner_radius, inner_radius),
-        background_brush_.Get());
+        std::max(corner_radius - border_width, 0.0F);
+    FillCandidateRoundedRect(d2d_factory_.Get(), render_target_.Get(), inner_bounds,
+                             inner_radius, background_brush_.Get(), native_default);
   };
   if (!surface.background.has_value()) {
     draw_palette_surface();
@@ -1458,8 +1512,8 @@ void CandidateWindow::DrawSurfaceSeparator(float y) {
       return;
     }
     render_target_->DrawLine(
-        D2D1::Point2F(kHorizontalPadding * layout_scale_, y),
-        D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, y),
+        D2D1::Point2F((UsesNativeDefaultTheme() ? 10.0F : kHorizontalPadding) * layout_scale_, y),
+        D2D1::Point2F(window_width_ - (UsesNativeDefaultTheme() ? 10.0F : kHorizontalPadding) * layout_scale_, y),
         muted_brush_.Get(), 0.5F);
     return;
   }
@@ -1535,11 +1589,27 @@ void CandidateWindow::Paint() {
     DrawSurfaceOverlays();
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+    const bool native_default = UsesNativeDefaultTheme();
+    const bool compact = native_default && horizontal;
     const auto page_window = core::MakeCandidatePageWindow(
         snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
     const auto slice = page_window.visible;
     const float preedit_bottom = preedit_height_;
-    render_target_->DrawTextW(
+    if (native_default && native_preedit_layout_ != nullptr) {
+      // Clip the enclosing ink box, not the font em box. The layout origin is
+      // offset so ascenders, descenders and antialias coverage stay inside it.
+      render_target_->PushAxisAlignedClip(
+          D2D1::RectF(preedit_insets_.left, preedit_insets_.top,
+                      window_width_ - preedit_insets_.right,
+                      preedit_bottom - preedit_insets_.bottom),
+          D2D1_ANTIALIAS_MODE_ALIASED);
+      render_target_->DrawTextLayout(
+          D2D1::Point2F(preedit_insets_.left + native_preedit_origin_offset_.x,
+                        preedit_insets_.top + native_preedit_origin_offset_.y),
+          native_preedit_layout_.Get(), preedit_brush_.Get());
+      render_target_->PopAxisAlignedClip();
+    } else {
+      render_target_->DrawTextW(
         snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
         preedit_format_.Get(),
         D2D1::RectF(preedit_insets_.left, preedit_insets_.top,
@@ -1547,6 +1617,7 @@ void CandidateWindow::Paint() {
                     std::max(preedit_insets_.top,
                              preedit_bottom - preedit_insets_.bottom)),
         preedit_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
     if (slice.count != 0) {
       DrawSurfaceSeparator(preedit_bottom);
     }
@@ -1570,15 +1641,16 @@ void CandidateWindow::Paint() {
       const D2D1_RECT_F row =
           D2D1::RectF(left, top + 1.0F, right, top + row_height - 1.0F);
       if (candidate_index == snapshot_.highlighted_index) {
-        render_target_->FillRoundedRectangle(D2D1::RoundedRect(row, kCornerRadius, kCornerRadius),
-                                             accent_brush_.Get());
+        FillCandidateRoundedRect(d2d_factory_.Get(), render_target_.Get(), row,
+                                 native_default ? 8.0F * layout_scale_ : kCornerRadius,
+                                 accent_brush_.Get(), native_default);
       }
 
       const bool active = candidate_index >= page_window.active.offset &&
                           candidate_index < page_window.active.offset + page_window.active.count;
       const std::wstring label =
           active
-              ? std::to_wstring(candidate_index - page_window.active.offset + 1) + L"  " +
+              ? std::to_wstring(candidate_index - page_window.active.offset + 1) + (compact ? L" " : L"  ") +
                     snapshot_.candidates[candidate_index].text
               : snapshot_.candidates[candidate_index].text;
       const auto& annotation = snapshot_.candidates[candidate_index].annotation;
@@ -1590,7 +1662,7 @@ void CandidateWindow::Paint() {
                              120.0F * layout_scale_);
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
-                                D2D1::RectF(horizontal ? left + 8.0F * layout_scale_
+                                D2D1::RectF(horizontal ? left + (compact ? 6.0F : 8.0F) * layout_scale_
                                                        : candidate_insets_.left,
                                             top,
                                             horizontal ? right - 6.0F * layout_scale_
@@ -1662,9 +1734,9 @@ void CandidateWindow::Paint() {
             (menu_button_bounds_.top + menu_button_bounds_.bottom) / 2.0F;
         for (const float offset : {-6.0F, 0.0F, 6.0F}) {
           render_target_->DrawLine(
-              D2D1::Point2F(menu_center_x - 10.0F * layout_scale_,
+              D2D1::Point2F(menu_center_x - (compact ? 7.0F : 10.0F) * layout_scale_,
                             menu_center_y + offset * layout_scale_),
-              D2D1::Point2F(menu_center_x + 10.0F * layout_scale_,
+              D2D1::Point2F(menu_center_x + (compact ? 7.0F : 10.0F) * layout_scale_,
                             menu_center_y + offset * layout_scale_),
               text_brush_.Get(), 1.4F * layout_scale_);
         }
