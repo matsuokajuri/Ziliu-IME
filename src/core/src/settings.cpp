@@ -69,6 +69,25 @@ void ParseFontFamily(std::string_view value, std::string* destination) {
   }
 }
 
+bool IsValidThemeId(std::string_view value) {
+  if (value.empty() || value.size() > 128) {
+    return false;
+  }
+  const auto is_ascii_lower = [](char character) {
+    return character >= 'a' && character <= 'z';
+  };
+  const auto is_ascii_digit = [](char character) {
+    return character >= '0' && character <= '9';
+  };
+  if (!is_ascii_lower(value.front()) && !is_ascii_digit(value.front())) {
+    return false;
+  }
+  return std::all_of(value.begin(), value.end(), [&](char character) {
+    return is_ascii_lower(character) || is_ascii_digit(character) || character == '.' ||
+           character == '_' || character == '-';
+  });
+}
+
 std::uint32_t BlendColor(std::uint32_t background, std::uint32_t foreground, float amount) {
   const auto blend_channel = [amount](std::uint32_t from, std::uint32_t to) {
     return static_cast<std::uint32_t>(
@@ -231,6 +250,10 @@ Settings ParseSettings(std::string_view text) {
       } else if (value == "system") {
         settings.theme_mode = ThemeMode::kSystem;
       }
+    } else if (key == "active_theme_id") {
+      if (IsValidThemeId(value)) {
+        settings.active_theme_id.assign(value);
+      }
     } else if (key == "candidate_page_mode") {
       if (value == "single_line") {
         settings.candidate_page_mode = CandidatePageMode::kSingleLine;
@@ -315,7 +338,10 @@ std::string SerializeSettings(const Settings& settings) {
   const std::size_t candidate_count = std::clamp(
       settings.candidate_count, kMinimumCandidateCount, kMaximumCandidateCount);
 
-  return std::string("version=5\n") + "candidate_layout=" + layout + "\n" +
+  const std::string active_theme_id =
+      IsValidThemeId(settings.active_theme_id) ? settings.active_theme_id : "org.ziliu.default";
+
+  return std::string("version=6\n") + "candidate_layout=" + layout + "\n" +
          "candidate_count=" + std::to_string(candidate_count) + "\n" +
          "input_mode_switch_key=" + switch_key + "\n" +
          "punctuation_style=" + punctuation + "\n" + "auto_pair_punctuation=" +
@@ -345,7 +371,8 @@ std::string SerializeSettings(const Settings& settings) {
          "fuzzy_uan_uang=" + (settings.fuzzy_uan_uang ? "true" : "false") + "\n" +
          "smart_numeric_punctuation=" +
          (settings.smart_numeric_punctuation ? "true" : "false") + "\n" + "theme_mode=" +
-         theme_mode + "\n" + "candidate_page_mode=" + candidate_page_mode + "\n" +
+         theme_mode + "\n" + "active_theme_id=" + active_theme_id + "\n" +
+         "candidate_page_mode=" + candidate_page_mode + "\n" +
          "custom_candidate_colors=" +
          (settings.custom_candidate_colors ? "true" : "false") + "\n" + "preedit_color=" +
          SerializeColor(settings.preedit_color) + "\n" + "highlighted_candidate_color=" +

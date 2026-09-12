@@ -217,15 +217,28 @@ bool IsKnownStatus(Status status) {
   return false;
 }
 
+bool IsSupportedProtocolVersion(std::uint16_t version) {
+  return version >= kOldestCompatibleProtocolVersion &&
+         version <= kProtocolVersion;
+}
+
 }  // namespace
 
 bool EncodeRequest(const Request& request, std::vector<std::byte>* bytes) {
+  return EncodeRequest(request, kProtocolVersion, bytes);
+}
+
+bool EncodeRequest(const Request& request, std::uint16_t protocol_version,
+                   std::vector<std::byte>* bytes) {
   if (bytes == nullptr || !IsKnownCommand(request.command)) {
+    return false;
+  }
+  if (!IsSupportedProtocolVersion(protocol_version)) {
     return false;
   }
   Writer writer;
   writer.Integer(kRequestMagic);
-  writer.Integer(kProtocolVersion);
+  writer.Integer(protocol_version);
   writer.Integer(static_cast<std::uint16_t>(request.command));
   writer.Integer(request.request_id);
   writer.Integer(request.session_id);
@@ -235,6 +248,11 @@ bool EncodeRequest(const Request& request, std::vector<std::byte>* bytes) {
 }
 
 bool DecodeRequest(std::span<const std::byte> bytes, Request* request) {
+  return DecodeRequest(bytes, request, nullptr);
+}
+
+bool DecodeRequest(std::span<const std::byte> bytes, Request* request,
+                   std::uint16_t* protocol_version) {
   if (request == nullptr || bytes.size() > kMaximumMessageBytes) {
     return false;
   }
@@ -246,7 +264,7 @@ bool DecodeRequest(std::span<const std::byte> bytes, Request* request) {
   if (!reader.Integer(&magic) || !reader.Integer(&version) || !reader.Integer(&command) ||
       !reader.Integer(&decoded.request_id) || !reader.Integer(&decoded.session_id) ||
       !reader.Integer(&decoded.value) || !reader.finished() || magic != kRequestMagic ||
-      version != kProtocolVersion) {
+      !IsSupportedProtocolVersion(version)) {
     return false;
   }
   decoded.command = static_cast<Command>(command);
@@ -254,17 +272,26 @@ bool DecodeRequest(std::span<const std::byte> bytes, Request* request) {
     return false;
   }
   *request = decoded;
+  if (protocol_version != nullptr) {
+    *protocol_version = version;
+  }
   return true;
 }
 
 bool EncodeResponse(const Response& response, std::vector<std::byte>* bytes) {
+  return EncodeResponse(response, kProtocolVersion, bytes);
+}
+
+bool EncodeResponse(const Response& response, std::uint16_t protocol_version,
+                    std::vector<std::byte>* bytes) {
   if (bytes == nullptr || !IsKnownStatus(response.status) ||
-      response.snapshot.candidates.size() > kMaximumCandidates) {
+      response.snapshot.candidates.size() > kMaximumCandidates ||
+      !IsSupportedProtocolVersion(protocol_version)) {
     return false;
   }
   Writer writer;
   writer.Integer(kResponseMagic);
-  writer.Integer(kProtocolVersion);
+  writer.Integer(protocol_version);
   writer.Integer(static_cast<std::uint16_t>(response.status));
   writer.Integer(response.request_id);
   writer.Integer(response.session_id);
@@ -273,6 +300,12 @@ bool EncodeResponse(const Response& response, std::vector<std::byte>* bytes) {
     return false;
   }
   writer.Integer(static_cast<std::uint32_t>(response.snapshot.highlighted_index));
+  if (protocol_version >= 5) {
+    writer.Integer(static_cast<std::uint8_t>(
+        response.snapshot.has_previous_page ? 1U : 0U));
+    writer.Integer(static_cast<std::uint8_t>(
+        response.snapshot.has_next_page ? 1U : 0U));
+  }
   writer.Integer(static_cast<std::uint32_t>(response.snapshot.candidates.size()));
   for (const auto& candidate : response.snapshot.candidates) {
     if (!writer.String(candidate.text) || !writer.String(candidate.annotation)) {
@@ -285,6 +318,11 @@ bool EncodeResponse(const Response& response, std::vector<std::byte>* bytes) {
 }
 
 bool DecodeResponse(std::span<const std::byte> bytes, Response* response) {
+  return DecodeResponse(bytes, response, nullptr);
+}
+
+bool DecodeResponse(std::span<const std::byte> bytes, Response* response,
+                    std::uint16_t* protocol_version) {
   if (response == nullptr || bytes.size() > kMaximumMessageBytes) {
     return false;
   }
@@ -293,15 +331,25 @@ bool DecodeResponse(std::span<const std::byte> bytes, Response* response) {
   std::uint16_t version = 0;
   std::uint16_t status = 0;
   std::uint8_t consumed = 0;
+  std::uint8_t has_previous_page = 0;
+  std::uint8_t has_next_page = 0;
   std::uint32_t highlighted = 0;
   std::uint32_t candidate_count = 0;
   Response decoded;
-  if (!reader.Integer(&magic) || !reader.Integer(&version) || !reader.Integer(&status) ||
+  if (!reader.Integer(&magic) || !reader.Integer(&version) ||
+      !IsSupportedProtocolVersion(version) || !reader.Integer(&status) ||
       !reader.Integer(&decoded.request_id) || !reader.Integer(&decoded.session_id) ||
       !reader.Integer(&consumed) || consumed > 1U || !reader.String(&decoded.commit) ||
-      !reader.String(&decoded.snapshot.preedit) || !reader.Integer(&highlighted) ||
-      !reader.Integer(&candidate_count) || magic != kResponseMagic ||
-      version != kProtocolVersion || candidate_count > kMaximumCandidates) {
+      !reader.String(&decoded.snapshot.preedit) || !reader.Integer(&highlighted)) {
+    return false;
+  }
+  if (version >= 5 &&
+      (!reader.Integer(&has_previous_page) || has_previous_page > 1U ||
+       !reader.Integer(&has_next_page) || has_next_page > 1U)) {
+    return false;
+  }
+  if (!reader.Integer(&candidate_count) || magic != kResponseMagic ||
+      candidate_count > kMaximumCandidates) {
     return false;
   }
   decoded.status = static_cast<Status>(status);
@@ -310,6 +358,8 @@ bool DecodeResponse(std::span<const std::byte> bytes, Response* response) {
   }
   decoded.consumed = consumed != 0;
   decoded.snapshot.highlighted_index = highlighted;
+  decoded.snapshot.has_previous_page = has_previous_page != 0;
+  decoded.snapshot.has_next_page = has_next_page != 0;
   decoded.snapshot.candidates.reserve(candidate_count);
   for (std::uint32_t index = 0; index < candidate_count; ++index) {
     Candidate candidate;
@@ -327,6 +377,9 @@ bool DecodeResponse(std::span<const std::byte> bytes, Response* response) {
     return false;
   }
   *response = std::move(decoded);
+  if (protocol_version != nullptr) {
+    *protocol_version = version;
+  }
   return true;
 }
 

@@ -1,15 +1,22 @@
 #include "ziliu/ui/candidate_window.h"
+#include "sogou_horizontal_layout.h"
+
+#include "sogou_overlay_layout.h"
+#include "ziliu/core/theme_catalog.h"
 
 #include <d2d1helper.h>
 #include <dwmapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -26,11 +33,11 @@ constexpr float kPreeditHeight = 42.0F;
 constexpr float kCandidateHeight = 38.0F;
 constexpr float kHorizontalPreeditHeight = 34.0F;
 constexpr float kHorizontalCandidateHeight = 36.0F;
-constexpr float kHorizontalWindowHeight = 78.0F;
 constexpr float kHorizontalPreeditOnlyHeight = 42.0F;
 constexpr float kHorizontalExpandButtonWidth = 40.0F;
 constexpr float kHorizontalMenuButtonWidth = 48.0F;
 constexpr float kCornerRadius = 10.0F;
+constexpr float kSurfaceCornerRadius = 8.0F;
 
 int ToPixels(float value, float scale) {
   return static_cast<int>(std::ceil(value * scale));
@@ -101,6 +108,97 @@ bool UseDarkTheme(core::ThemeMode mode) {
   return result == ERROR_SUCCESS && use_light_theme == 0;
 }
 
+std::optional<std::filesystem::path> ThemesDirectoryPath() {
+  std::wstring local_app_data(32768, L'\0');
+  const DWORD length = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data.data(),
+                                               static_cast<DWORD>(local_app_data.size()));
+  if (length == 0 || static_cast<std::size_t>(length) >= local_app_data.size()) {
+    return std::nullopt;
+  }
+  local_app_data.resize(length);
+  return std::filesystem::path(local_app_data) / L"Ziliu" / L"Themes";
+}
+
+D2D1_COLOR_F ArgbColor(std::uint32_t argb) {
+  constexpr float kColorScale = 1.0F / 255.0F;
+  return D2D1::ColorF(static_cast<float>((argb >> 16U) & 0xFFU) * kColorScale,
+                     static_cast<float>((argb >> 8U) & 0xFFU) * kColorScale,
+                     static_cast<float>(argb & 0xFFU) * kColorScale,
+                     static_cast<float>((argb >> 24U) & 0xFFU) * kColorScale);
+}
+
+D2D1_COLOR_F RgbColor(std::uint32_t rgb) {
+  return ArgbColor(0xFF000000U | (rgb & 0x00FFFFFFU));
+}
+
+bool ContainsPoint(const D2D1_RECT_F& bounds, float x, float y) {
+  return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
+}
+
+void DrawBitmapPatch(ID2D1RenderTarget* render_target, ID2D1Bitmap* bitmap,
+                     const D2D1_RECT_F& source, const D2D1_RECT_F& destination,
+                     core::ThemeImageLayout horizontal_layout,
+                     core::ThemeImageLayout vertical_layout, float destination_scale) {
+  if (render_target == nullptr || bitmap == nullptr || source.right <= source.left ||
+      source.bottom <= source.top || destination.right <= destination.left ||
+      destination.bottom <= destination.top) {
+    return;
+  }
+
+  const float source_width = source.right - source.left;
+  const float source_height = source.bottom - source.top;
+  const float natural_width = std::max(source_width * destination_scale, 0.5F);
+  const float natural_height = std::max(source_height * destination_scale, 0.5F);
+  const bool tile_horizontal = horizontal_layout == core::ThemeImageLayout::kTile;
+  const bool tile_vertical = vertical_layout == core::ThemeImageLayout::kTile;
+  const bool fixed_horizontal = horizontal_layout == core::ThemeImageLayout::kFixed;
+  const bool fixed_vertical = vertical_layout == core::ThemeImageLayout::kFixed;
+  const float horizontal_step =
+      tile_horizontal || fixed_horizontal ? natural_width
+                                          : destination.right - destination.left;
+  const float vertical_step =
+      tile_vertical || fixed_vertical ? natural_height
+                                      : destination.bottom - destination.top;
+
+  for (float top = destination.top; top < destination.bottom; top += vertical_step) {
+    const float drawn_height = std::min(vertical_step, destination.bottom - top);
+    const float source_drawn_height =
+        tile_vertical || fixed_vertical
+            ? source_height * drawn_height / natural_height
+            : source_height;
+    for (float left = destination.left; left < destination.right; left += horizontal_step) {
+      const float drawn_width = std::min(horizontal_step, destination.right - left);
+      const float source_drawn_width =
+          tile_horizontal || fixed_horizontal
+              ? source_width * drawn_width / natural_width
+              : source_width;
+      const D2D1_RECT_F source_tile =
+          D2D1::RectF(source.left, source.top, source.left + source_drawn_width,
+                      source.top + source_drawn_height);
+      const D2D1_RECT_F destination_tile =
+          D2D1::RectF(left, top, left + drawn_width, top + drawn_height);
+      render_target->DrawBitmap(bitmap, destination_tile, 1.0F,
+                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_tile);
+      if (fixed_horizontal) {
+        break;
+      }
+    }
+    if (fixed_vertical) {
+      break;
+    }
+  }
+}
+
+D2D1_RECT_F DecodeSogouOverlayBounds(const core::ThemeOverlay& overlay,
+                                     const D2D1_SIZE_F& bitmap_size,
+                                     const D2D1_SIZE_F& surface_size,
+                                     float destination_scale) {
+  const auto bounds = detail::ResolveSogouOverlayBounds(
+      overlay.align, surface_size.width, surface_size.height, bitmap_size.width,
+      bitmap_size.height, destination_scale);
+  return D2D1::RectF(bounds.left, bounds.top, bounds.right, bounds.bottom);
+}
+
 std::wstring Utf8ToWide(std::string_view value) {
   if (value.empty() ||
       value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
@@ -144,8 +242,16 @@ CandidateWindow::~CandidateWindow() {
 }
 
 bool CandidateWindow::Create(HWND owner) {
+  return CreateInternal(owner, false);
+}
+
+bool CandidateWindow::CreatePreview(HWND owner) {
+  return CreateInternal(owner, true);
+}
+
+bool CandidateWindow::CreateInternal(HWND owner, bool preview) {
   if (window_ != nullptr) {
-    return true;
+    return preview_mode_ == preview;
   }
   if (!RegisterCandidateWindowClass()) {
     return false;
@@ -160,38 +266,74 @@ bool CandidateWindow::Create(HWND owner) {
                                      dwrite_factory_.ReleaseAndGetAddressOf())))) {
     return false;
   }
+  static_cast<void>(EnsureImagingFactory());
 
-  window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kCandidateWindowClass, L"",
-                            WS_POPUP, 0, 0, static_cast<int>(kVerticalWindowWidth), 64, owner,
-                            nullptr,
+  preview_mode_ = preview;
+  const DWORD extended_style = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+  const DWORD style = WS_POPUP;
+  window_ = CreateWindowExW(extended_style, kCandidateWindowClass, L"", style, 0, 0,
+                            static_cast<int>(kVerticalWindowWidth), 64, owner, nullptr,
                             GetModuleHandleW(nullptr), this);
   if (window_ == nullptr) {
     return false;
   }
 
-  const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
-  DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &preference,
-                        sizeof(preference));
+  if (!preview) {
+    const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
+    DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &preference,
+                          sizeof(preference));
+  }
   return true;
 }
 
 void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
                            const RECT& text_rectangle, const core::Settings& settings,
                            std::size_t page_offset) {
+  ShowInternal(snapshot, text_rectangle, nullptr, settings, page_offset);
+}
+
+void CandidateWindow::ShowPreview(const core::CompositionSnapshot& snapshot,
+                                  const RECT& preview_bounds,
+                                  const core::Settings& settings,
+                                  std::size_t page_offset) {
+  const RECT empty_text_rectangle{};
+  ShowInternal(snapshot, empty_text_rectangle, &preview_bounds, settings, page_offset);
+}
+
+void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
+                                   const RECT& text_rectangle, const RECT* preview_bounds,
+                                   const core::Settings& settings, std::size_t page_offset) {
   if (window_ == nullptr || snapshot.empty()) {
     Hide();
     return;
   }
 
+  const bool theme_changed =
+      !theme_initialized_ || settings_.active_theme_id != settings.active_theme_id;
+  if (theme_changed) {
+    RefreshTheme(settings.active_theme_id);
+  }
+  // Every candidate surface uses per-pixel alpha. The native surface needs it
+  // for deterministic anti-aliased corners; relying on the DWM border made the
+  // same build render square in some Windows 11 sessions.
+  constexpr bool kUseLayeredRendering = true;
+  const bool rendering_mode_changed =
+      layered_rendering_enabled_ != kUseLayeredRendering;
+  if (rendering_mode_changed) {
+    DiscardDeviceResources();
+    layered_rendering_enabled_ = kUseLayeredRendering;
+    ApplyWindowRenderingMode();
+  }
   const bool resolved_dark_theme = UseDarkTheme(settings.theme_mode);
   const bool appearance_changed =
-      !dark_theme_initialized_ || dark_theme_ != resolved_dark_theme ||
+      theme_changed || !dark_theme_initialized_ || dark_theme_ != resolved_dark_theme ||
       settings_.theme_mode != settings.theme_mode ||
       settings_.custom_candidate_colors != settings.custom_candidate_colors ||
       settings_.preedit_color != settings.preedit_color ||
       settings_.highlighted_candidate_color != settings.highlighted_candidate_color ||
       settings_.candidate_text_color != settings.candidate_text_color ||
       settings_.candidate_background_color != settings.candidate_background_color ||
+      settings_.candidate_layout != settings.candidate_layout ||
       settings_.custom_candidate_fonts != settings.custom_candidate_fonts ||
       settings_.candidate_chinese_font_family != settings.candidate_chinese_font_family ||
       settings_.candidate_english_font_family != settings.candidate_english_font_family ||
@@ -203,18 +345,51 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
   text_rectangle_ = text_rectangle;
   dark_theme_ = resolved_dark_theme;
   dark_theme_initialized_ = true;
+  const auto& theme_typography = ActiveThemeAppearance().typography;
   const float effective_font_size = static_cast<float>(
       settings_.custom_candidate_font_size
           ? std::clamp(settings_.candidate_font_size, core::kMinimumCandidateFontSize,
                        core::kMaximumCandidateFontSize)
-          : 17);
+          : std::clamp<std::uint32_t>(
+                theme_typography.font_size,
+                static_cast<std::uint32_t>(core::kMinimumCandidateFontSize),
+                static_cast<std::uint32_t>(core::kMaximumCandidateFontSize)));
   layout_scale_ = settings_.candidate_scale_with_text
                       ? std::clamp(effective_font_size / 17.0F, 0.82F, 1.42F)
                       : 1.0F;
+  const bool horizontal =
+      settings_.candidate_layout == core::CandidateLayout::kHorizontal;
+  const auto scale_insets = [this](const core::ThemeInsets& insets) {
+    const float scale = ThemeUnitScale();
+    return ScaledInsets{static_cast<float>(insets.left) * scale,
+                        static_cast<float>(insets.top) * scale,
+                        static_cast<float>(insets.right) * scale,
+                        static_cast<float>(insets.bottom) * scale};
+  };
+  const auto& surface = ActiveThemeSurface();
+  preedit_insets_ =
+      surface.preedit_insets.has_value()
+          ? scale_insets(*surface.preedit_insets)
+          : ScaledInsets{kHorizontalPadding * layout_scale_,
+                         10.0F * layout_scale_,
+                         kHorizontalPadding * layout_scale_,
+                         (horizontal ? 6.0F : 10.0F) * layout_scale_};
+  candidate_insets_ =
+      surface.candidate_insets.has_value()
+          ? scale_insets(*surface.candidate_insets)
+          : ScaledInsets{8.0F * layout_scale_,
+                         (horizontal ? 4.0F : kHorizontalPadding) * layout_scale_,
+                         8.0F * layout_scale_,
+                         (horizontal ? 4.0F : kHorizontalPadding) * layout_scale_};
+  preedit_height_ =
+      std::max((horizontal ? kHorizontalPreeditHeight : kPreeditHeight) * layout_scale_,
+               preedit_insets_.top + effective_font_size + preedit_insets_.bottom);
+  candidate_row_height_ =
+      std::max((horizontal ? kHorizontalCandidateHeight : kCandidateHeight) * layout_scale_,
+               effective_font_size + 8.0F);
   if (appearance_changed) {
     DiscardDeviceResources();
   }
-  const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
   const auto active_slice = core::MakeCandidatePageSlice(
       snapshot_.candidates.size(), settings_.candidate_count, page_offset);
   page_offset_ = active_slice.offset;
@@ -233,27 +408,95 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
     render_target_->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
   }
 
-  const POINT monitor_point{text_rectangle.left, text_rectangle.bottom};
-  const HMONITOR monitor = MonitorFromPoint(monitor_point, MONITOR_DEFAULTTONEAREST);
-  MONITORINFO monitor_info{sizeof(monitor_info)};
-  if (!GetMonitorInfoW(monitor, &monitor_info)) {
-    monitor_info.rcWork = RECT{0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
+  RECT work_area{};
+  if (preview_bounds != nullptr) {
+    work_area = *preview_bounds;
+  } else {
+    const POINT monitor_point{text_rectangle.left, text_rectangle.bottom};
+    const HMONITOR monitor = MonitorFromPoint(monitor_point, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{sizeof(monitor_info)};
+    if (!GetMonitorInfoW(monitor, &monitor_info)) {
+      monitor_info.rcWork =
+          RECT{0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
+    }
+    work_area = monitor_info.rcWork;
   }
-  const int work_left = static_cast<int>(monitor_info.rcWork.left);
-  const int work_top = static_cast<int>(monitor_info.rcWork.top);
-  const int work_right = static_cast<int>(monitor_info.rcWork.right);
-  const int work_bottom = static_cast<int>(monitor_info.rcWork.bottom);
+  const int work_left = static_cast<int>(work_area.left);
+  const int work_top = static_cast<int>(work_area.top);
+  const int work_right = static_cast<int>(work_area.right);
+  const int work_bottom = static_cast<int>(work_area.bottom);
   const int work_width = work_right - work_left;
   const int work_height = work_bottom - work_top;
   const float maximum_window_width = static_cast<float>(work_width) / dpi_scale_;
+  const float maximum_window_height = static_cast<float>(work_height) / dpi_scale_;
+  const auto fit_horizontal_insets = [](ScaledInsets* insets,
+                                        float maximum_total) {
+    const float total = insets->left + insets->right;
+    if (total > maximum_total && total > 0.0F) {
+      const float scale = std::max(maximum_total, 0.0F) / total;
+      insets->left *= scale;
+      insets->right *= scale;
+    }
+  };
+  const auto fit_vertical_insets = [](ScaledInsets* insets,
+                                      float maximum_total) {
+    const float total = insets->top + insets->bottom;
+    if (total > maximum_total && total > 0.0F) {
+      const float scale = std::max(maximum_total, 0.0F) / total;
+      insets->top *= scale;
+      insets->bottom *= scale;
+    }
+  };
+  fit_vertical_insets(
+      &preedit_insets_,
+      maximum_window_height - effective_font_size - candidate_row_height_);
+  preedit_height_ =
+      std::max((horizontal ? kHorizontalPreeditHeight : kPreeditHeight) *
+                   layout_scale_,
+               preedit_insets_.top + effective_font_size +
+                   preedit_insets_.bottom);
+  fit_vertical_insets(
+      &candidate_insets_,
+      maximum_window_height - preedit_height_ - candidate_row_height_);
+  fit_horizontal_insets(
+      &preedit_insets_,
+      maximum_window_width - 64.0F * layout_scale_);
+  const bool use_native_actions = !UsesSogouRendering();
+  const bool show_menu_action =
+      horizontal && (use_native_actions || surface.menu_button.has_value());
+  const bool show_expand_action =
+      horizontal && can_expand_ &&
+      (use_native_actions || surface.expand_button.has_value() ||
+       surface.collapse_button.has_value());
+  const float reserved_action_width =
+      ((show_menu_action ? kHorizontalMenuButtonWidth : 0.0F) +
+       (show_expand_action ? kHorizontalExpandButtonWidth : 0.0F)) *
+      layout_scale_;
+  const std::size_t visible_columns =
+      horizontal ? std::max<std::size_t>(
+                       1, std::min(slice.count, settings_.candidate_count))
+                 : 1;
+  fit_horizontal_insets(
+      &candidate_insets_,
+      maximum_window_width - reserved_action_width -
+          kMinimumHorizontalCandidateWidth * layout_scale_ *
+              static_cast<float>(visible_columns));
   const bool has_device_resources = EnsureDeviceResources();
+  D2D1_SIZE_F natural_background_size{};
+  if (UsesSogouRendering() && surface.background.has_value() &&
+      surface_bitmaps_.background != nullptr) {
+    const D2D1_SIZE_F bitmap_size = surface_bitmaps_.background->GetSize();
+    natural_background_size =
+        D2D1::SizeF(bitmap_size.width * layout_scale_,
+                    bitmap_size.height * layout_scale_);
+  }
   const float measured_preedit_width =
       has_device_resources
           ? MeasureTextWidth(dwrite_factory_.Get(), preedit_format_.Get(), snapshot_.preedit,
-                             maximum_window_width, kPreeditHeight * layout_scale_)
+                             maximum_window_width, preedit_height_)
           : 0.0F;
   const float desired_preedit_window_width =
-      measured_preedit_width + 2.0F * kHorizontalPadding * layout_scale_;
+      measured_preedit_width + preedit_insets_.left + preedit_insets_.right;
 
   candidate_indices_.clear();
   candidate_widths_.clear();
@@ -279,7 +522,7 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
                 : snapshot_.candidates[candidate_index].text;
         const float measured_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
-                             maximum_window_width, kHorizontalCandidateHeight * layout_scale_);
+                             maximum_window_width, candidate_row_height_);
         const float width =
             std::clamp(measured_width + 24.0F * layout_scale_,
                        kMinimumHorizontalCandidateWidth * layout_scale_, maximum_window_width);
@@ -290,10 +533,8 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
       candidate_widths_.assign(slice.count,
                                kMinimumHorizontalCandidateWidth * layout_scale_);
     }
-    const float outer_width = 16.0F * layout_scale_;
-    const float action_width =
-        (kHorizontalMenuButtonWidth + (can_expand_ ? kHorizontalExpandButtonWidth : 0.0F)) *
-        layout_scale_;
+    const float outer_width = candidate_insets_.left + candidate_insets_.right;
+    const float action_width = reserved_action_width;
     const std::size_t columns = settings_.candidate_count;
     float widest_row = 0.0F;
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
@@ -320,35 +561,27 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
         std::min(kMinimumHorizontalWindowWidth * layout_scale_, maximum_window_width),
         maximum_window_width);
     for (std::size_t row = 0; row < horizontal_rows; ++row) {
-      float left = 8.0F * layout_scale_;
+      float left = candidate_insets_.left;
       const std::size_t begin = row * columns;
       const std::size_t end = std::min(begin + columns, candidate_widths_.size());
       for (std::size_t index = begin; index < end; ++index) {
         candidate_lefts_.push_back(left);
-        candidate_tops_.push_back((kHorizontalPreeditHeight + 4.0F) * layout_scale_ +
-                                  static_cast<float>(row) * kHorizontalCandidateHeight *
-                                      layout_scale_);
+        candidate_tops_.push_back(preedit_height_ + candidate_insets_.top +
+                                  static_cast<float>(row) * candidate_row_height_);
         left += candidate_widths_[index];
       }
-    }
-    const float button_top = (kHorizontalPreeditHeight + 4.0F) * layout_scale_;
-    const float button_bottom =
-        button_top + kHorizontalCandidateHeight * layout_scale_;
-    menu_button_bounds_ =
-        D2D1::RectF(window_width_ - kHorizontalMenuButtonWidth * layout_scale_, button_top,
-                    window_width_, button_bottom);
-    if (can_expand_) {
-      expand_button_bounds_ =
-          D2D1::RectF(menu_button_bounds_.left - kHorizontalExpandButtonWidth * layout_scale_,
-                      button_top, menu_button_bounds_.left, button_bottom);
     }
   } else {
     candidate_indices_.reserve(slice.count);
     for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
       candidate_indices_.push_back(slice.offset + visible_index);
     }
+    const float base_vertical_width =
+        UsesSogouRendering() && natural_background_size.width > 0.0F
+            ? natural_background_size.width
+            : kVerticalWindowWidth * layout_scale_;
     float desired_vertical_width =
-        std::max(kVerticalWindowWidth * layout_scale_, desired_preedit_window_width);
+        std::max(base_vertical_width, desired_preedit_window_width);
     if (has_device_resources) {
       for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
         const std::size_t candidate_index = slice.offset + visible_index;
@@ -356,42 +589,92 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
                                    snapshot_.candidates[candidate_index].text;
         const float candidate_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
-                             maximum_window_width, kCandidateHeight * layout_scale_);
+                             maximum_window_width, candidate_row_height_);
         desired_vertical_width =
             std::max(desired_vertical_width,
-                     candidate_width + 160.0F * layout_scale_);
+                     candidate_width + candidate_insets_.left +
+                         candidate_insets_.right +
+                         (UsesSogouRendering() ? 0.0F
+                                               : 120.0F * layout_scale_));
       }
     }
     window_width_ = std::min(desired_vertical_width, maximum_window_width);
   }
 
-  const float height_dip =
-      horizontal
-          ? (horizontal_rows == 0
-                 ? kHorizontalPreeditOnlyHeight * layout_scale_
-                 : kHorizontalWindowHeight * layout_scale_ +
-                       static_cast<float>(horizontal_rows - 1) *
-                           kHorizontalCandidateHeight * layout_scale_)
-          : (kHorizontalPadding * 2.0F + kPreeditHeight +
-             kCandidateHeight * static_cast<float>(slice.count)) *
-                layout_scale_;
+  float height_dip =
+      slice.count == 0
+          ? std::max(preedit_height_,
+                     kHorizontalPreeditOnlyHeight * layout_scale_)
+          : preedit_height_ + candidate_insets_.top +
+                candidate_row_height_ *
+                    static_cast<float>(horizontal ? horizontal_rows : slice.count) +
+                candidate_insets_.bottom;
+  if (UsesSogouRendering() && surface.background.has_value()) {
+    if (natural_background_size.width > 0.0F) {
+      window_width_ =
+          std::min(std::max(window_width_, natural_background_size.width),
+                   maximum_window_width);
+    }
+    if (surface.background->vertical_layout == core::ThemeImageLayout::kFixed &&
+        natural_background_size.height > 0.0F) {
+      height_dip =
+          std::min(natural_background_size.height, maximum_window_height);
+    }
+  }
+  if (horizontal && reserved_action_width > 0.0F) {
+    const float button_top = preedit_height_ + candidate_insets_.top;
+    const float button_bottom = button_top + candidate_row_height_;
+    if (show_menu_action) {
+      menu_button_bounds_ =
+          D2D1::RectF(window_width_ -
+                          kHorizontalMenuButtonWidth * layout_scale_,
+                      button_top, window_width_, button_bottom);
+    }
+    if (show_expand_action) {
+      const float right =
+          show_menu_action ? menu_button_bounds_.left : window_width_;
+      expand_button_bounds_ =
+          D2D1::RectF(right -
+                          kHorizontalExpandButtonWidth * layout_scale_,
+                      button_top, right, button_bottom);
+    }
+  }
   int width = ToPixels(window_width_, dpi_scale_);
   int height = ToPixels(height_dip, dpi_scale_);
   width = std::min(width, work_width);
   height = std::min(height, work_height);
 
-  int x = text_rectangle.left;
-  int y = text_rectangle.bottom + 2;
-  if (x + width > work_right) {
-    x = work_right - width;
+  int x = 0;
+  int y = 0;
+  HWND insert_after = HWND_TOPMOST;
+  UINT position_flags = SWP_NOACTIVATE | SWP_SHOWWINDOW;
+  if (preview_bounds != nullptr) {
+    x = work_left + std::max((work_width - width) / 2, 0);
+    y = work_top + std::max((work_height - height) / 2, 0);
+    insert_after = HWND_TOP;
+  } else {
+    x = text_rectangle.left;
+    y = text_rectangle.bottom + 2;
+    if (x + width > work_right) {
+      x = work_right - width;
+    }
+    x = std::max(x, work_left);
+    if (y + height > work_bottom) {
+      y = text_rectangle.top - height - 2;
+    }
+    y = std::clamp(y, work_top, work_bottom - height);
   }
-  x = std::max(x, work_left);
-  if (y + height > work_bottom) {
-    y = text_rectangle.top - height - 2;
-  }
-  y = std::clamp(y, work_top, work_bottom - height);
 
-  SetWindowPos(window_, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  SetWindowPos(window_, insert_after, x, y, width, height, position_flags);
+  if (preview_bounds != nullptr && !layered_rendering_enabled_) {
+    const int corner_diameter = ToPixels(kCornerRadius * 2.0F, dpi_scale_);
+    HRGN region =
+        CreateRoundRectRgn(0, 0, width + 1, height + 1, corner_diameter, corner_diameter);
+    if (region != nullptr && SetWindowRgn(window_, region, FALSE) == 0) {
+      DeleteObject(region);
+    }
+  }
+  layered_present_retry_attempted_ = false;
   InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -414,6 +697,11 @@ void CandidateWindow::Hide() {
     ShowWindow(window_, SW_HIDE);
   }
   expanded_ = false;
+  expand_button_hovered_ = false;
+  menu_button_hovered_ = false;
+  expand_button_pressed_ = false;
+  menu_button_pressed_ = false;
+  tracking_mouse_leave_ = false;
 }
 
 LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -440,28 +728,100 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       Paint();
       return 0;
     case WM_SIZE:
-      if (render_target_ != nullptr) {
-        render_target_->Resize(D2D1::SizeU(LOWORD(lparam), HIWORD(lparam)));
+      if (layered_rendering_enabled_) {
+        const SIZE requested_size{static_cast<LONG>(LOWORD(lparam)),
+                                  static_cast<LONG>(HIWORD(lparam))};
+        if (requested_size.cx != layered_pixel_size_.cx ||
+            requested_size.cy != layered_pixel_size_.cy) {
+          DiscardDeviceResources();
+          InvalidateRect(window_, nullptr, FALSE);
+        }
+      } else if (hwnd_render_target_ != nullptr) {
+        const HRESULT resize_result =
+            hwnd_render_target_->Resize(D2D1::SizeU(LOWORD(lparam), HIWORD(lparam)));
+        if (FAILED(resize_result)) {
+          DiscardDeviceResources();
+          InvalidateRect(window_, nullptr, FALSE);
+        }
       }
       return 0;
     case WM_DPICHANGED: {
+      const UINT dpi =
+          std::max<UINT>(LOWORD(wparam), USER_DEFAULT_SCREEN_DPI);
+      dpi_scale_ =
+          static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+      DiscardDeviceResources();
       const auto* suggested = reinterpret_cast<RECT*>(lparam);
       SetWindowPos(window_, nullptr, suggested->left, suggested->top,
                    suggested->right - suggested->left, suggested->bottom - suggested->top,
                    SWP_NOACTIVATE | SWP_NOZORDER);
+      layered_present_retry_attempted_ = false;
+      InvalidateRect(window_, nullptr, FALSE);
       return 0;
     }
-    case WM_LBUTTONUP: {
+    case WM_MOUSEMOVE: {
+      if (preview_mode_) {
+        return 0;
+      }
       const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
       const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
-      const auto contains = [x, y](const D2D1_RECT_F& bounds) {
-        return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
-      };
-      if (can_expand_ && contains(expand_button_bounds_)) {
+      const bool expand_hovered = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
+      const bool menu_hovered = ContainsPoint(menu_button_bounds_, x, y);
+      if (expand_button_hovered_ != expand_hovered || menu_button_hovered_ != menu_hovered) {
+        expand_button_hovered_ = expand_hovered;
+        menu_button_hovered_ = menu_hovered;
+        InvalidateRect(window_, nullptr, FALSE);
+      }
+      if (!tracking_mouse_leave_) {
+        TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, window_, 0};
+        tracking_mouse_leave_ = TrackMouseEvent(&tracking) != FALSE;
+      }
+      return 0;
+    }
+    case WM_MOUSELEAVE:
+      tracking_mouse_leave_ = false;
+      if (expand_button_hovered_ || menu_button_hovered_) {
+        expand_button_hovered_ = false;
+        menu_button_hovered_ = false;
+        InvalidateRect(window_, nullptr, FALSE);
+      }
+      return 0;
+    case WM_LBUTTONDOWN: {
+      if (preview_mode_) {
+        return 0;
+      }
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      expand_button_pressed_ = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
+      menu_button_pressed_ = ContainsPoint(menu_button_bounds_, x, y);
+      if (expand_button_pressed_ || menu_button_pressed_) {
+        SetCapture(window_);
+        InvalidateRect(window_, nullptr, FALSE);
+        return 0;
+      }
+      return DefWindowProcW(window_, message, wparam, lparam);
+    }
+    case WM_LBUTTONUP: {
+      if (preview_mode_) {
+        return 0;
+      }
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      const bool activate_expand =
+          expand_button_pressed_ && can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
+      const bool activate_menu =
+          menu_button_pressed_ && ContainsPoint(menu_button_bounds_, x, y);
+      expand_button_pressed_ = false;
+      menu_button_pressed_ = false;
+      if (GetCapture() == window_) {
+        ReleaseCapture();
+      }
+      InvalidateRect(window_, nullptr, FALSE);
+      if (activate_expand) {
         SetExpanded(!expanded_);
         return 0;
       }
-      if (quick_menu_action_ && contains(menu_button_bounds_)) {
+      if (activate_menu && quick_menu_action_) {
         RECT window_rectangle{};
         if (GetWindowRect(window_, &window_rectangle)) {
           const POINT anchor{
@@ -475,6 +835,13 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       }
       return DefWindowProcW(window_, message, wparam, lparam);
     }
+    case WM_CAPTURECHANGED:
+      if (expand_button_pressed_ || menu_button_pressed_) {
+        expand_button_pressed_ = false;
+        menu_button_pressed_ = false;
+        InvalidateRect(window_, nullptr, FALSE);
+      }
+      return 0;
     case WM_ERASEBKGND:
       return 1;
     case WM_NCDESTROY:
@@ -486,6 +853,221 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
   }
 }
 
+void CandidateWindow::RefreshTheme(std::string_view theme_id) {
+  theme_manifest_ = core::MakeDefaultThemeManifest();
+  theme_directory_.clear();
+  if (theme_id != theme_manifest_.id) {
+    const auto themes_directory = ThemesDirectoryPath();
+    if (themes_directory.has_value()) {
+      const auto installed = core::LoadInstalledTheme(*themes_directory, theme_id);
+      if (installed.has_value()) {
+        theme_manifest_ = installed->manifest;
+        theme_directory_ = installed->directory;
+      }
+    }
+  }
+  theme_initialized_ = true;
+}
+
+bool CandidateWindow::UsesSogouRendering() const noexcept {
+  return theme_manifest_.source_format == "sogou-ssf";
+}
+
+void CandidateWindow::ApplyWindowRenderingMode() {
+  if (window_ == nullptr) {
+    return;
+  }
+  LONG_PTR extended_style = GetWindowLongPtrW(window_, GWL_EXSTYLE);
+  if (layered_rendering_enabled_) {
+    extended_style |= WS_EX_LAYERED;
+  } else {
+    extended_style &= ~static_cast<LONG_PTR>(WS_EX_LAYERED);
+  }
+  SetWindowLongPtrW(window_, GWL_EXSTYLE, extended_style);
+  SetWindowRgn(window_, nullptr, FALSE);
+
+  const DWM_WINDOW_CORNER_PREFERENCE preference =
+      layered_rendering_enabled_
+          ? DWMWCP_DONOTROUND
+          : (preview_mode_ ? DWMWCP_DEFAULT : DWMWCP_ROUND);
+  static_cast<void>(DwmSetWindowAttribute(
+      window_, DWMWA_WINDOW_CORNER_PREFERENCE, &preference, sizeof(preference)));
+  SetWindowPos(window_, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                   SWP_FRAMECHANGED);
+}
+
+const core::ThemeAppearance& CandidateWindow::ActiveThemeAppearance() const {
+  if (dark_theme_ && theme_manifest_.dark.has_value()) {
+    return *theme_manifest_.dark;
+  }
+  return theme_manifest_.light;
+}
+
+const core::ThemeSurface& CandidateWindow::ActiveThemeSurface() const {
+  const auto& appearance = ActiveThemeAppearance();
+  return settings_.candidate_layout == core::CandidateLayout::kHorizontal
+             ? appearance.horizontal
+             : appearance.vertical;
+}
+
+CandidateWindow::RenderPalette CandidateWindow::ResolveRenderPalette() const {
+  RenderPalette palette;
+  if (settings_.custom_candidate_colors) {
+    const auto configured = core::ResolveCandidatePalette(settings_, dark_theme_);
+    palette.preedit = RgbColor(configured.preedit_color);
+    palette.highlighted_candidate = RgbColor(configured.highlighted_candidate_color);
+    palette.candidate = RgbColor(configured.candidate_text_color);
+    palette.background = RgbColor(configured.candidate_background_color);
+    palette.muted = RgbColor(configured.muted_color);
+  palette.highlighted_background = RgbColor(configured.highlight_background_color);
+  palette.separator = palette.muted;
+  palette.surface_border =
+      ArgbColor(dark_theme_ ? 0xFF5F6368U : 0xFF3A3A3AU);
+    if (const auto& separator = ActiveThemeSurface().separator;
+        separator.has_value() && separator->color.has_value()) {
+      palette.separator = ArgbColor(*separator->color);
+    }
+    return palette;
+  }
+  const auto& configured = ActiveThemeAppearance().palette;
+  palette.preedit = ArgbColor(configured.preedit_text);
+  palette.highlighted_candidate = ArgbColor(configured.highlighted_candidate_text);
+  palette.candidate = ArgbColor(configured.candidate_text);
+  palette.background = ArgbColor(configured.background);
+  palette.muted = ArgbColor(configured.muted_text);
+  palette.highlighted_background = ArgbColor(configured.highlighted_background);
+  palette.separator = ArgbColor(configured.separator);
+  palette.surface_border =
+      ArgbColor(dark_theme_ ? 0xFF5F6368U : 0xFF3A3A3AU);
+  if (const auto& separator = ActiveThemeSurface().separator;
+      separator.has_value() && separator->color.has_value()) {
+    palette.separator = ArgbColor(*separator->color);
+  }
+  return palette;
+}
+
+float CandidateWindow::ThemeUnitScale() const {
+  const float base_dpi =
+      static_cast<float>(std::max(theme_manifest_.base_dpi, 1U));
+  return static_cast<float>(USER_DEFAULT_SCREEN_DPI) / base_dpi * layout_scale_;
+}
+
+bool CandidateWindow::EnsureImagingFactory() {
+  if (imaging_factory_ != nullptr) {
+    return true;
+  }
+  return SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(imaging_factory_.ReleaseAndGetAddressOf())));
+}
+
+Microsoft::WRL::ComPtr<ID2D1Bitmap> CandidateWindow::LoadThemeBitmap(
+    std::string_view asset) const {
+  Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
+  if (asset.empty() || theme_directory_.empty() || imaging_factory_ == nullptr ||
+      render_target_ == nullptr) {
+    return bitmap;
+  }
+
+  const std::wstring asset_name = Utf8ToWide(asset);
+  if (asset_name.empty()) {
+    return bitmap;
+  }
+  const std::filesystem::path asset_path = theme_directory_ / asset_name;
+  std::error_code status_error;
+  const auto status = std::filesystem::symlink_status(asset_path, status_error);
+  if (status_error || !std::filesystem::is_regular_file(status) ||
+      std::filesystem::is_symlink(status)) {
+    return bitmap;
+  }
+
+  Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+  if (FAILED(imaging_factory_->CreateDecoderFromFilename(
+          asset_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+          decoder.GetAddressOf()))) {
+    return bitmap;
+  }
+  Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+  if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) {
+    return bitmap;
+  }
+  Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+  if (FAILED(imaging_factory_->CreateFormatConverter(converter.GetAddressOf())) ||
+      FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA,
+                                   WICBitmapDitherTypeNone, nullptr, 0.0,
+                                   WICBitmapPaletteTypeCustom))) {
+    return bitmap;
+  }
+
+  const float bitmap_dpi =
+      static_cast<float>(std::max(theme_manifest_.base_dpi, 1U));
+  const D2D1_BITMAP_PROPERTIES properties = D2D1::BitmapProperties(
+      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                        D2D1_ALPHA_MODE_PREMULTIPLIED),
+      bitmap_dpi, bitmap_dpi);
+  if (FAILED(render_target_->CreateBitmapFromWicBitmap(
+          converter.Get(), &properties, bitmap.GetAddressOf()))) {
+    bitmap.Reset();
+  }
+  return bitmap;
+}
+
+CandidateWindow::ButtonBitmaps CandidateWindow::LoadButtonBitmaps(
+    const std::optional<core::ThemeButtonImages>& images) const {
+  ButtonBitmaps bitmaps;
+  if (!images.has_value()) {
+    return bitmaps;
+  }
+  bitmaps.normal = LoadThemeBitmap(images->normal);
+  bitmaps.hover =
+      images->hover.empty() ? bitmaps.normal : LoadThemeBitmap(images->hover);
+  bitmaps.pressed =
+      images->pressed.empty() ? bitmaps.normal : LoadThemeBitmap(images->pressed);
+  if (bitmaps.hover == nullptr) {
+    bitmaps.hover = bitmaps.normal;
+  }
+  if (bitmaps.pressed == nullptr) {
+    bitmaps.pressed = bitmaps.normal;
+  }
+  return bitmaps;
+}
+
+void CandidateWindow::LoadSurfaceBitmaps() {
+  surface_bitmaps_ = {};
+  if (!EnsureImagingFactory()) {
+    return;
+  }
+  const auto& surface = ActiveThemeSurface();
+  if (surface.background.has_value()) {
+    surface_bitmaps_.background = LoadThemeBitmap(surface.background->asset);
+  }
+  std::vector<core::ThemeOverlay> overlays = surface.overlays;
+  std::stable_sort(overlays.begin(), overlays.end(),
+                   [](const core::ThemeOverlay& first,
+                      const core::ThemeOverlay& second) {
+                     if (first.draw_order != second.draw_order) {
+                       return first.draw_order < second.draw_order;
+                     }
+                     return first.custom_index < second.custom_index;
+                   });
+  surface_bitmaps_.overlays.reserve(overlays.size());
+  for (const auto& overlay : overlays) {
+    auto bitmap = LoadThemeBitmap(overlay.asset);
+    if (bitmap != nullptr) {
+      surface_bitmaps_.overlays.push_back(
+          SurfaceBitmaps::OverlayBitmap{overlay, std::move(bitmap)});
+    }
+  }
+  if (surface.separator.has_value()) {
+    surface_bitmaps_.separator = LoadThemeBitmap(surface.separator->asset);
+  }
+  surface_bitmaps_.previous = LoadButtonBitmaps(surface.previous_button);
+  surface_bitmaps_.next = LoadButtonBitmaps(surface.next_button);
+  surface_bitmaps_.expand = LoadButtonBitmaps(surface.expand_button);
+  surface_bitmaps_.collapse = LoadButtonBitmaps(surface.collapse_button);
+  surface_bitmaps_.menu = LoadButtonBitmaps(surface.menu_button);
+}
+
 bool CandidateWindow::EnsureDeviceResources() {
   if (render_target_ != nullptr) {
     return true;
@@ -493,34 +1075,59 @@ bool CandidateWindow::EnsureDeviceResources() {
 
   RECT client{};
   GetClientRect(window_, &client);
-  const D2D1_SIZE_U size = D2D1::SizeU(static_cast<UINT32>(client.right - client.left),
-                                       static_cast<UINT32>(client.bottom - client.top));
-  if (FAILED(d2d_factory_->CreateHwndRenderTarget(
-          D2D1::RenderTargetProperties(), D2D1::HwndRenderTargetProperties(window_, size),
-          render_target_.ReleaseAndGetAddressOf()))) {
-    return false;
+  const UINT32 width =
+      static_cast<UINT32>(std::max(client.right - client.left, 1L));
+  const UINT32 height =
+      static_cast<UINT32>(std::max(client.bottom - client.top, 1L));
+  const D2D1_SIZE_U size = D2D1::SizeU(width, height);
+  if (layered_rendering_enabled_) {
+    if (!EnsureLayeredSurface(width, height)) {
+      return false;
+    }
+    render_target_ = dc_render_target_;
+  } else {
+    if (FAILED(d2d_factory_->CreateHwndRenderTarget(
+            D2D1::RenderTargetProperties(),
+            D2D1::HwndRenderTargetProperties(window_, size),
+            hwnd_render_target_.ReleaseAndGetAddressOf()))) {
+      return false;
+    }
+    render_target_ = hwnd_render_target_;
   }
 
-  const core::CandidatePalette palette =
-      core::ResolveCandidatePalette(settings_, dark_theme_);
+  const RenderPalette palette = ResolveRenderPalette();
 
-  if (FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.candidate_text_color),
+  if (FAILED(render_target_->CreateSolidColorBrush(palette.candidate,
                                                    text_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.preedit_color),
+      FAILED(render_target_->CreateSolidColorBrush(palette.preedit,
                                                    preedit_brush_.ReleaseAndGetAddressOf())) ||
       FAILED(render_target_->CreateSolidColorBrush(
-          D2D1::ColorF(palette.highlighted_candidate_color),
+          palette.highlighted_candidate,
           highlighted_text_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.muted_color),
+      FAILED(render_target_->CreateSolidColorBrush(palette.muted,
                                                    muted_brush_.ReleaseAndGetAddressOf())) ||
-      FAILED(render_target_->CreateSolidColorBrush(D2D1::ColorF(palette.highlight_background_color),
-                                                   accent_brush_.ReleaseAndGetAddressOf()))) {
+      FAILED(render_target_->CreateSolidColorBrush(
+          palette.highlighted_background, accent_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(
+          palette.separator, separator_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(
+          palette.background, background_brush_.ReleaseAndGetAddressOf())) ||
+      FAILED(render_target_->CreateSolidColorBrush(
+          palette.surface_border,
+          surface_border_brush_.ReleaseAndGetAddressOf()))) {
     DiscardDeviceResources();
     return false;
   }
 
-  std::wstring chinese_font_family = L"Source Han Sans SC";
-  std::wstring english_font_family = L"Segoe UI Variable Text";
+  const auto& theme_typography = ActiveThemeAppearance().typography;
+  std::wstring chinese_font_family = Utf8ToWide(theme_typography.chinese_font_family);
+  std::wstring english_font_family = Utf8ToWide(theme_typography.english_font_family);
+  if (chinese_font_family.empty()) {
+    chinese_font_family = L"Source Han Sans SC";
+  }
+  if (english_font_family.empty()) {
+    english_font_family = L"Segoe UI Variable Text";
+  }
   if (settings_.custom_candidate_fonts) {
     std::wstring configured_chinese = Utf8ToWide(settings_.candidate_chinese_font_family);
     std::wstring configured_english = Utf8ToWide(settings_.candidate_english_font_family);
@@ -535,10 +1142,20 @@ bool CandidateWindow::EnsureDeviceResources() {
       settings_.custom_candidate_font_size
           ? std::clamp(settings_.candidate_font_size, core::kMinimumCandidateFontSize,
                        core::kMaximumCandidateFontSize)
-          : 17);
+          : std::clamp<std::uint32_t>(
+                theme_typography.font_size,
+                static_cast<std::uint32_t>(core::kMinimumCandidateFontSize),
+                static_cast<std::uint32_t>(core::kMaximumCandidateFontSize)));
+  const DWRITE_FONT_WEIGHT preedit_weight =
+      UsesSogouRendering() ? DWRITE_FONT_WEIGHT_NORMAL
+                           : DWRITE_FONT_WEIGHT_SEMI_BOLD;
+  const float preedit_font_size =
+      UsesSogouRendering()
+          ? detail::ResolveSogouPreeditDWriteFontSize(font_size)
+          : font_size + 1.0F;
   if (FAILED(dwrite_factory_->CreateTextFormat(
-          english_font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size + 1.0F, L"zh-CN",
+          english_font_family.c_str(), nullptr, preedit_weight,
+          DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, preedit_font_size, L"zh-CN",
           preedit_format_.ReleaseAndGetAddressOf())) ||
       FAILED(dwrite_factory_->CreateTextFormat(
           chinese_font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
@@ -557,6 +1174,354 @@ bool CandidateWindow::EnsureDeviceResources() {
   static_cast<void>(preedit_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
   static_cast<void>(candidate_format_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
   static_cast<void>(candidate_format_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER));
+  LoadSurfaceBitmaps();
+  return true;
+}
+
+bool CandidateWindow::EnsureLayeredSurface(UINT32 width, UINT32 height) {
+  if (width == 0 || height == 0 ||
+      width > static_cast<UINT32>(std::numeric_limits<LONG>::max()) ||
+      height > static_cast<UINT32>(std::numeric_limits<LONG>::max())) {
+    return false;
+  }
+  if (dc_render_target_ != nullptr && layered_memory_dc_ != nullptr &&
+      layered_bitmap_ != nullptr &&
+      layered_pixel_size_.cx == static_cast<LONG>(width) &&
+      layered_pixel_size_.cy == static_cast<LONG>(height)) {
+    const RECT bounds{0, 0, static_cast<LONG>(width),
+                      static_cast<LONG>(height)};
+    return SUCCEEDED(dc_render_target_->BindDC(layered_memory_dc_, &bounds));
+  }
+
+  ReleaseLayeredSurface();
+  layered_memory_dc_ = CreateCompatibleDC(nullptr);
+  if (layered_memory_dc_ == nullptr) {
+    return false;
+  }
+
+  BITMAPINFO bitmap_info{};
+  bitmap_info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bitmap_info.bmiHeader.biWidth = static_cast<LONG>(width);
+  bitmap_info.bmiHeader.biHeight = -static_cast<LONG>(height);
+  bitmap_info.bmiHeader.biPlanes = 1;
+  bitmap_info.bmiHeader.biBitCount = 32;
+  bitmap_info.bmiHeader.biCompression = BI_RGB;
+  void* pixels = nullptr;
+  layered_bitmap_ =
+      CreateDIBSection(layered_memory_dc_, &bitmap_info, DIB_RGB_COLORS,
+                       &pixels, nullptr, 0);
+  if (layered_bitmap_ == nullptr || pixels == nullptr) {
+    ReleaseLayeredSurface();
+    return false;
+  }
+  layered_previous_bitmap_ = SelectObject(layered_memory_dc_, layered_bitmap_);
+  if (layered_previous_bitmap_ == nullptr ||
+      layered_previous_bitmap_ == HGDI_ERROR) {
+    layered_previous_bitmap_ = nullptr;
+    ReleaseLayeredSurface();
+    return false;
+  }
+
+  const float dpi =
+      dpi_scale_ * static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+  const D2D1_RENDER_TARGET_PROPERTIES properties = D2D1::RenderTargetProperties(
+      D2D1_RENDER_TARGET_TYPE_DEFAULT,
+      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                        D2D1_ALPHA_MODE_PREMULTIPLIED),
+      dpi, dpi, D2D1_RENDER_TARGET_USAGE_NONE,
+      D2D1_FEATURE_LEVEL_DEFAULT);
+  if (FAILED(d2d_factory_->CreateDCRenderTarget(
+          &properties, dc_render_target_.ReleaseAndGetAddressOf()))) {
+    ReleaseLayeredSurface();
+    return false;
+  }
+  const RECT bounds{0, 0, static_cast<LONG>(width),
+                    static_cast<LONG>(height)};
+  if (FAILED(dc_render_target_->BindDC(layered_memory_dc_, &bounds))) {
+    ReleaseLayeredSurface();
+    return false;
+  }
+  layered_pixel_size_ =
+      SIZE{static_cast<LONG>(width), static_cast<LONG>(height)};
+  return true;
+}
+
+void CandidateWindow::ReleaseLayeredSurface() {
+  render_target_.Reset();
+  dc_render_target_.Reset();
+  if (layered_memory_dc_ != nullptr && layered_previous_bitmap_ != nullptr) {
+    static_cast<void>(
+        SelectObject(layered_memory_dc_, layered_previous_bitmap_));
+  }
+  layered_previous_bitmap_ = nullptr;
+  if (layered_bitmap_ != nullptr) {
+    DeleteObject(layered_bitmap_);
+    layered_bitmap_ = nullptr;
+  }
+  if (layered_memory_dc_ != nullptr) {
+    DeleteDC(layered_memory_dc_);
+    layered_memory_dc_ = nullptr;
+  }
+  layered_pixel_size_ = {};
+}
+
+bool CandidateWindow::PresentLayeredSurface() {
+  if (!layered_rendering_enabled_ || window_ == nullptr ||
+      layered_memory_dc_ == nullptr || layered_pixel_size_.cx <= 0 ||
+      layered_pixel_size_.cy <= 0) {
+    return false;
+  }
+  RECT window_rectangle{};
+  if (!GetWindowRect(window_, &window_rectangle)) {
+    return false;
+  }
+  HDC screen_dc = GetDC(nullptr);
+  if (screen_dc == nullptr) {
+    return false;
+  }
+  POINT destination{window_rectangle.left, window_rectangle.top};
+  POINT source{};
+  BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+  const BOOL presented = UpdateLayeredWindow(
+      window_, screen_dc, &destination, &layered_pixel_size_,
+      layered_memory_dc_, &source, 0, &blend, ULW_ALPHA);
+  ReleaseDC(nullptr, screen_dc);
+  return presented != FALSE;
+}
+
+void CandidateWindow::DrawSurfaceBackground() {
+  if (render_target_ == nullptr) {
+    return;
+  }
+
+  const auto& surface = ActiveThemeSurface();
+  render_target_->Clear(layered_rendering_enabled_
+                            ? D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F)
+                            : ResolveRenderPalette().background);
+  const auto draw_palette_surface = [this]() {
+    if (background_brush_ == nullptr || surface_border_brush_ == nullptr) {
+      return;
+    }
+    const D2D1_SIZE_F target_size = render_target_->GetSize();
+    if (target_size.width <= 0.0F || target_size.height <= 0.0F) {
+      return;
+    }
+    const D2D1_RECT_F outer_bounds =
+        D2D1::RectF(0.0F, 0.0F, target_size.width, target_size.height);
+    render_target_->FillRoundedRectangle(
+        D2D1::RoundedRect(outer_bounds, kSurfaceCornerRadius,
+                          kSurfaceCornerRadius),
+        surface_border_brush_.Get());
+
+    const float border_width =
+        std::ceil(std::max(dpi_scale_, 1.0F)) /
+        std::max(dpi_scale_, 1.0F);
+    const D2D1_RECT_F inner_bounds =
+        D2D1::RectF(border_width, border_width,
+                    std::max(border_width, target_size.width - border_width),
+                    std::max(border_width, target_size.height - border_width));
+    const float inner_radius =
+        std::max(kSurfaceCornerRadius - border_width, 0.0F);
+    render_target_->FillRoundedRectangle(
+        D2D1::RoundedRect(inner_bounds, inner_radius, inner_radius),
+        background_brush_.Get());
+  };
+  if (!surface.background.has_value()) {
+    draw_palette_surface();
+    return;
+  }
+
+  if (surface_bitmaps_.background == nullptr) {
+    draw_palette_surface();
+    return;
+  }
+
+  const D2D1_SIZE_F bitmap_size = surface_bitmaps_.background->GetSize();
+  const D2D1_SIZE_F target_size = render_target_->GetSize();
+  if (bitmap_size.width <= 0.0F || bitmap_size.height <= 0.0F ||
+      target_size.width <= 0.0F || target_size.height <= 0.0F) {
+    draw_palette_surface();
+    return;
+  }
+
+  const float source_unit =
+      static_cast<float>(USER_DEFAULT_SCREEN_DPI) /
+      static_cast<float>(std::max(theme_manifest_.base_dpi, 1U));
+  float source_left =
+      std::min(static_cast<float>(surface.background->stretch.left) * source_unit,
+               bitmap_size.width);
+  float source_right =
+      std::min(static_cast<float>(surface.background->stretch.right) * source_unit,
+               bitmap_size.width);
+  float source_top =
+      std::min(static_cast<float>(surface.background->stretch.top) * source_unit,
+               bitmap_size.height);
+  float source_bottom =
+      std::min(static_cast<float>(surface.background->stretch.bottom) * source_unit,
+               bitmap_size.height);
+  // A nine-slice needs a non-empty center source region. Malformed or
+  // incompatible margins otherwise leave a transparent hole in a wider
+  // candidate window, so retain the palette background as the documented
+  // native fallback.
+  if (source_left + source_right >= bitmap_size.width ||
+      source_top + source_bottom >= bitmap_size.height) {
+    draw_palette_surface();
+    return;
+  }
+  const auto fit_pair = [](float* first, float* second, float available) {
+    const float total = *first + *second;
+    if (total > available && total > 0.0F) {
+      const float scale = available / total;
+      *first *= scale;
+      *second *= scale;
+    }
+  };
+  float destination_left = source_left * layout_scale_;
+  float destination_right = source_right * layout_scale_;
+  float destination_top = source_top * layout_scale_;
+  float destination_bottom = source_bottom * layout_scale_;
+  fit_pair(&destination_left, &destination_right, target_size.width);
+  fit_pair(&destination_top, &destination_bottom, target_size.height);
+
+  const std::array<float, 4> source_x{
+      0.0F, source_left, bitmap_size.width - source_right, bitmap_size.width};
+  const std::array<float, 4> source_y{
+      0.0F, source_top, bitmap_size.height - source_bottom, bitmap_size.height};
+  const std::array<float, 4> destination_x{
+      0.0F, destination_left, target_size.width - destination_right,
+      target_size.width};
+  const std::array<float, 4> destination_y{
+      0.0F, destination_top, target_size.height - destination_bottom,
+      target_size.height};
+
+  for (std::size_t row = 0; row < 3; ++row) {
+    for (std::size_t column = 0; column < 3; ++column) {
+      const D2D1_RECT_F source =
+          D2D1::RectF(source_x[column], source_y[row], source_x[column + 1],
+                      source_y[row + 1]);
+      const D2D1_RECT_F destination =
+          D2D1::RectF(destination_x[column], destination_y[row],
+                      destination_x[column + 1], destination_y[row + 1]);
+      const bool tile_horizontal =
+          column == 1 &&
+          surface.background->horizontal_layout == core::ThemeImageLayout::kTile;
+      const bool tile_vertical =
+          row == 1 &&
+          surface.background->vertical_layout == core::ThemeImageLayout::kTile;
+      const core::ThemeImageLayout horizontal_layout =
+          column == 1 ? surface.background->horizontal_layout
+                      : core::ThemeImageLayout::kStretch;
+      const core::ThemeImageLayout vertical_layout =
+          row == 1 ? surface.background->vertical_layout
+                   : core::ThemeImageLayout::kStretch;
+      DrawBitmapPatch(render_target_.Get(), surface_bitmaps_.background.Get(), source,
+                      destination,
+                      tile_horizontal ? core::ThemeImageLayout::kTile
+                                      : horizontal_layout,
+                      tile_vertical ? core::ThemeImageLayout::kTile
+                                    : vertical_layout,
+                      layout_scale_);
+    }
+  }
+}
+
+void CandidateWindow::DrawSurfaceOverlays() {
+  if (render_target_ == nullptr) {
+    return;
+  }
+  const D2D1_SIZE_F surface_size = render_target_->GetSize();
+  for (const auto& overlay : surface_bitmaps_.overlays) {
+    if (overlay.bitmap == nullptr) {
+      continue;
+    }
+    const D2D1_SIZE_F source_size = overlay.bitmap->GetSize();
+    if (source_size.width <= 0.0F || source_size.height <= 0.0F) {
+      continue;
+    }
+    const D2D1_RECT_F source =
+        D2D1::RectF(0.0F, 0.0F, source_size.width, source_size.height);
+    const D2D1_RECT_F destination = DecodeSogouOverlayBounds(
+        overlay.overlay, source_size, surface_size, layout_scale_);
+    render_target_->DrawBitmap(overlay.bitmap.Get(), destination, 1.0F,
+                               D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                               source);
+  }
+}
+
+void CandidateWindow::DrawSurfaceSeparator(float y) {
+  if (render_target_ == nullptr) {
+    return;
+  }
+  const auto& separator = ActiveThemeSurface().separator;
+  if (!separator.has_value()) {
+    if (UsesSogouRendering()) {
+      return;
+    }
+    render_target_->DrawLine(
+        D2D1::Point2F(kHorizontalPadding * layout_scale_, y),
+        D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, y),
+        muted_brush_.Get(), 0.5F);
+    return;
+  }
+
+  const float unit_scale = ThemeUnitScale();
+  const float left = std::min(static_cast<float>(separator->left) * unit_scale,
+                              window_width_);
+  const float right =
+      std::max(left, window_width_ -
+                         static_cast<float>(separator->right) * unit_scale);
+  const float thickness =
+      std::max(static_cast<float>(separator->thickness) * unit_scale, 0.5F);
+  if (surface_bitmaps_.separator != nullptr) {
+    const D2D1_SIZE_F bitmap_size = surface_bitmaps_.separator->GetSize();
+    const D2D1_RECT_F source =
+        D2D1::RectF(0.0F, 0.0F, bitmap_size.width, bitmap_size.height);
+    const D2D1_RECT_F destination =
+        D2D1::RectF(left, y - thickness / 2.0F, right, y + thickness / 2.0F);
+    DrawBitmapPatch(render_target_.Get(), surface_bitmaps_.separator.Get(), source,
+                    destination, core::ThemeImageLayout::kTile,
+                    core::ThemeImageLayout::kStretch, layout_scale_);
+    return;
+  }
+  render_target_->DrawLine(D2D1::Point2F(left, y), D2D1::Point2F(right, y),
+                           separator_brush_.Get(), thickness);
+}
+
+bool CandidateWindow::DrawThemeButton(const ButtonBitmaps& bitmaps,
+                                      const D2D1_RECT_F& bounds, bool hovered,
+                                      bool pressed) {
+  ID2D1Bitmap* bitmap = nullptr;
+  if (pressed && bitmaps.pressed != nullptr) {
+    bitmap = bitmaps.pressed.Get();
+  } else if (hovered && bitmaps.hover != nullptr) {
+    bitmap = bitmaps.hover.Get();
+  } else {
+    bitmap = bitmaps.normal.Get();
+  }
+  if (bitmap == nullptr || render_target_ == nullptr) {
+    return false;
+  }
+
+  const D2D1_SIZE_F source_size = bitmap->GetSize();
+  const float bounds_width = bounds.right - bounds.left;
+  const float bounds_height = bounds.bottom - bounds.top;
+  if (source_size.width <= 0.0F || source_size.height <= 0.0F ||
+      bounds_width <= 0.0F || bounds_height <= 0.0F) {
+    return false;
+  }
+  const float desired_width = source_size.width * layout_scale_;
+  const float desired_height = source_size.height * layout_scale_;
+  const float fit_scale =
+      std::min({1.0F, bounds_width / desired_width, bounds_height / desired_height});
+  const float width = desired_width * fit_scale;
+  const float height = desired_height * fit_scale;
+  const float center_x = (bounds.left + bounds.right) / 2.0F;
+  const float center_y = (bounds.top + bounds.bottom) / 2.0F;
+  const D2D1_RECT_F destination =
+      D2D1::RectF(center_x - width / 2.0F, center_y - height / 2.0F,
+                  center_x + width / 2.0F, center_y + height / 2.0F);
+  render_target_->DrawBitmap(bitmap, destination, 1.0F,
+                             D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
   return true;
 }
 
@@ -566,46 +1531,42 @@ void CandidateWindow::Paint() {
 
   if (EnsureDeviceResources()) {
     render_target_->BeginDraw();
-    const core::CandidatePalette palette =
-        core::ResolveCandidatePalette(settings_, dark_theme_);
-    render_target_->Clear(D2D1::ColorF(palette.candidate_background_color));
+    DrawSurfaceBackground();
+    DrawSurfaceOverlays();
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
     const auto page_window = core::MakeCandidatePageWindow(
         snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
     const auto slice = page_window.visible;
-    const float preedit_bottom =
-        (horizontal ? kHorizontalPreeditHeight : kPreeditHeight) * layout_scale_;
+    const float preedit_bottom = preedit_height_;
     render_target_->DrawTextW(
         snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
         preedit_format_.Get(),
-        D2D1::RectF(kHorizontalPadding * layout_scale_, 10.0F * layout_scale_,
-                    window_width_ - kHorizontalPadding * layout_scale_,
-                    preedit_bottom),
+        D2D1::RectF(preedit_insets_.left, preedit_insets_.top,
+                    window_width_ - preedit_insets_.right,
+                    std::max(preedit_insets_.top,
+                             preedit_bottom - preedit_insets_.bottom)),
         preedit_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
     if (slice.count != 0) {
-      render_target_->DrawLine(
-          D2D1::Point2F(kHorizontalPadding * layout_scale_, preedit_bottom),
-          D2D1::Point2F(window_width_ - kHorizontalPadding * layout_scale_, preedit_bottom),
-          muted_brush_.Get(), 0.5F);
+      DrawSurfaceSeparator(preedit_bottom);
     }
     for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
       const std::size_t candidate_index = slice.offset + visible_index;
       const float cell_width = horizontal && visible_index < candidate_widths_.size()
                                    ? candidate_widths_[visible_index]
-                                   : window_width_ - 16.0F * layout_scale_;
+                                   : window_width_ - candidate_insets_.left -
+                                         candidate_insets_.right;
       const float left = horizontal && visible_index < candidate_lefts_.size()
                              ? candidate_lefts_[visible_index]
-                             : 8.0F * layout_scale_;
+                             : candidate_insets_.left;
       const float top = horizontal && visible_index < candidate_tops_.size()
                             ? candidate_tops_[visible_index]
-                            : (kHorizontalPadding + kPreeditHeight +
-                               static_cast<float>(visible_index) * kCandidateHeight) *
-                                  layout_scale_;
+                            : preedit_height_ + candidate_insets_.top +
+                                  static_cast<float>(visible_index) *
+                                      candidate_row_height_;
       const float right = horizontal ? left + cell_width - 2.0F * layout_scale_
-                                     : window_width_ - 8.0F * layout_scale_;
-      const float row_height =
-          (horizontal ? kHorizontalCandidateHeight : kCandidateHeight) * layout_scale_;
+                                     : window_width_ - candidate_insets_.right;
+      const float row_height = candidate_row_height_;
       const D2D1_RECT_F row =
           D2D1::RectF(left, top + 1.0F, right, top + row_height - 1.0F);
       if (candidate_index == snapshot_.highlighted_index) {
@@ -623,12 +1584,14 @@ void CandidateWindow::Paint() {
       const auto& annotation = snapshot_.candidates[candidate_index].annotation;
       const float vertical_annotation_left =
           annotation.empty()
-              ? window_width_ - kHorizontalPadding * layout_scale_
-              : std::max(300.0F * layout_scale_, window_width_ - 120.0F * layout_scale_);
+              ? window_width_ - candidate_insets_.right
+              : std::max(candidate_insets_.left + 180.0F * layout_scale_,
+                         window_width_ - candidate_insets_.right -
+                             120.0F * layout_scale_);
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
                                 D2D1::RectF(horizontal ? left + 8.0F * layout_scale_
-                                                       : kHorizontalPadding * layout_scale_,
+                                                       : candidate_insets_.left,
                                             top,
                                             horizontal ? right - 6.0F * layout_scale_
                                                        : vertical_annotation_left -
@@ -643,21 +1606,32 @@ void CandidateWindow::Paint() {
         render_target_->DrawTextW(
             annotation.c_str(), static_cast<UINT32>(annotation.size()), annotation_format_.Get(),
             D2D1::RectF(vertical_annotation_left, top + 4.0F * layout_scale_,
-                        window_width_ - kHorizontalPadding * layout_scale_,
-                        top + kCandidateHeight * layout_scale_),
+                        window_width_ - candidate_insets_.right,
+                        top + candidate_row_height_),
             muted_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
       }
     }
 
     if (horizontal && slice.count != 0) {
-      const float action_left =
-          can_expand_ ? expand_button_bounds_.left : menu_button_bounds_.left;
-      render_target_->DrawLine(
-          D2D1::Point2F(action_left, menu_button_bounds_.top + 4.0F * layout_scale_),
-          D2D1::Point2F(action_left, menu_button_bounds_.bottom - 4.0F * layout_scale_),
-          muted_brush_.Get(), 0.5F);
-
+      bool drew_expand_image = false;
       if (can_expand_) {
+        const ButtonBitmaps& expand_bitmaps =
+            expanded_ ? surface_bitmaps_.collapse : surface_bitmaps_.expand;
+        drew_expand_image =
+            DrawThemeButton(expand_bitmaps, expand_button_bounds_,
+                            expand_button_hovered_, expand_button_pressed_);
+      }
+      const bool drew_menu_image =
+          DrawThemeButton(surface_bitmaps_.menu, menu_button_bounds_,
+                          menu_button_hovered_, menu_button_pressed_);
+
+      if (can_expand_ && !drew_expand_image && !UsesSogouRendering()) {
+        render_target_->DrawLine(
+            D2D1::Point2F(expand_button_bounds_.left,
+                          expand_button_bounds_.top + 4.0F * layout_scale_),
+            D2D1::Point2F(expand_button_bounds_.left,
+                          expand_button_bounds_.bottom - 4.0F * layout_scale_),
+            muted_brush_.Get(), 0.5F);
         const float center_x =
             (expand_button_bounds_.left + expand_button_bounds_.right) / 2.0F;
         const float center_y =
@@ -673,30 +1647,42 @@ void CandidateWindow::Paint() {
             D2D1::Point2F(center_x + 6.0F * layout_scale_,
                           center_y - direction * 3.0F * layout_scale_),
             text_brush_.Get(), 1.6F * layout_scale_);
+      }
+
+      if (!drew_menu_image && !UsesSogouRendering()) {
         render_target_->DrawLine(
             D2D1::Point2F(menu_button_bounds_.left,
                           menu_button_bounds_.top + 4.0F * layout_scale_),
             D2D1::Point2F(menu_button_bounds_.left,
                           menu_button_bounds_.bottom - 4.0F * layout_scale_),
             muted_brush_.Get(), 0.5F);
-      }
-
-      const float menu_center_x =
-          (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F;
-      const float menu_center_y =
-          (menu_button_bounds_.top + menu_button_bounds_.bottom) / 2.0F;
-      for (const float offset : {-6.0F, 0.0F, 6.0F}) {
-        render_target_->DrawLine(
-            D2D1::Point2F(menu_center_x - 10.0F * layout_scale_,
-                          menu_center_y + offset * layout_scale_),
-            D2D1::Point2F(menu_center_x + 10.0F * layout_scale_,
-                          menu_center_y + offset * layout_scale_),
-            text_brush_.Get(), 1.4F * layout_scale_);
+        const float menu_center_x =
+            (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F;
+        const float menu_center_y =
+            (menu_button_bounds_.top + menu_button_bounds_.bottom) / 2.0F;
+        for (const float offset : {-6.0F, 0.0F, 6.0F}) {
+          render_target_->DrawLine(
+              D2D1::Point2F(menu_center_x - 10.0F * layout_scale_,
+                            menu_center_y + offset * layout_scale_),
+              D2D1::Point2F(menu_center_x + 10.0F * layout_scale_,
+                            menu_center_y + offset * layout_scale_),
+              text_brush_.Get(), 1.4F * layout_scale_);
+        }
       }
     }
 
-    if (render_target_->EndDraw() == D2DERR_RECREATE_TARGET) {
+    const HRESULT draw_result = render_target_->EndDraw();
+    if (draw_result == D2DERR_RECREATE_TARGET || FAILED(draw_result)) {
       DiscardDeviceResources();
+      InvalidateRect(window_, nullptr, FALSE);
+    } else if (layered_rendering_enabled_ && !PresentLayeredSurface()) {
+      DiscardDeviceResources();
+      if (!layered_present_retry_attempted_) {
+        layered_present_retry_attempted_ = true;
+        InvalidateRect(window_, nullptr, FALSE);
+      }
+    } else {
+      layered_present_retry_attempted_ = false;
     }
   }
 
@@ -704,15 +1690,21 @@ void CandidateWindow::Paint() {
 }
 
 void CandidateWindow::DiscardDeviceResources() {
+  surface_bitmaps_ = {};
   preedit_format_.Reset();
   candidate_format_.Reset();
   annotation_format_.Reset();
+  separator_brush_.Reset();
   accent_brush_.Reset();
   muted_brush_.Reset();
   highlighted_text_brush_.Reset();
+  background_brush_.Reset();
+  surface_border_brush_.Reset();
   preedit_brush_.Reset();
   text_brush_.Reset();
   render_target_.Reset();
+  hwnd_render_target_.Reset();
+  ReleaseLayeredSurface();
 }
 
 }  // namespace ziliu::ui

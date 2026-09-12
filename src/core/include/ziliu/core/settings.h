@@ -79,6 +79,7 @@ struct Settings {
   bool fuzzy_uan_uang = false;
   bool smart_numeric_punctuation = true;
   ThemeMode theme_mode = ThemeMode::kSystem;
+  std::string active_theme_id = "org.ziliu.default";
   CandidatePageMode candidate_page_mode = CandidatePageMode::kSingleLine;
   bool custom_candidate_colors = false;
   std::uint32_t preedit_color = 0x202124;

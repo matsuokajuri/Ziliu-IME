@@ -47,11 +47,41 @@
             <Style x:Key="PageStackStyle" TargetType="StackPanel">
                 <Setter Property="MaxWidth" Value="900" />
                 <Setter Property="Padding" Value="36,28,36,40" />
-                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
             </Style>
         </Grid.Resources>
 
         <Grid x:Name="SettingsRoot">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup x:Name="SettingsWidthStates">
+                    <VisualState x:Name="WideSettingsLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="720" />
+                        </VisualState.StateTriggers>
+                    </VisualState>
+                    <VisualState x:Name="NarrowSettingsLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="CommonPageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="CorrectionPageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="FuzzyPageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="PunctuationPageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="AppearancePageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="ThemePageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="KeysPageContent.Padding" Value="20,20,20,32" />
+                            <Setter Target="CandidatePreviewHost.Height" Value="190" />
+                            <Setter Target="ThemeHeaderGrid.ColumnSpacing" Value="0" />
+                            <Setter Target="ThemeHeaderGrid.RowSpacing" Value="12" />
+                            <Setter Target="ImportThemeButton.(Grid.Row)" Value="1" />
+                            <Setter Target="ImportThemeButton.(Grid.Column)" Value="0" />
+                            <Setter Target="ImportThemeButton.HorizontalAlignment" Value="Left" />
+                            <Setter Target="ImportThemeButton.Margin" Value="0,4,0,0" />
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
             <Grid.RowDefinitions>
                 <RowDefinition Height="32" />
                 <RowDefinition Height="*" />
@@ -63,10 +93,12 @@
                 Grid.Row="1"
                 IsBackButtonVisible="Collapsed"
                 IsSettingsVisible="False"
-                IsPaneToggleButtonVisible="False"
+                IsPaneToggleButtonVisible="True"
                 IsTitleBarAutoPaddingEnabled="False"
                 OpenPaneLength="210"
-                PaneDisplayMode="Left"
+                CompactModeThresholdWidth="640"
+                ExpandedModeThresholdWidth="1008"
+                PaneDisplayMode="Auto"
                 SelectionFollowsFocus="Disabled">
                 <NavigationView.PaneHeader>
                     <StackPanel Margin="12,14,12,18" Orientation="Horizontal" Spacing="12">
@@ -98,8 +130,8 @@
                 </NavigationView.MenuItems>
 
                 <Grid>
-                    <ScrollViewer x:Name="CommonPage" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="CommonPage" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="CommonPageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="常用" Style="{StaticResource ZiliuTitleStyle}" />
 
                             <TextBlock Text="默认状态" Style="{StaticResource SectionLabelStyle}" />
@@ -111,16 +143,16 @@
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                                     <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="中文 / 英文" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="DefaultInputModeCombo" Grid.Column="1" MinWidth="150"><ComboBoxItem Content="中文"/><ComboBoxItem Content="英文"/></ComboBox></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="只显示全汉字候选" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="候选词中仅显示全部由汉字组成的内容" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="ChineseCandidatesOnlyToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="只显示全汉字候选" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="候选词中仅显示全部由汉字组成的内容" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="ChineseCandidatesOnlyToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                 </StackPanel>
                             </Border>
 
                             <TextBlock Text="输入习惯" Style="{StaticResource SectionLabelStyle}" />
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
-                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="首字母简拼" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="允许使用每个音节的首字母快速输入" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="InitialismToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="首字母简拼" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="允许使用每个音节的首字母快速输入" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="InitialismToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="拼音纠错" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="自动识别常见的拼音键入错误" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="SpellingCorrectionToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="拼音纠错" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="自动识别常见的拼音键入错误" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="SpellingCorrectionToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                                     <Button x:Name="CorrectionSettingsButton" Padding="20,14" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0"><Grid Width="Auto"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="拼音纠错设置" Style="{StaticResource ZiliuBodyStyle}"/><FontIcon Grid.Column="1" Glyph="&#xE76C;"/></Grid></Button>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
@@ -131,9 +163,9 @@
                             <TextBlock Text="标点符号" Style="{StaticResource SectionLabelStyle}" />
                             <Border Style="{StaticResource SettingsCardStyle}">
                                 <StackPanel>
-                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="自动补全成对标点" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="输入左引号、左括号或左书名号时自动补全右侧符号" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="AutoPairToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="自动补全成对标点" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="输入左引号、左括号或左书名号时自动补全右侧符号" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="AutoPairToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="智能调整数字后标点" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="数字后的逗号和句号优先使用半角形式" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="SmartNumericPunctuationToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                    <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="智能调整数字后标点" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="数字后的逗号和句号优先使用半角形式" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="SmartNumericPunctuationToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                     <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
                                     <Button x:Name="PunctuationSettingsButton" Padding="20,14" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="自定义标点" Style="{StaticResource ZiliuBodyStyle}"/><FontIcon Grid.Column="1" Glyph="&#xE76C;"/></Grid></Button>
                                 </StackPanel>
@@ -141,8 +173,8 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="CorrectionPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="CorrectionPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="CorrectionPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="CorrectionBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="拼音纠错" Style="{StaticResource ZiliuTitleStyle}"/>
                             <TextBlock Text="选择需要启用的常见纠错规则" Style="{StaticResource SectionLabelStyle}"/>
@@ -158,8 +190,8 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="FuzzyPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="FuzzyPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="FuzzyPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="FuzzyBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="模糊音" Style="{StaticResource ZiliuTitleStyle}"/>
                             <TextBlock Text="请选择您希望使用的模糊音" Style="{StaticResource SectionLabelStyle}"/>
@@ -176,8 +208,8 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="PunctuationPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="PunctuationPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="PunctuationPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="PunctuationBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="自定义标点" Style="{StaticResource ZiliuTitleStyle}"/>
                             <TextBlock Text="当前中文标点映射" Style="{StaticResource SectionLabelStyle}"/>
@@ -195,15 +227,34 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="AppearancePageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="外观" Style="{StaticResource ZiliuTitleStyle}"/>
-                            <Border Margin="0,22,0,0" Padding="28" CornerRadius="12" Background="{ThemeResource LayerFillColorAltBrush}">
-                                <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalContentAlignment="Center" VerticalScrollBarVisibility="Disabled" ZoomMode="Disabled">
-                                    <Border x:Name="CandidatePreviewWindow" HorizontalAlignment="Center" BorderThickness="1" CornerRadius="10">
+                            <Border x:Name="CandidatePreviewSection"
+                                    Margin="0,22,0,0"
+                                    Padding="28"
+                                    CornerRadius="12"
+                                    Background="{ThemeResource LayerFillColorAltBrush}">
+                                <Grid x:Name="CandidatePreviewHost" Height="250">
+                                    <StackPanel x:Name="CandidatePreviewUnavailable"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Spacing="8"
+                                                AutomationProperties.Name="候选窗口预览暂不可用">
+                                        <FontIcon FontSize="24"
+                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                  Glyph="&#xE7BA;"/>
+                                        <TextBlock Text="候选窗口预览暂不可用"
+                                                   Style="{StaticResource ZiliuBodyStyle}"
+                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="设置仍会正常应用到输入法"
+                                                   Style="{StaticResource RowHintStyle}"
+                                                   HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                    <Border x:Name="CandidatePreviewWindow" Visibility="Collapsed" HorizontalAlignment="Center" BorderThickness="1" CornerRadius="10">
                                         <StackPanel x:Name="CandidatePreviewContent"/>
                                     </Border>
-                                </ScrollViewer>
+                                </Grid>
                             </Border>
                             <TextBlock Text="个性化" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
@@ -229,40 +280,65 @@
                             </StackPanel></Border>
                             <TextBlock Text="候选窗口样式" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
-                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="更换颜色" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="分别设置拼音串、焦点候选、其他候选和背景颜色" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="CustomColorsToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="更换颜色" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="分别设置拼音串、焦点候选、其他候选和背景颜色" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="CustomColorsToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                 <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                <Grid x:Name="CandidateColorControls" Margin="20,14" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Grid x:Name="CandidateColorControls" Margin="20,14" ColumnSpacing="12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition x:Name="CandidateColorColumn2" Width="*"/><ColumnDefinition x:Name="CandidateColorColumn3" Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                                     <DropDownButton x:Name="PreeditColorButton" HorizontalAlignment="Stretch"><StackPanel Orientation="Horizontal" Spacing="8"><Rectangle x:Name="PreeditColorSwatch" Width="16" Height="16" RadiusX="3" RadiusY="3"/><TextBlock Text="拼音串"/></StackPanel><DropDownButton.Flyout><Flyout><ColorPicker x:Name="PreeditColorPicker" IsAlphaEnabled="False" IsColorSpectrumVisible="True" IsColorPreviewVisible="True" IsColorSliderVisible="True" IsMoreButtonVisible="False"/></Flyout></DropDownButton.Flyout></DropDownButton>
                                     <DropDownButton x:Name="HighlightedColorButton" Grid.Column="1" HorizontalAlignment="Stretch"><StackPanel Orientation="Horizontal" Spacing="8"><Rectangle x:Name="HighlightedColorSwatch" Width="16" Height="16" RadiusX="3" RadiusY="3"/><TextBlock Text="焦点候选"/></StackPanel><DropDownButton.Flyout><Flyout><ColorPicker x:Name="HighlightedColorPicker" IsAlphaEnabled="False" IsColorSpectrumVisible="True" IsColorPreviewVisible="True" IsColorSliderVisible="True" IsMoreButtonVisible="False"/></Flyout></DropDownButton.Flyout></DropDownButton>
                                     <DropDownButton x:Name="CandidateTextColorButton" Grid.Column="2" HorizontalAlignment="Stretch"><StackPanel Orientation="Horizontal" Spacing="8"><Rectangle x:Name="CandidateTextColorSwatch" Width="16" Height="16" RadiusX="3" RadiusY="3"/><TextBlock Text="其他候选"/></StackPanel><DropDownButton.Flyout><Flyout><ColorPicker x:Name="CandidateTextColorPicker" IsAlphaEnabled="False" IsColorSpectrumVisible="True" IsColorPreviewVisible="True" IsColorSliderVisible="True" IsMoreButtonVisible="False"/></Flyout></DropDownButton.Flyout></DropDownButton>
                                     <DropDownButton x:Name="BackgroundColorButton" Grid.Column="3" HorizontalAlignment="Stretch"><StackPanel Orientation="Horizontal" Spacing="8"><Rectangle x:Name="BackgroundColorSwatch" Width="16" Height="16" RadiusX="3" RadiusY="3"/><TextBlock Text="背景"/></StackPanel><DropDownButton.Flyout><Flyout><ColorPicker x:Name="BackgroundColorPicker" IsAlphaEnabled="False" IsColorSpectrumVisible="True" IsColorPreviewVisible="True" IsColorSliderVisible="True" IsMoreButtonVisible="False"/></Flyout></DropDownButton.Flyout></DropDownButton>
                                 </Grid>
                                 <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="更换字体" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ToggleSwitch x:Name="CustomFontsToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
-                                <Grid Margin="20,0,20,14" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><StackPanel Spacing="6"><TextBlock Text="中文" Style="{StaticResource RowHintStyle}"/><ComboBox x:Name="CandidateChineseFontCombo" MaxDropDownHeight="420" HorizontalAlignment="Stretch"/></StackPanel><StackPanel Grid.Column="1" Spacing="6"><TextBlock Text="英文" Style="{StaticResource RowHintStyle}"/><ComboBox x:Name="CandidateEnglishFontCombo" MaxDropDownHeight="420" HorizontalAlignment="Stretch"/></StackPanel></Grid>
+                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="更换字体" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ToggleSwitch x:Name="CustomFontsToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
+                                <Grid x:Name="CandidateFontsGrid" Margin="20,0,20,14" ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="CandidateFontsSecondColumn" Width="*"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><StackPanel x:Name="CandidateChineseFontPanel" Spacing="6"><TextBlock Text="中文" Style="{StaticResource RowHintStyle}"/><ComboBox x:Name="CandidateChineseFontCombo" MaxDropDownHeight="420" HorizontalAlignment="Stretch"/></StackPanel><StackPanel x:Name="CandidateEnglishFontPanel" Grid.Column="1" Spacing="6"><TextBlock Text="英文" Style="{StaticResource RowHintStyle}"/><ComboBox x:Name="CandidateEnglishFontCombo" MaxDropDownHeight="420" HorizontalAlignment="Stretch"/></StackPanel></Grid>
                                 <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="更换字号" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="CandidateFontSizeCombo" Grid.Column="1" MinWidth="130"><ComboBoxItem Content="14 px"/><ComboBoxItem Content="15 px"/><ComboBoxItem Content="16 px"/><ComboBoxItem Content="17 px"/><ComboBoxItem Content="18 px"/><ComboBoxItem Content="19 px"/><ComboBoxItem Content="20 px"/><ComboBoxItem Content="21 px"/><ComboBoxItem Content="22 px"/><ComboBoxItem Content="23 px"/><ComboBoxItem Content="24 px"/></ComboBox><ToggleSwitch x:Name="CustomFontSizeToggle" Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"/></Grid></Border>
+                                <Border Padding="20,13"><Grid x:Name="CandidateFontSizeGrid" ColumnSpacing="24" RowSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition x:Name="CandidateFontSizeThirdColumn" Width="Auto"/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBlock Text="更换字号" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="CandidateFontSizeCombo" Grid.Column="1" MinWidth="130"><ComboBoxItem Content="14 px"/><ComboBoxItem Content="15 px"/><ComboBoxItem Content="16 px"/><ComboBoxItem Content="17 px"/><ComboBoxItem Content="18 px"/><ComboBoxItem Content="19 px"/><ComboBoxItem Content="20 px"/><ComboBoxItem Content="21 px"/><ComboBoxItem Content="22 px"/><ComboBoxItem Content="23 px"/><ComboBoxItem Content="24 px"/></ComboBox><ToggleSwitch x:Name="CustomFontSizeToggle" Grid.Column="2" Margin="12,0,0,0" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                                 <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
-                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="皮肤随字体缩放" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="字号变化时同步调整候选窗口的间距和高度" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="CandidateScaleToggle" Grid.Column="1" VerticalAlignment="Center"/></Grid></Border>
+                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="皮肤随字体缩放" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="字号变化时同步调整候选窗口的间距和高度" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="CandidateScaleToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
                             </StackPanel></Border>
                             <Button x:Name="ResetAppearanceButton" Margin="0,20,0,0" HorizontalAlignment="Center" Content="恢复外观默认设置"/>
+                            <InfoBar x:Name="AppearanceInfoBar"
+                                     Margin="0,12,0,0"
+                                     IsOpen="False"
+                                     IsClosable="True"/>
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="ThemePage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
-                            <Button x:Name="ThemeBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon Glyph="&#xE72B;"/>
+                    <ScrollViewer x:Name="ThemePage"
+                                  Visibility="Collapsed"
+                                  HorizontalContentAlignment="Stretch"
+                                  VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="ThemePageContent" Style="{StaticResource PageStackStyle}" HorizontalAlignment="Stretch">
+                            <Button x:Name="ThemeBackButton" Padding="6,4" Margin="-6,0,0,18" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <FontIcon FontSize="14" Glyph="&#xE72B;"/>
                                     <TextBlock Text="返回外观"/>
                                 </StackPanel>
                             </Button>
-                            <TextBlock Text="主题" Style="{StaticResource ZiliuTitleStyle}"/>
+                            <Grid x:Name="ThemeHeaderGrid" ColumnSpacing="24">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="主题" Style="{StaticResource ZiliuTitleStyle}"/>
+                          <TextBlock Text="选择候选窗口外观，或从本地导入字流或搜狗主题包" Style="{StaticResource RowHintStyle}"/>
+                                </StackPanel>
+                                <Button x:Name="ImportThemeButton" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource AccentButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon FontSize="15" Glyph="&#xE8E5;"/>
+                                        <TextBlock Text="导入主题"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <InfoBar x:Name="ThemeInfoBar" Margin="0,16,0,0" IsOpen="False" IsClosable="True"/>
+                            <TextBlock Text="已安装主题" Style="{StaticResource SectionLabelStyle}"/>
+                            <Border Style="{StaticResource SettingsCardStyle}">
+                                <StackPanel x:Name="ThemeList"/>
+                            </Border>
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="KeysPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Style="{StaticResource PageStackStyle}">
+                    <ScrollViewer x:Name="KeysPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="KeysPageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="按键" Style="{StaticResource ZiliuTitleStyle}"/>
                             <TextBlock Text="快捷键" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>

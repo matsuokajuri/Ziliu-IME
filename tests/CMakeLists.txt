@@ -4,6 +4,48 @@ ziliu_configure_target(ziliu_core_tests)
 
 add_test(NAME ziliu_core_tests COMMAND ziliu_core_tests)
 
+add_executable(ziliu_ui_sogou_horizontal_layout_tests ui_sogou_horizontal_layout_tests.cpp)
+ziliu_configure_target(ziliu_ui_sogou_horizontal_layout_tests)
+add_test(NAME ziliu_ui_sogou_horizontal_layout_tests COMMAND ziliu_ui_sogou_horizontal_layout_tests)
+
+add_executable(ziliu_ui_overlay_layout_tests ui_overlay_layout_tests.cpp)
+ziliu_configure_target(ziliu_ui_overlay_layout_tests)
+
+add_test(
+  NAME ziliu_ui_overlay_layout_tests
+  COMMAND ziliu_ui_overlay_layout_tests)
+
+add_executable(ziliu_ui_coordinate_space_tests ui_coordinate_space_tests.cpp)
+ziliu_configure_target(ziliu_ui_coordinate_space_tests)
+
+add_test(
+  NAME ziliu_ui_coordinate_space_tests
+  COMMAND ziliu_ui_coordinate_space_tests)
+
+add_executable(ziliu_theme_manifest_tests theme_manifest_tests.cpp)
+target_link_libraries(ziliu_theme_manifest_tests PRIVATE ziliu_core)
+ziliu_configure_target(ziliu_theme_manifest_tests)
+
+add_test(NAME ziliu_theme_manifest_tests COMMAND ziliu_theme_manifest_tests)
+
+add_executable(ziliu_sogou_theme_tests sogou_theme_tests.cpp)
+target_link_libraries(ziliu_sogou_theme_tests PRIVATE ziliu_core)
+ziliu_configure_target(ziliu_sogou_theme_tests)
+
+add_test(NAME ziliu_sogou_theme_tests COMMAND ziliu_sogou_theme_tests)
+
+if(WIN32)
+  add_executable(ziliu_sogou_ssf_container_tests
+    sogou_ssf_container_tests.cpp
+    ../src/settings/sogou_ssf_container.cpp)
+  target_link_libraries(ziliu_sogou_ssf_container_tests PRIVATE bcrypt)
+  ziliu_configure_target(ziliu_sogou_ssf_container_tests)
+
+  add_test(
+    NAME ziliu_sogou_ssf_container_tests
+    COMMAND ziliu_sogou_ssf_container_tests)
+endif()
+
 add_executable(ziliu_ipc_tests ipc_tests.cpp)
 target_link_libraries(ziliu_ipc_tests PRIVATE ziliu_ipc_client ziliu_ipc_server)
 ziliu_configure_target(ziliu_ipc_tests)

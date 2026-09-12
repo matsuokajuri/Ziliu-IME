@@ -22,6 +22,8 @@ struct CompositionSnapshot {
   std::wstring preedit;
   std::vector<Candidate> candidates;
   std::size_t highlighted_index = 0;
+  bool has_previous_page = false;
+  bool has_next_page = false;
 
   [[nodiscard]] bool empty() const noexcept { return preedit.empty(); }
   [[nodiscard]] std::wstring plain_text() const {

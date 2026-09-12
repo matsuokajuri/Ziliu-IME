@@ -4,6 +4,12 @@
 #include "pch.h"
 
 #include "ziliu/core/settings.h"
+#include "ziliu/core/theme_catalog.h"
+#include "ziliu/ui/candidate_window.h"
+
+#include <optional>
+#include <string_view>
+#include <vector>
 
 namespace winrt::ZiliuSettings::implementation {
 
@@ -20,11 +26,25 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShowSettingsPage(std::wstring_view page);
   void ApplyThemeFromControls();
   void UpdateAppearanceControlStates();
+  void UpdateAppearanceResponsiveLayout();
   void UpdateColorSwatches();
   void UpdateCandidatePreview();
-  void SaveFromControls();
+  void EnsureCandidatePreview();
+  [[nodiscard]] std::optional<RECT> CandidatePreviewBounds();
+  void ReloadThemeCatalog();
+  void RebuildThemeList();
+  bool SelectTheme(std::string_view theme_id);
+  winrt::fire_and_forget ImportTheme();
+  winrt::fire_and_forget DeleteTheme(std::string theme_id);
+  bool SaveFromControls();
 
   ziliu::core::Settings settings_;
+  ziliu::ui::CandidateWindow candidate_preview_;
+  std::vector<ziliu::core::InstalledTheme> installed_themes_;
+  bool candidate_preview_ready_ = false;
+  bool suppress_appearance_events_ = false;
+  std::optional<bool> appearance_layout_narrow_;
+  bool theme_dialog_open_ = false;
   bool quick_menu_animation_started_ = false;
   Microsoft::UI::Dispatching::DispatcherQueueTimer quick_menu_close_arm_timer_{nullptr};
 };

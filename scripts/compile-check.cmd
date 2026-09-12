@@ -38,6 +38,10 @@ call :compile "!ROOT!\src\core\src\settings.cpp" core_settings /I"!ROOT!\src\cor
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\core\src\session_host.cpp" core_session_host /I"!ROOT!\src\core\include"
 if errorlevel 1 exit /b !errorlevel!
+call :compile "!ROOT!\src\core\src\theme_manifest.cpp" core_theme_manifest /I"!ROOT!\src\core\include"
+if errorlevel 1 exit /b !errorlevel!
+call :compile "!ROOT!\src\core\src\theme_catalog.cpp" core_theme_catalog /I"!ROOT!\src\core\include"
+if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\ipc\src\pipe_client.cpp" ipc_client /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\src\ipc\src\pipe_server.cpp" ipc_server /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include"
@@ -57,6 +61,8 @@ if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\tools\register\register_main.cpp" register /I"!ROOT!\src\tsf\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\tests\core_tests.cpp" core_tests /I"!ROOT!\src\core\include"
+if errorlevel 1 exit /b !errorlevel!
+call :compile "!ROOT!\tests\theme_manifest_tests.cpp" theme_manifest_tests /I"!ROOT!\src\core\include"
 if errorlevel 1 exit /b !errorlevel!
 call :compile "!ROOT!\tests\ipc_tests.cpp" ipc_tests /I"!ROOT!\src\core\include" /I"!ROOT!\src\ipc\include"
 if errorlevel 1 exit /b !errorlevel!

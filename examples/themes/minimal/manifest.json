@@ -1,0 +1,45 @@
+{
+  "format_version": 1,
+  "id": "org.ziliu.example.minimal",
+  "name": "字流清简",
+  "author": "Ziliu Project",
+  "version": "1.0.0",
+  "license": "GPL-3.0-only",
+  "description": "不包含图片资源的 ZLT v1 最小示例",
+  "source_format": "zlt",
+  "base_dpi": 96,
+  "appearances": {
+    "light": {
+      "palette": {
+        "preedit_text": "#202124",
+        "candidate_text": "#202124",
+        "highlighted_candidate_text": "#0067C0",
+        "background": "#FAFAFA",
+        "highlighted_background": "#E1EFFF",
+        "muted_text": "#6B7280",
+        "separator": "#D1D5DB"
+      },
+      "typography": {
+        "chinese_font_family": "Source Han Sans SC",
+        "english_font_family": "Segoe UI Variable Text",
+        "font_size": 17
+      }
+    },
+    "dark": {
+      "palette": {
+        "preedit_text": "#F5F6F7",
+        "candidate_text": "#F5F6F7",
+        "highlighted_candidate_text": "#80C8FF",
+        "background": "#202124",
+        "highlighted_background": "#123A59",
+        "muted_text": "#A7AFBA",
+        "separator": "#4B5159"
+      },
+      "typography": {
+        "chinese_font_family": "Source Han Sans SC",
+        "english_font_family": "Segoe UI Variable Text",
+        "font_size": 17
+      }
+    }
+  }
+}

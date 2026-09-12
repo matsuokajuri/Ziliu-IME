@@ -11,5 +11,5 @@ if not defined CONFIGURATION set "CONFIGURATION=Release"
 set "OUTPUT_DIR=%~2"
 if not defined OUTPUT_DIR set "OUTPUT_DIR=%~dp0..\build\winui3-output\"
 
-"%VS_INSTALL%\MSBuild\Current\Bin\amd64\MSBuild.exe" "%~dp0..\src\settings\ZiliuSettings.vcxproj" /nologo /restore /m /v:minimal /p:Configuration=%CONFIGURATION% /p:Platform=x64 "/p:ZiliuOutputDir=%OUTPUT_DIR%"
+"%VS_INSTALL%\MSBuild\Current\Bin\amd64\MSBuild.exe" "%~dp0..\src\settings\ZiliuSettings.vcxproj" /nologo /restore /m /v:minimal /p:Configuration=%CONFIGURATION% /p:Platform=x64 "/p:ZiliuOutputDir=%OUTPUT_DIR%" "/p:RestoreSources=%USERPROFILE%\.nuget\packages" /p:NuGetAudit=false
 exit /b %errorlevel%

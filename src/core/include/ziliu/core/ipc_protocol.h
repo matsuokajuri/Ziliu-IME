@@ -10,7 +10,8 @@
 
 namespace ziliu::core::ipc {
 
-inline constexpr std::uint16_t kProtocolVersion = 4;
+inline constexpr std::uint16_t kProtocolVersion = 5;
+inline constexpr std::uint16_t kOldestCompatibleProtocolVersion = 4;
 inline constexpr std::size_t kMaximumMessageBytes = 64U * 1024U;
 inline constexpr std::size_t kMaximumCandidatesPerPage = 9;
 inline constexpr std::size_t kMaximumCandidateWindowPages = 5;
@@ -59,8 +60,16 @@ struct Response {
 };
 
 [[nodiscard]] bool EncodeRequest(const Request& request, std::vector<std::byte>* bytes);
+[[nodiscard]] bool EncodeRequest(const Request& request, std::uint16_t protocol_version,
+                                 std::vector<std::byte>* bytes);
 [[nodiscard]] bool DecodeRequest(std::span<const std::byte> bytes, Request* request);
+[[nodiscard]] bool DecodeRequest(std::span<const std::byte> bytes, Request* request,
+                                 std::uint16_t* protocol_version);
 [[nodiscard]] bool EncodeResponse(const Response& response, std::vector<std::byte>* bytes);
+[[nodiscard]] bool EncodeResponse(const Response& response, std::uint16_t protocol_version,
+                                  std::vector<std::byte>* bytes);
 [[nodiscard]] bool DecodeResponse(std::span<const std::byte> bytes, Response* response);
+[[nodiscard]] bool DecodeResponse(std::span<const std::byte> bytes, Response* response,
+                                  std::uint16_t* protocol_version);
 
 }  // namespace ziliu::core::ipc

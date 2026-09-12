@@ -435,6 +435,8 @@ class RimeEngine final : public core::Engine {
     }
     if (pinyin_letter_count_ >= core::kMaximumPinyinLetters) {
       snapshot.candidates.clear();
+      snapshot.has_previous_page = false;
+      snapshot.has_next_page = false;
     }
     return snapshot;
   }
@@ -551,6 +553,8 @@ class RimeEngine final : public core::Engine {
         snapshot.highlighted_index =
             std::min(active_page * candidate_page_size_, snapshot.candidates.size() - 1);
       }
+      snapshot.has_previous_page = !previous_page_offsets_.empty();
+      snapshot.has_next_page = NextVisiblePageOffset() >= 0;
     }
     return snapshot;
   }

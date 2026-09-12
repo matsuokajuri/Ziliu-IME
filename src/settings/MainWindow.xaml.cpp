@@ -11,17 +11,26 @@
 #include <dwrite.h>
 #include <microsoft.ui.xaml.window.h>
 #include <shellapi.h>
+#include <shobjidl.h>
 #include <wrl/client.h>
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
+#include <cctype>
+#include <cstddef>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace winrt::ZiliuSettings::implementation {
@@ -74,6 +83,1124 @@ std::optional<std::filesystem::path> SettingsFilePath() {
   }
   local_app_data.resize(length);
   return std::filesystem::path(local_app_data) / L"Ziliu" / L"settings.ini";
+}
+
+std::optional<std::filesystem::path> ThemesDirectoryPath() {
+  const auto settings_path = SettingsFilePath();
+  if (!settings_path.has_value()) {
+    return std::nullopt;
+  }
+  return settings_path->parent_path() / L"Themes";
+}
+
+std::wstring QuoteCommandLineArgument(std::wstring_view value) {
+  std::wstring quoted = L"\"";
+  std::size_t backslash_count = 0;
+  for (const wchar_t character : value) {
+    if (character == L'\\') {
+      ++backslash_count;
+      continue;
+    }
+    if (character == L'"') {
+      quoted.append(backslash_count * 2 + 1, L'\\');
+      quoted.push_back(L'"');
+      backslash_count = 0;
+      continue;
+    }
+    quoted.append(backslash_count, L'\\');
+    backslash_count = 0;
+    quoted.push_back(character);
+  }
+  quoted.append(backslash_count * 2, L'\\');
+  quoted.push_back(L'"');
+  return quoted;
+}
+
+bool RunArchiveTool(const std::filesystem::path& archive_tool,
+                    const std::vector<std::wstring>& arguments,
+                    const std::optional<std::filesystem::path>& output_path) {
+  std::wstring command_line = QuoteCommandLineArgument(archive_tool.native());
+  for (const auto& argument : arguments) {
+    command_line.push_back(L' ');
+    command_line += QuoteCommandLineArgument(argument);
+  }
+
+  HANDLE output_handle = INVALID_HANDLE_VALUE;
+  HANDLE input_handle = INVALID_HANDLE_VALUE;
+  if (output_path.has_value()) {
+    SECURITY_ATTRIBUTES security_attributes{
+        sizeof(security_attributes),
+        nullptr,
+        TRUE,
+    };
+    output_handle =
+        CreateFileW(output_path->c_str(), GENERIC_WRITE, FILE_SHARE_READ, &security_attributes,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (output_handle == INVALID_HANDLE_VALUE) {
+      return false;
+    }
+    input_handle = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                               &security_attributes, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                               nullptr);
+    if (input_handle == INVALID_HANDLE_VALUE) {
+      CloseHandle(output_handle);
+      return false;
+    }
+  }
+
+  STARTUPINFOW startup_info{sizeof(startup_info)};
+  startup_info.dwFlags = STARTF_USESHOWWINDOW;
+  startup_info.wShowWindow = SW_HIDE;
+  if (output_handle != INVALID_HANDLE_VALUE) {
+    startup_info.dwFlags |= STARTF_USESTDHANDLES;
+    startup_info.hStdOutput = output_handle;
+    startup_info.hStdError = output_handle;
+    startup_info.hStdInput = input_handle;
+  }
+  PROCESS_INFORMATION process_info{};
+  const BOOL created =
+      CreateProcessW(archive_tool.c_str(), command_line.data(), nullptr, nullptr,
+                     output_handle != INVALID_HANDLE_VALUE, CREATE_NO_WINDOW, nullptr, nullptr,
+                     &startup_info, &process_info);
+  if (output_handle != INVALID_HANDLE_VALUE) {
+    CloseHandle(output_handle);
+    CloseHandle(input_handle);
+  }
+  if (created == FALSE) {
+    return false;
+  }
+
+  const DWORD wait_result = WaitForSingleObject(process_info.hProcess, 15000);
+  if (wait_result == WAIT_TIMEOUT) {
+    static_cast<void>(TerminateProcess(process_info.hProcess, ERROR_TIMEOUT));
+    static_cast<void>(WaitForSingleObject(process_info.hProcess, 1000));
+  }
+  DWORD exit_code = std::numeric_limits<DWORD>::max();
+  static_cast<void>(GetExitCodeProcess(process_info.hProcess, &exit_code));
+  CloseHandle(process_info.hThread);
+  CloseHandle(process_info.hProcess);
+  return wait_result == WAIT_OBJECT_0 && exit_code == 0;
+}
+
+bool IsSafeArchiveEntry(std::string_view entry) {
+  while (!entry.empty() && (entry.back() == '\r' || entry.back() == '\n')) {
+    entry.remove_suffix(1);
+  }
+  if (entry.empty()) {
+    return false;
+  }
+  if (entry.back() == '/') {
+    entry.remove_suffix(1);
+  }
+  return !entry.empty() && ziliu::core::IsSafeThemeAssetPath(entry);
+}
+
+struct ArchiveEntry {
+  std::string utf8_path;
+  std::wstring wide_path;
+  bool directory = false;
+  std::uint16_t flags = 0;
+  std::uint16_t compression_method = 0;
+  std::uint32_t crc32 = 0;
+  std::uint32_t compressed_size = 0;
+  std::uint32_t uncompressed_size = 0;
+  std::uint32_t local_header_offset = 0;
+};
+
+struct ExpectedArchiveEntry {
+  std::wstring path;
+  bool directory = false;
+};
+
+struct ArchiveValidationResult {
+  std::vector<ArchiveEntry> archive_entries;
+  std::vector<ExpectedArchiveEntry> extracted_entries;
+  std::wstring error;
+
+  [[nodiscard]] bool ok() const noexcept { return error.empty(); }
+};
+
+template <typename T>
+std::optional<T> ReadLittleEndian(const std::vector<std::uint8_t>& bytes,
+                                  std::size_t offset) {
+  static_assert(std::is_unsigned_v<T>);
+  if (offset > bytes.size() || bytes.size() - offset < sizeof(T)) {
+    return std::nullopt;
+  }
+  std::uint64_t value = 0;
+  for (std::size_t index = 0; index < sizeof(T); ++index) {
+    value |= static_cast<std::uint64_t>(bytes[offset + index]) << (index * 8U);
+  }
+  return static_cast<T>(value);
+}
+
+std::optional<std::wstring> Utf8ToWide(std::string_view value) {
+  if (value.empty() ||
+      value.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return std::nullopt;
+  }
+  const int required = MultiByteToWideChar(
+      CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0);
+  if (required <= 0) {
+    return std::nullopt;
+  }
+  std::wstring wide(static_cast<std::size_t>(required), L'\0');
+  if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(),
+                          static_cast<int>(value.size()), wide.data(), required) != required) {
+    return std::nullopt;
+  }
+  return wide;
+}
+
+bool OrdinalEqualsIgnoreCase(std::wstring_view left, std::wstring_view right) {
+  if (left.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      right.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+  return CompareStringOrdinal(left.data(), static_cast<int>(left.size()), right.data(),
+                              static_cast<int>(right.size()), TRUE) == CSTR_EQUAL;
+}
+
+bool IsReservedWindowsPathComponent(std::wstring_view component) {
+  const std::size_t extension = component.find(L'.');
+  const std::wstring_view stem = component.substr(0, extension);
+  static constexpr std::array<std::wstring_view, 4> reserved_names{
+      L"CON",
+      L"PRN",
+      L"AUX",
+      L"NUL",
+  };
+  for (const auto reserved : reserved_names) {
+    if (OrdinalEqualsIgnoreCase(stem, reserved)) {
+      return true;
+    }
+  }
+  if (stem.size() == 4 &&
+      (OrdinalEqualsIgnoreCase(stem.substr(0, 3), L"COM") ||
+       OrdinalEqualsIgnoreCase(stem.substr(0, 3), L"LPT")) &&
+      stem[3] >= L'1' && stem[3] <= L'9') {
+    return true;
+  }
+  return false;
+}
+
+bool IsSafeWindowsArchivePath(std::wstring_view path) {
+  std::size_t begin = 0;
+  while (begin < path.size()) {
+    const std::size_t end = path.find(L'/', begin);
+    const std::wstring_view component =
+        path.substr(begin, end == std::wstring_view::npos ? path.size() - begin : end - begin);
+    if (component.empty() || component.back() == L'.' || component.back() == L' ' ||
+        component.find_first_of(L"<>\"|?*") != std::wstring_view::npos ||
+        IsReservedWindowsPathComponent(component)) {
+      return false;
+    }
+    if (end == std::wstring_view::npos) {
+      break;
+    }
+    begin = end + 1;
+  }
+  return true;
+}
+
+bool HasDisallowedOrMalformedZipExtra(const std::vector<std::uint8_t>& bytes,
+                                      std::size_t offset, std::size_t length) {
+  const std::size_t end = offset + length;
+  while (offset < end) {
+    if (end - offset < 4) {
+      return true;
+    }
+    const auto identifier = ReadLittleEndian<std::uint16_t>(bytes, offset);
+    const auto field_length = ReadLittleEndian<std::uint16_t>(bytes, offset + 2);
+    if (!identifier.has_value() || !field_length.has_value() ||
+        static_cast<std::size_t>(*field_length) > end - offset - 4) {
+      return true;
+    }
+    if (*identifier == 0x0001 || *identifier == 0x9901 || *identifier == 0x7075) {
+      return true;
+    }
+    offset += 4 + static_cast<std::size_t>(*field_length);
+  }
+  return false;
+}
+
+ArchiveValidationResult ValidateZltArchive(const std::filesystem::path& archive_path) {
+  const auto fail = [](std::wstring message) {
+    ArchiveValidationResult result;
+    result.error = std::move(message);
+    return result;
+  };
+
+  constexpr std::size_t kEndOfCentralDirectorySize = 22;
+  constexpr std::size_t kMaximumZipCommentBytes = 65535;
+  constexpr std::size_t kMaximumArchiveBytes =
+      ziliu::core::kMaximumThemePackageBytes * 2;
+  constexpr std::uint32_t kEndOfCentralDirectorySignature = 0x06054B50;
+  constexpr std::uint32_t kCentralDirectorySignature = 0x02014B50;
+  constexpr std::uint32_t kLocalFileHeaderSignature = 0x04034B50;
+  constexpr std::uint32_t kDataDescriptorSignature = 0x08074B50;
+
+  std::ifstream stream(archive_path, std::ios::binary | std::ios::ate);
+  if (!stream) {
+    return fail(L"无法读取所选主题包。");
+  }
+  const std::streampos end_position = stream.tellg();
+  if (end_position < static_cast<std::streampos>(kEndOfCentralDirectorySize) ||
+      end_position > static_cast<std::streampos>(kMaximumArchiveBytes)) {
+    return fail(L"主题包不是受支持的标准 ZIP，或文件过大。");
+  }
+  const auto archive_size = static_cast<std::size_t>(end_position);
+  std::vector<std::uint8_t> bytes(archive_size);
+  stream.seekg(0, std::ios::beg);
+  stream.read(reinterpret_cast<char*>(bytes.data()),
+              static_cast<std::streamsize>(bytes.size()));
+  if (!stream || stream.gcount() != static_cast<std::streamsize>(bytes.size())) {
+    return fail(L"无法完整读取所选主题包。");
+  }
+
+  const std::size_t first_eocd_offset =
+      bytes.size() > kEndOfCentralDirectorySize + kMaximumZipCommentBytes
+          ? bytes.size() - kEndOfCentralDirectorySize - kMaximumZipCommentBytes
+          : 0;
+  std::optional<std::size_t> eocd_offset;
+  for (std::size_t offset = bytes.size() - kEndOfCentralDirectorySize;; --offset) {
+    const auto signature = ReadLittleEndian<std::uint32_t>(bytes, offset);
+    const auto comment_length = ReadLittleEndian<std::uint16_t>(bytes, offset + 20);
+    if (signature == kEndOfCentralDirectorySignature && comment_length.has_value() &&
+        offset + kEndOfCentralDirectorySize + *comment_length == bytes.size()) {
+      eocd_offset = offset;
+      break;
+    }
+    if (offset == first_eocd_offset) {
+      break;
+    }
+  }
+  if (!eocd_offset.has_value()) {
+    return fail(L"主题包缺少标准 ZIP 中央目录。");
+  }
+
+  const auto disk_number = ReadLittleEndian<std::uint16_t>(bytes, *eocd_offset + 4);
+  const auto central_disk = ReadLittleEndian<std::uint16_t>(bytes, *eocd_offset + 6);
+  const auto entries_on_disk = ReadLittleEndian<std::uint16_t>(bytes, *eocd_offset + 8);
+  const auto entry_count = ReadLittleEndian<std::uint16_t>(bytes, *eocd_offset + 10);
+  const auto central_size = ReadLittleEndian<std::uint32_t>(bytes, *eocd_offset + 12);
+  const auto central_offset = ReadLittleEndian<std::uint32_t>(bytes, *eocd_offset + 16);
+  if (!disk_number.has_value() || !central_disk.has_value() ||
+      !entries_on_disk.has_value() || !entry_count.has_value() ||
+      !central_size.has_value() || !central_offset.has_value() ||
+      *disk_number != 0 || *central_disk != 0 || *entries_on_disk != *entry_count ||
+      *entry_count == 0 || *entry_count == std::numeric_limits<std::uint16_t>::max() ||
+      *central_size == std::numeric_limits<std::uint32_t>::max() ||
+      *central_offset == std::numeric_limits<std::uint32_t>::max() ||
+      *entry_count > ziliu::core::kMaximumThemePackageEntries ||
+      *central_offset > *eocd_offset || *central_size != *eocd_offset - *central_offset) {
+    return fail(L"主题包使用了不支持的分卷、ZIP64 或异常中央目录。");
+  }
+
+  ArchiveValidationResult result;
+  result.archive_entries.reserve(*entry_count);
+  std::size_t cursor = *central_offset;
+  std::uintmax_t total_bytes = 0;
+  bool has_manifest = false;
+  for (std::size_t index = 0; index < *entry_count; ++index) {
+    if (cursor > *eocd_offset || *eocd_offset - cursor < 46 ||
+        ReadLittleEndian<std::uint32_t>(bytes, cursor) != kCentralDirectorySignature) {
+      return fail(L"主题包中央目录条目损坏。");
+    }
+    const auto version_made_by = ReadLittleEndian<std::uint16_t>(bytes, cursor + 4);
+    const auto version_needed = ReadLittleEndian<std::uint16_t>(bytes, cursor + 6);
+    const auto flags = ReadLittleEndian<std::uint16_t>(bytes, cursor + 8);
+    const auto method = ReadLittleEndian<std::uint16_t>(bytes, cursor + 10);
+    const auto crc32 = ReadLittleEndian<std::uint32_t>(bytes, cursor + 16);
+    const auto compressed_size = ReadLittleEndian<std::uint32_t>(bytes, cursor + 20);
+    const auto uncompressed_size = ReadLittleEndian<std::uint32_t>(bytes, cursor + 24);
+    const auto name_length = ReadLittleEndian<std::uint16_t>(bytes, cursor + 28);
+    const auto extra_length = ReadLittleEndian<std::uint16_t>(bytes, cursor + 30);
+    const auto comment_length = ReadLittleEndian<std::uint16_t>(bytes, cursor + 32);
+    const auto disk_start = ReadLittleEndian<std::uint16_t>(bytes, cursor + 34);
+    const auto external_attributes = ReadLittleEndian<std::uint32_t>(bytes, cursor + 38);
+    const auto local_header_offset = ReadLittleEndian<std::uint32_t>(bytes, cursor + 42);
+    if (!version_made_by.has_value() || !version_needed.has_value() || !flags.has_value() ||
+        !method.has_value() || !crc32.has_value() || !compressed_size.has_value() ||
+        !uncompressed_size.has_value() || !name_length.has_value() ||
+        !extra_length.has_value() || !comment_length.has_value() ||
+        !disk_start.has_value() || !external_attributes.has_value() ||
+        !local_header_offset.has_value()) {
+      return fail(L"主题包中央目录字段不完整。");
+    }
+    const std::size_t variable_size = static_cast<std::size_t>(*name_length) +
+                                      static_cast<std::size_t>(*extra_length) +
+                                      static_cast<std::size_t>(*comment_length);
+    if (*name_length == 0 || variable_size > *eocd_offset - cursor - 46) {
+      return fail(L"主题包中央目录名称或扩展字段损坏。");
+    }
+    if (*version_needed > 20 || *disk_start != 0 ||
+        *compressed_size == std::numeric_limits<std::uint32_t>::max() ||
+        *uncompressed_size == std::numeric_limits<std::uint32_t>::max() ||
+        *local_header_offset == std::numeric_limits<std::uint32_t>::max()) {
+      return fail(L"主题包使用了 ZIP64 或不支持的 ZIP 功能。");
+    }
+    constexpr std::uint16_t kAllowedGeneralPurposeFlags = 0x080E;
+    if ((*flags & ~kAllowedGeneralPurposeFlags) != 0 ||
+        (*method != 0 && *method != 8) || (*method == 0 && (*flags & 0x0006) != 0)) {
+      return fail(L"主题包只能使用未加密的 Store 或 Deflate 压缩。");
+    }
+
+    const std::size_t name_offset = cursor + 46;
+    const std::string entry_name(
+        reinterpret_cast<const char*>(bytes.data() + name_offset), *name_length);
+    const bool has_non_ascii =
+        std::any_of(entry_name.begin(), entry_name.end(),
+                    [](unsigned char character) { return character >= 0x80; });
+    if (entry_name.find('\0') != std::string::npos ||
+        (has_non_ascii && (*flags & 0x0800) == 0) || !IsSafeArchiveEntry(entry_name)) {
+      return fail(L"主题包包含无效编码或不安全路径。");
+    }
+    const bool is_directory = entry_name.back() == '/';
+    const std::string normalized_name =
+        is_directory ? entry_name.substr(0, entry_name.size() - 1) : entry_name;
+    const auto wide_name = Utf8ToWide(normalized_name);
+    if (!wide_name.has_value() || !IsSafeWindowsArchivePath(*wide_name)) {
+      return fail(L"主题包包含 Windows 无法安全创建的路径。");
+    }
+    for (const auto& previous : result.archive_entries) {
+      if (OrdinalEqualsIgnoreCase(previous.wide_path, *wide_name)) {
+        return fail(L"主题包包含重复或仅大小写不同的路径。");
+      }
+    }
+
+    const std::uint32_t unix_mode = *external_attributes >> 16U;
+    const std::uint32_t unix_type = unix_mode & 0170000U;
+    if (unix_type != 0 &&
+        unix_type != (is_directory ? 0040000U : 0100000U)) {
+      return fail(L"主题包不能包含符号链接、硬链接或特殊文件。");
+    }
+    const bool dos_directory = (*external_attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    if ((dos_directory && !is_directory) ||
+        (is_directory &&
+         (*uncompressed_size != 0 ||
+          (*method == 0 && *compressed_size != 0)))) {
+      return fail(L"主题包目录条目的类型或大小无效。");
+    }
+    if (*uncompressed_size > ziliu::core::kMaximumThemeAssetBytes ||
+        total_bytes > ziliu::core::kMaximumThemePackageBytes - *uncompressed_size) {
+      return fail(L"主题包超过单文件 8 MiB 或总计 32 MiB 的安全限制。");
+    }
+    if (*method == 0 && *compressed_size != *uncompressed_size) {
+      return fail(L"主题包中的 Store 条目大小无效。");
+    }
+    total_bytes += *uncompressed_size;
+
+    const std::size_t extra_offset = name_offset + *name_length;
+    if (HasDisallowedOrMalformedZipExtra(bytes, extra_offset, *extra_length)) {
+      return fail(L"主题包使用了 ZIP64、AES 或名称重映射扩展。");
+    }
+    if (normalized_name == ziliu::core::kThemeManifestFileName) {
+      if (is_directory || has_manifest) {
+        return fail(L"主题包必须只包含一个根目录 manifest.json。");
+      }
+      has_manifest = true;
+    }
+
+    result.archive_entries.push_back(
+        {normalized_name, *wide_name, is_directory, *flags, *method, *crc32,
+         *compressed_size, *uncompressed_size, *local_header_offset});
+    cursor += 46 + variable_size;
+  }
+  if (cursor != *eocd_offset || !has_manifest) {
+    return fail(L"主题包中央目录不完整，或缺少根目录 manifest.json。");
+  }
+
+  std::vector<std::pair<std::size_t, std::size_t>> local_ranges;
+  local_ranges.reserve(result.archive_entries.size());
+  for (const auto& entry : result.archive_entries) {
+    const std::size_t local_offset = entry.local_header_offset;
+    if (local_offset > *central_offset || *central_offset - local_offset < 30 ||
+        ReadLittleEndian<std::uint32_t>(bytes, local_offset) !=
+            kLocalFileHeaderSignature) {
+      return fail(L"主题包本地文件头损坏。");
+    }
+    const auto local_flags = ReadLittleEndian<std::uint16_t>(bytes, local_offset + 6);
+    const auto local_method = ReadLittleEndian<std::uint16_t>(bytes, local_offset + 8);
+    const auto local_crc32 = ReadLittleEndian<std::uint32_t>(bytes, local_offset + 14);
+    const auto local_compressed_size =
+        ReadLittleEndian<std::uint32_t>(bytes, local_offset + 18);
+    const auto local_uncompressed_size =
+        ReadLittleEndian<std::uint32_t>(bytes, local_offset + 22);
+    const auto local_name_length =
+        ReadLittleEndian<std::uint16_t>(bytes, local_offset + 26);
+    const auto local_extra_length =
+        ReadLittleEndian<std::uint16_t>(bytes, local_offset + 28);
+    if (!local_flags.has_value() || !local_method.has_value() ||
+        !local_crc32.has_value() || !local_compressed_size.has_value() ||
+        !local_uncompressed_size.has_value() || !local_name_length.has_value() ||
+        !local_extra_length.has_value() || *local_flags != entry.flags ||
+        *local_method != entry.compression_method) {
+      return fail(L"主题包本地文件头与中央目录不一致。");
+    }
+    const std::size_t local_variable_size =
+        static_cast<std::size_t>(*local_name_length) + *local_extra_length;
+    if (local_variable_size > *central_offset - local_offset - 30) {
+      return fail(L"主题包本地文件头长度无效。");
+    }
+    const std::size_t local_name_offset = local_offset + 30;
+    const std::string local_name(
+        reinterpret_cast<const char*>(bytes.data() + local_name_offset),
+        *local_name_length);
+    const std::string expected_local_name =
+        entry.directory ? entry.utf8_path + "/" : entry.utf8_path;
+    if (local_name != expected_local_name ||
+        HasDisallowedOrMalformedZipExtra(
+            bytes, local_name_offset + *local_name_length, *local_extra_length)) {
+      return fail(L"主题包本地文件名或扩展字段与中央目录不一致。");
+    }
+    const bool uses_data_descriptor = (entry.flags & 0x0008) != 0;
+    if ((!uses_data_descriptor &&
+         (*local_crc32 != entry.crc32 ||
+          *local_compressed_size != entry.compressed_size ||
+          *local_uncompressed_size != entry.uncompressed_size)) ||
+        (uses_data_descriptor &&
+         ((*local_crc32 != 0 && *local_crc32 != entry.crc32) ||
+          (*local_compressed_size != 0 &&
+           *local_compressed_size != entry.compressed_size) ||
+          (*local_uncompressed_size != 0 &&
+           *local_uncompressed_size != entry.uncompressed_size)))) {
+      return fail(L"主题包本地文件大小或校验值与中央目录不一致。");
+    }
+    const std::size_t data_offset = local_name_offset + local_variable_size;
+    if (entry.compressed_size > *central_offset - data_offset) {
+      return fail(L"主题包压缩数据越过中央目录。");
+    }
+    std::size_t local_end = data_offset + entry.compressed_size;
+    if (uses_data_descriptor) {
+      if (ReadLittleEndian<std::uint32_t>(bytes, local_end) ==
+          kDataDescriptorSignature) {
+        local_end += 4;
+      }
+      if (local_end > *central_offset || *central_offset - local_end < 12) {
+        return fail(L"主题包数据描述符不完整。");
+      }
+      const auto descriptor_crc32 = ReadLittleEndian<std::uint32_t>(bytes, local_end);
+      const auto descriptor_compressed_size =
+          ReadLittleEndian<std::uint32_t>(bytes, local_end + 4);
+      const auto descriptor_uncompressed_size =
+          ReadLittleEndian<std::uint32_t>(bytes, local_end + 8);
+      if (descriptor_crc32 != entry.crc32 ||
+          descriptor_compressed_size != entry.compressed_size ||
+          descriptor_uncompressed_size != entry.uncompressed_size) {
+        return fail(L"主题包数据描述符与中央目录不一致。");
+      }
+      local_end += 12;
+    }
+    local_ranges.emplace_back(local_offset, local_end);
+  }
+  std::sort(local_ranges.begin(), local_ranges.end());
+  if (local_ranges.empty() || local_ranges.front().first != 0 ||
+      local_ranges.back().second != *central_offset) {
+    return fail(L"主题包包含 ZIP 文件结构之外的附加数据。");
+  }
+  for (std::size_t index = 1; index < local_ranges.size(); ++index) {
+    if (local_ranges[index - 1].second != local_ranges[index].first) {
+      return fail(L"主题包本地文件数据重叠或存在未声明区段。");
+    }
+  }
+
+  const auto add_expected_entry = [&result](std::wstring path, bool directory) {
+    for (const auto& existing : result.extracted_entries) {
+      if (!OrdinalEqualsIgnoreCase(existing.path, path)) {
+        continue;
+      }
+      return existing.path == path && existing.directory == directory;
+    }
+    result.extracted_entries.push_back({std::move(path), directory});
+    return true;
+  };
+  for (const auto& entry : result.archive_entries) {
+    if (!add_expected_entry(entry.wide_path, entry.directory)) {
+      return fail(L"主题包路径的文件与目录关系冲突。");
+    }
+  }
+  for (const auto& entry : result.archive_entries) {
+    std::size_t separator = entry.wide_path.find(L'/');
+    while (separator != std::wstring::npos) {
+      if (!add_expected_entry(entry.wide_path.substr(0, separator), true)) {
+        return fail(L"主题包路径的大小写或文件与目录关系冲突。");
+      }
+      separator = entry.wide_path.find(L'/', separator + 1);
+    }
+  }
+  return result;
+}
+
+std::optional<std::filesystem::path> CreateThemeStagingDirectory(
+    const std::filesystem::path& themes_directory) {
+  GUID identifier{};
+  if (FAILED(CoCreateGuid(&identifier))) {
+    return std::nullopt;
+  }
+  wchar_t identifier_text[40]{};
+  if (StringFromGUID2(identifier, identifier_text,
+                      static_cast<int>(std::size(identifier_text))) <= 0) {
+    return std::nullopt;
+  }
+  std::wstring directory_name = L".staging-";
+  directory_name += identifier_text;
+  std::replace(directory_name.begin(), directory_name.end(), L'{', L'_');
+  std::replace(directory_name.begin(), directory_name.end(), L'}', L'_');
+  const std::filesystem::path staging_directory = themes_directory / directory_name;
+  std::error_code error;
+  if (!std::filesystem::create_directories(staging_directory, error) || error) {
+    return std::nullopt;
+  }
+  return staging_directory;
+}
+
+std::optional<std::uintmax_t> ReadPngPixelCount(const std::filesystem::path& path) {
+  std::ifstream stream(path, std::ios::binary);
+  std::array<unsigned char, 24> header{};
+  stream.read(reinterpret_cast<char*>(header.data()),
+              static_cast<std::streamsize>(header.size()));
+  static constexpr std::array<unsigned char, 8> signature{
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+  if (stream.gcount() != static_cast<std::streamsize>(header.size()) ||
+      !std::equal(signature.begin(), signature.end(), header.begin()) ||
+      header[12] != 'I' || header[13] != 'H' || header[14] != 'D' ||
+      header[15] != 'R') {
+    return std::nullopt;
+  }
+  const auto read_big_endian = [&header](std::size_t offset) {
+    return (static_cast<std::uint32_t>(header[offset]) << 24U) |
+           (static_cast<std::uint32_t>(header[offset + 1]) << 16U) |
+           (static_cast<std::uint32_t>(header[offset + 2]) << 8U) |
+           static_cast<std::uint32_t>(header[offset + 3]);
+  };
+  const std::uint32_t width = read_big_endian(16);
+  const std::uint32_t height = read_big_endian(20);
+  if (width == 0 || height == 0 || width > ziliu::core::kMaximumThemeImageDimension ||
+      height > ziliu::core::kMaximumThemeImageDimension) {
+    return std::nullopt;
+  }
+  return static_cast<std::uintmax_t>(width) * height;
+}
+
+struct FileIdentity {
+  DWORD volume_serial_number = 0;
+  DWORD file_index_high = 0;
+  DWORD file_index_low = 0;
+};
+
+bool SameFileIdentity(const FileIdentity& left, const FileIdentity& right) noexcept {
+  return left.volume_serial_number == right.volume_serial_number &&
+         left.file_index_high == right.file_index_high &&
+         left.file_index_low == right.file_index_low;
+}
+
+std::optional<FileIdentity> ReadRegularFileIdentity(
+    const std::filesystem::path& path) {
+  const HANDLE handle =
+      CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                  OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+  if (handle == INVALID_HANDLE_VALUE) {
+    return std::nullopt;
+  }
+  BY_HANDLE_FILE_INFORMATION information{};
+  const BOOL read = GetFileInformationByHandle(handle, &information);
+  CloseHandle(handle);
+  if (read == FALSE ||
+      (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+      (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 ||
+      information.nNumberOfLinks != 1) {
+    return std::nullopt;
+  }
+  return FileIdentity{
+      information.dwVolumeSerialNumber,
+      information.nFileIndexHigh,
+      information.nFileIndexLow,
+  };
+}
+
+bool ValidateExtractedThemeDirectory(
+    const std::filesystem::path& directory,
+    const std::vector<ExpectedArchiveEntry>& expected_entries,
+    std::string* manifest_contents) {
+  std::size_t entry_count = 0;
+  std::uintmax_t total_bytes = 0;
+  std::uintmax_t total_decoded_pixels = 0;
+  std::vector<bool> seen_entries(expected_entries.size(), false);
+  std::vector<FileIdentity> file_identities;
+  file_identities.reserve(expected_entries.size());
+  std::error_code iterator_error;
+  const std::filesystem::recursive_directory_iterator end;
+  for (std::filesystem::recursive_directory_iterator iterator(
+           directory, std::filesystem::directory_options::skip_permission_denied,
+           iterator_error);
+       !iterator_error && iterator != end; iterator.increment(iterator_error)) {
+    ++entry_count;
+    if (entry_count > expected_entries.size()) {
+      return false;
+    }
+    const auto status = iterator->symlink_status(iterator_error);
+    if (iterator_error || std::filesystem::is_symlink(status) ||
+        std::filesystem::is_other(status)) {
+      return false;
+    }
+    const auto relative =
+        std::filesystem::relative(iterator->path(), directory, iterator_error);
+    if (iterator_error) {
+      return false;
+    }
+    const std::wstring relative_path = relative.generic_wstring();
+    const auto expected = std::find_if(
+        expected_entries.begin(), expected_entries.end(),
+        [&relative_path](const ExpectedArchiveEntry& entry) {
+          return entry.path == relative_path;
+        });
+    if (expected == expected_entries.end()) {
+      return false;
+    }
+    const std::size_t expected_index =
+        static_cast<std::size_t>(std::distance(expected_entries.begin(), expected));
+    const bool is_directory = std::filesystem::is_directory(status);
+    if (seen_entries[expected_index] || expected->directory != is_directory) {
+      return false;
+    }
+    seen_entries[expected_index] = true;
+    if (std::filesystem::is_directory(status)) {
+      continue;
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+      return false;
+    }
+    const auto file_identity = ReadRegularFileIdentity(iterator->path());
+    if (!file_identity.has_value() ||
+        std::any_of(file_identities.begin(), file_identities.end(),
+                    [&file_identity](const FileIdentity& previous) {
+                      return SameFileIdentity(previous, *file_identity);
+                    })) {
+      return false;
+    }
+    file_identities.push_back(*file_identity);
+    const std::uintmax_t size = iterator->file_size(iterator_error);
+    if (iterator_error || size > ziliu::core::kMaximumThemeAssetBytes ||
+        total_bytes > ziliu::core::kMaximumThemePackageBytes - size) {
+      return false;
+    }
+    total_bytes += size;
+
+    const std::wstring extension = iterator->path().extension().wstring();
+    const bool is_manifest =
+        relative.generic_string() == std::string(ziliu::core::kThemeManifestFileName);
+    if (!is_manifest && _wcsicmp(extension.c_str(), L".png") != 0 &&
+        _wcsicmp(extension.c_str(), L".apng") != 0) {
+      return false;
+    }
+    if (!is_manifest) {
+      const auto pixel_count = ReadPngPixelCount(iterator->path());
+      if (!pixel_count.has_value() ||
+          total_decoded_pixels > ziliu::core::kMaximumThemeDecodedPixels - *pixel_count) {
+        return false;
+      }
+      total_decoded_pixels += *pixel_count;
+    }
+  }
+  if (iterator_error) {
+    return false;
+  }
+  if (!std::all_of(seen_entries.begin(), seen_entries.end(),
+                   [](bool seen) { return seen; })) {
+    return false;
+  }
+
+  const std::filesystem::path manifest_path =
+      directory / std::string(ziliu::core::kThemeManifestFileName);
+  std::ifstream manifest_stream(manifest_path, std::ios::binary);
+  if (!manifest_stream) {
+    return false;
+  }
+  *manifest_contents = {std::istreambuf_iterator<char>(manifest_stream),
+                        std::istreambuf_iterator<char>()};
+  return manifest_contents->size() <= ziliu::core::kMaximumThemeManifestBytes;
+}
+
+bool ThemeAssetsExist(const ziliu::core::ThemeManifest& manifest,
+                      const std::filesystem::path& directory) {
+  std::vector<std::string_view> assets;
+  const auto append_asset = [&assets](const std::string& asset) {
+    if (!asset.empty()) {
+      assets.push_back(asset);
+    }
+  };
+  const auto append_button = [&append_asset](
+                                 const std::optional<ziliu::core::ThemeButtonImages>& button) {
+    if (!button.has_value()) {
+      return;
+    }
+    append_asset(button->normal);
+    append_asset(button->hover);
+    append_asset(button->pressed);
+  };
+  const auto append_surface = [&append_asset, &append_button](
+                                  const ziliu::core::ThemeSurface& surface) {
+    if (surface.background.has_value()) {
+      append_asset(surface.background->asset);
+    }
+    if (surface.separator.has_value()) {
+      append_asset(surface.separator->asset);
+    }
+    append_button(surface.previous_button);
+    append_button(surface.next_button);
+    append_button(surface.expand_button);
+    append_button(surface.collapse_button);
+    append_button(surface.menu_button);
+  };
+  const auto append_appearance = [&append_surface](
+                                     const ziliu::core::ThemeAppearance& appearance) {
+    append_surface(appearance.horizontal);
+    append_surface(appearance.vertical);
+  };
+  append_asset(manifest.preview_asset);
+  append_appearance(manifest.light);
+  if (manifest.dark.has_value()) {
+    append_appearance(*manifest.dark);
+  }
+
+  for (const auto asset : assets) {
+    const auto wide_asset = winrt::to_hstring(asset);
+    const std::filesystem::path asset_path = directory / wide_asset.c_str();
+    std::error_code status_error;
+    const auto status = std::filesystem::symlink_status(asset_path, status_error);
+    if (status_error || !std::filesystem::is_regular_file(status) ||
+        std::filesystem::is_symlink(status)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+struct StagingDirectoryCleanup {
+  explicit StagingDirectoryCleanup(std::filesystem::path value)
+      : directory(std::move(value)) {}
+
+  std::filesystem::path directory;
+
+  StagingDirectoryCleanup(const StagingDirectoryCleanup&) = delete;
+  StagingDirectoryCleanup& operator=(const StagingDirectoryCleanup&) = delete;
+
+  ~StagingDirectoryCleanup() {
+    if (!directory.empty()) {
+      std::error_code cleanup_error;
+      std::filesystem::remove_all(directory, cleanup_error);
+    }
+  }
+
+  void Release() noexcept { directory.clear(); }
+};
+
+struct ThemeImportResult {
+  std::optional<ziliu::core::ThemeManifest> manifest;
+  std::wstring error;
+
+  [[nodiscard]] bool ok() const noexcept {
+    return manifest.has_value() && error.empty();
+  }
+};
+
+ThemeImportResult InstallThemePackage(const std::filesystem::path& source_archive,
+                                      const std::filesystem::path& themes_directory) {
+  const auto fail = [](std::wstring message) {
+    ThemeImportResult result;
+    result.error = std::move(message);
+    return result;
+  };
+
+  std::error_code directory_error;
+  std::filesystem::create_directories(themes_directory, directory_error);
+  if (directory_error) {
+    return fail(L"无法创建字流主题目录。");
+  }
+  const auto staging_directory = CreateThemeStagingDirectory(themes_directory);
+  if (!staging_directory.has_value()) {
+    return fail(L"无法创建临时导入目录。");
+  }
+  StagingDirectoryCleanup cleanup{*staging_directory};
+
+  const std::filesystem::path stable_archive = *staging_directory / L"package.zlt";
+  std::error_code copy_error;
+  std::filesystem::copy_file(source_archive, stable_archive,
+                             std::filesystem::copy_options::none, copy_error);
+  if (copy_error) {
+    return fail(L"无法把主题包复制到安全的临时目录。");
+  }
+
+  const ArchiveValidationResult archive_validation = ValidateZltArchive(stable_archive);
+  if (!archive_validation.ok()) {
+    return fail(archive_validation.error);
+  }
+
+  wchar_t system_directory[MAX_PATH]{};
+  const UINT system_directory_length =
+      GetSystemDirectoryW(system_directory, static_cast<UINT>(std::size(system_directory)));
+  if (system_directory_length == 0 ||
+      system_directory_length >= static_cast<UINT>(std::size(system_directory))) {
+    return fail(L"无法定位系统归档工具。");
+  }
+  const std::filesystem::path archive_tool =
+      std::filesystem::path(system_directory) / L"tar.exe";
+  const std::filesystem::path extraction_log = *staging_directory / L"extract.log";
+  const bool extracted =
+      RunArchiveTool(archive_tool,
+                     {L"-xf", stable_archive.native(), L"-C", staging_directory->native()},
+                     extraction_log);
+  std::error_code remove_temporary_error;
+  std::filesystem::remove(stable_archive, remove_temporary_error);
+  remove_temporary_error.clear();
+  std::filesystem::remove(extraction_log, remove_temporary_error);
+  if (!extracted) {
+    return fail(L"主题包解压失败或数据校验不通过。");
+  }
+
+  std::string manifest_contents;
+  if (!ValidateExtractedThemeDirectory(*staging_directory,
+                                       archive_validation.extracted_entries,
+                                       &manifest_contents)) {
+    return fail(L"主题解压结果与 ZIP 目录不一致，包含不支持的文件，或超过安全限制。");
+  }
+  const auto parsed = ziliu::core::ParseThemeManifest(manifest_contents);
+  if (!parsed.ok()) {
+    std::wstring detail = L"manifest.json 无效。";
+    if (!parsed.issues.empty()) {
+      const auto issue =
+          Utf8ToWide(parsed.issues.front().path + " " + parsed.issues.front().message);
+      if (issue.has_value()) {
+        detail = std::wstring(L"manifest.json 无效：") + *issue;
+      }
+    }
+    return fail(std::move(detail));
+  }
+  if (ziliu::core::IsReservedThemeId(parsed.manifest.id)) {
+    return fail(L"主题不能使用字流内置主题的保留标识。");
+  }
+  if (!ThemeAssetsExist(parsed.manifest, *staging_directory)) {
+    return fail(L"manifest.json 引用的主题资源不存在。");
+  }
+
+  const std::filesystem::path target_directory =
+      themes_directory / std::filesystem::path(parsed.manifest.id);
+  std::error_code target_error;
+  if (std::filesystem::exists(target_directory, target_error) || target_error) {
+    return fail(L"同一标识的主题已经安装，请先删除现有主题。");
+  }
+  std::filesystem::rename(*staging_directory, target_directory, target_error);
+  if (target_error) {
+    return fail(L"无法把主题安装到本地主题目录。");
+  }
+
+  cleanup.Release();
+  ThemeImportResult result;
+  result.manifest = parsed.manifest;
+  return result;
+}
+
+class ScopedHandle final {
+ public:
+  ScopedHandle() = default;
+  explicit ScopedHandle(HANDLE value) noexcept : value_(value) {}
+  ~ScopedHandle() { Reset(); }
+
+  ScopedHandle(const ScopedHandle&) = delete;
+  ScopedHandle& operator=(const ScopedHandle&) = delete;
+
+  ScopedHandle(ScopedHandle&& other) noexcept
+      : value_(std::exchange(other.value_, INVALID_HANDLE_VALUE)) {}
+  ScopedHandle& operator=(ScopedHandle&& other) noexcept {
+    if (this != &other) {
+      Reset(std::exchange(other.value_, INVALID_HANDLE_VALUE));
+    }
+    return *this;
+  }
+
+  [[nodiscard]] HANDLE Get() const noexcept { return value_; }
+  [[nodiscard]] explicit operator bool() const noexcept {
+    return value_ != nullptr && value_ != INVALID_HANDLE_VALUE;
+  }
+  void Reset(HANDLE value = INVALID_HANDLE_VALUE) noexcept {
+    if (value_ != nullptr && value_ != INVALID_HANDLE_VALUE) {
+      CloseHandle(value_);
+    }
+    value_ = value;
+  }
+
+ private:
+  HANDLE value_ = INVALID_HANDLE_VALUE;
+};
+
+std::optional<FileIdentity> ReadDirectoryIdentity(HANDLE handle) {
+  if (handle == nullptr || handle == INVALID_HANDLE_VALUE) {
+    return std::nullopt;
+  }
+  BY_HANDLE_FILE_INFORMATION information{};
+  const BOOL read = GetFileInformationByHandle(handle, &information);
+  if (read == FALSE ||
+      (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+      (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+    return std::nullopt;
+  }
+  return FileIdentity{
+      information.dwVolumeSerialNumber,
+      information.nFileIndexHigh,
+      information.nFileIndexLow,
+  };
+}
+
+std::optional<FileIdentity> ReadDirectoryIdentity(
+    const std::filesystem::path& directory) {
+  ScopedHandle handle(CreateFileW(
+      directory.c_str(), FILE_READ_ATTRIBUTES,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr));
+  return ReadDirectoryIdentity(handle.Get());
+}
+
+ScopedHandle OpenThemeDirectoryForRename(
+    const std::filesystem::path& directory) {
+  ScopedHandle handle(CreateFileW(
+      directory.c_str(), FILE_READ_ATTRIBUTES | DELETE,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+      nullptr));
+  if (!ReadDirectoryIdentity(handle.Get()).has_value()) {
+    handle.Reset();
+  }
+  return handle;
+}
+
+bool RenameDirectoryHandle(HANDLE directory_handle,
+                           const std::filesystem::path& destination) {
+  const std::wstring destination_name = destination.native();
+  if (directory_handle == nullptr || directory_handle == INVALID_HANDLE_VALUE ||
+      destination_name.empty() ||
+      destination_name.size() >
+          (std::numeric_limits<DWORD>::max() / sizeof(wchar_t))) {
+    return false;
+  }
+  const std::size_t information_size =
+      offsetof(FILE_RENAME_INFO, FileName) +
+      destination_name.size() * sizeof(wchar_t);
+  if (information_size > std::numeric_limits<DWORD>::max()) {
+    return false;
+  }
+  std::vector<std::uint8_t> storage(information_size);
+  auto* information = reinterpret_cast<FILE_RENAME_INFO*>(storage.data());
+  information->ReplaceIfExists = FALSE;
+  information->RootDirectory = nullptr;
+  information->FileNameLength =
+      static_cast<DWORD>(destination_name.size() * sizeof(wchar_t));
+  std::copy(destination_name.begin(), destination_name.end(),
+            information->FileName);
+  return SetFileInformationByHandle(
+             directory_handle, FileRenameInfo, information,
+             static_cast<DWORD>(storage.size())) != FALSE;
+}
+
+std::optional<std::filesystem::path> QuarantineThemeDirectory(
+    HANDLE directory_handle, const std::filesystem::path& themes_directory) {
+  GUID identifier{};
+  if (FAILED(CoCreateGuid(&identifier))) {
+    return std::nullopt;
+  }
+  wchar_t identifier_text[40]{};
+  if (StringFromGUID2(identifier, identifier_text,
+                      static_cast<int>(std::size(identifier_text))) <= 0) {
+    return std::nullopt;
+  }
+  std::wstring directory_name = L".deleting-";
+  directory_name += identifier_text;
+  std::replace(directory_name.begin(), directory_name.end(), L'{', L'_');
+  std::replace(directory_name.begin(), directory_name.end(), L'}', L'_');
+  const std::filesystem::path quarantine =
+      themes_directory / directory_name;
+  if (!RenameDirectoryHandle(directory_handle, quarantine)) {
+    return std::nullopt;
+  }
+  return quarantine;
+}
+
+bool ValidateThemeTreeForDeletion(const std::filesystem::path& directory) {
+  std::error_code status_error;
+  const auto root_status = std::filesystem::symlink_status(directory, status_error);
+  if (status_error || !std::filesystem::is_directory(root_status) ||
+      std::filesystem::is_symlink(root_status)) {
+    return false;
+  }
+
+  std::size_t entry_count = 0;
+  std::vector<FileIdentity> file_identities;
+  std::error_code iterator_error;
+  const std::filesystem::recursive_directory_iterator end;
+  for (std::filesystem::recursive_directory_iterator iterator(
+           directory, std::filesystem::directory_options::skip_permission_denied,
+           iterator_error);
+       !iterator_error && iterator != end; iterator.increment(iterator_error)) {
+    if (++entry_count > ziliu::core::kMaximumThemePackageEntries) {
+      return false;
+    }
+    const auto status = iterator->symlink_status(iterator_error);
+    if (iterator_error || std::filesystem::is_symlink(status) ||
+        std::filesystem::is_other(status)) {
+      return false;
+    }
+    if (std::filesystem::is_directory(status)) {
+      continue;
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+      return false;
+    }
+    const auto identity = ReadRegularFileIdentity(iterator->path());
+    if (!identity.has_value() ||
+        std::any_of(file_identities.begin(), file_identities.end(),
+                    [&identity](const FileIdentity& previous) {
+                      return SameFileIdentity(previous, *identity);
+                    })) {
+      return false;
+    }
+    file_identities.push_back(*identity);
+  }
+  return !iterator_error;
+}
+
+bool RemoveQuarantinedThemeTree(const std::filesystem::path& directory,
+                                HANDLE directory_handle) {
+  if (!ValidateThemeTreeForDeletion(directory) ||
+      directory_handle == nullptr ||
+      directory_handle == INVALID_HANDLE_VALUE) {
+    return false;
+  }
+  std::error_code iterator_error;
+  std::filesystem::directory_iterator iterator(
+      directory, std::filesystem::directory_options::skip_permission_denied,
+      iterator_error);
+  const std::filesystem::directory_iterator end;
+  while (!iterator_error && iterator != end) {
+    const std::filesystem::path child = iterator->path();
+    iterator.increment(iterator_error);
+    if (iterator_error) {
+      return false;
+    }
+    std::error_code remove_error;
+    static_cast<void>(std::filesystem::remove_all(child, remove_error));
+    if (remove_error) {
+      return false;
+    }
+  }
+  if (iterator_error) {
+    return false;
+  }
+  FILE_DISPOSITION_INFO disposition{TRUE};
+  return SetFileInformationByHandle(directory_handle, FileDispositionInfo,
+                                    &disposition,
+                                    sizeof(disposition)) != FALSE;
 }
 
 ziliu::core::Settings LoadSettings() {
@@ -158,6 +1285,19 @@ winrt::Windows::UI::Color ToColor(std::uint32_t rgb) {
 std::uint32_t FromColor(winrt::Windows::UI::Color color) {
   return (static_cast<std::uint32_t>(color.R) << 16) |
          (static_cast<std::uint32_t>(color.G) << 8) | static_cast<std::uint32_t>(color.B);
+}
+
+Microsoft::UI::Xaml::Media::Brush SystemBrush(
+    std::wstring_view resource_key, std::uint32_t fallback_color) {
+  const auto key = winrt::box_value(winrt::hstring(resource_key));
+  const auto resources = Microsoft::UI::Xaml::Application::Current().Resources();
+  if (resources.HasKey(key)) {
+    const auto value = resources.Lookup(key);
+    if (const auto brush = value.try_as<Microsoft::UI::Xaml::Media::Brush>()) {
+      return brush;
+    }
+  }
+  return Microsoft::UI::Xaml::Media::SolidColorBrush(ToColor(fallback_color));
 }
 
 bool UseDarkTheme(ziliu::core::ThemeMode mode) {
@@ -334,7 +1474,7 @@ MainWindow::MainWindow() {
     AppWindow().Closing(
         [this](Microsoft::UI::Windowing::AppWindow const&,
                Microsoft::UI::Windowing::AppWindowClosingEventArgs const&) {
-          SaveFromControls();
+          static_cast<void>(SaveFromControls());
         });
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
@@ -522,6 +1662,7 @@ void MainWindow::InitializeSettingsControls() {
     page_key_index = 2;
   }
   PageKeyCombo().SelectedIndex(page_key_index);
+  ReloadThemeCatalog();
   ApplyThemeFromControls();
   UpdateAppearanceControlStates();
   UpdateColorSwatches();
@@ -551,18 +1692,56 @@ void MainWindow::InitializeNavigation() {
       [this](auto const&, auto const&) { ShowSettingsPage(L"common"); });
   ThemeBackButton().Click(
       [this](auto const&, auto const&) { ShowSettingsPage(L"appearance"); });
-  ThemeCombo().SelectionChanged([this](auto const&, auto const&) {
-    ApplyThemeFromControls();
+  ImportThemeButton().Click([this](auto const&, auto const&) { ImportTheme(); });
+  CandidatePreviewHost().Loaded([this](auto const&, auto const&) {
+    EnsureCandidatePreview();
     UpdateCandidatePreview();
   });
-  const auto update_appearance_state = [this](auto const&, auto const&) {
+  CandidatePreviewHost().SizeChanged(
+      [this](auto const&, auto const&) { UpdateCandidatePreview(); });
+  const auto save_appearance = [this]() {
+    if (SaveFromControls()) {
+      AppearanceInfoBar().IsOpen(false);
+      return true;
+    }
+    AppearanceInfoBar().Severity(
+        Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+    AppearanceInfoBar().Title(L"无法保存外观设置");
+    AppearanceInfoBar().Message(
+        L"设置文件无法写入；本次更改可能在重新启动后恢复。");
+    AppearanceInfoBar().IsOpen(true);
+    return false;
+  };
+  ThemeCombo().SelectionChanged([this, save_appearance](auto const&, auto const&) {
+    if (suppress_appearance_events_) {
+      return;
+    }
+    ApplyThemeFromControls();
+    settings_.theme_mode =
+        static_cast<ziliu::core::ThemeMode>(ThemeCombo().SelectedIndex());
+    RebuildThemeList();
+    UpdateCandidatePreview();
+    static_cast<void>(save_appearance());
+  });
+  const auto update_appearance_state =
+      [this, save_appearance](auto const&, auto const&) {
+    if (suppress_appearance_events_) {
+      return;
+    }
     UpdateAppearanceControlStates();
     UpdateCandidatePreview();
+    static_cast<void>(save_appearance());
   };
   CustomColorsToggle().Toggled(update_appearance_state);
   CustomFontsToggle().Toggled(update_appearance_state);
   CustomFontSizeToggle().Toggled(update_appearance_state);
-  const auto update_preview = [this](auto const&, auto const&) { UpdateCandidatePreview(); };
+  const auto update_preview = [this, save_appearance](auto const&, auto const&) {
+    if (suppress_appearance_events_) {
+      return;
+    }
+    UpdateCandidatePreview();
+    static_cast<void>(save_appearance());
+  };
   LayoutCombo().SelectionChanged(update_preview);
   CandidateCountCombo().SelectionChanged(update_preview);
   CandidatePageModeCombo().SelectionChanged(update_preview);
@@ -570,16 +1749,23 @@ void MainWindow::InitializeNavigation() {
   CandidateEnglishFontCombo().SelectionChanged(update_preview);
   CandidateFontSizeCombo().SelectionChanged(update_preview);
   CandidateScaleToggle().Toggled(update_preview);
-  const auto update_color = [this](auto const&, auto const&) {
+  const auto update_color = [this, save_appearance](auto const&, auto const&) {
+    if (suppress_appearance_events_) {
+      return;
+    }
     UpdateColorSwatches();
     UpdateCandidatePreview();
+    static_cast<void>(save_appearance());
   };
   PreeditColorPicker().ColorChanged(update_color);
   HighlightedColorPicker().ColorChanged(update_color);
   CandidateTextColorPicker().ColorChanged(update_color);
   BackgroundColorPicker().ColorChanged(update_color);
-  ResetAppearanceButton().Click([this](auto const&, auto const&) {
+  ResetAppearanceButton().Click([this, save_appearance](auto const&, auto const&) {
+    const ziliu::core::Settings previous_settings = settings_;
+    suppress_appearance_events_ = true;
     ThemeCombo().SelectedIndex(0);
+    settings_.active_theme_id = std::string(ziliu::core::kDefaultThemeId);
     LayoutCombo().SelectedIndex(1);
     CandidateCountCombo().SelectedIndex(2);
     CandidatePageModeCombo().SelectedIndex(0);
@@ -597,9 +1783,62 @@ void MainWindow::InitializeNavigation() {
     CustomFontSizeToggle().IsOn(false);
     CandidateFontSizeCombo().SelectedIndex(3);
     CandidateScaleToggle().IsOn(true);
+    suppress_appearance_events_ = false;
     UpdateAppearanceControlStates();
     UpdateColorSwatches();
+    RebuildThemeList();
     UpdateCandidatePreview();
+    if (save_appearance()) {
+      return;
+    }
+
+    settings_ = previous_settings;
+    suppress_appearance_events_ = true;
+    ThemeCombo().SelectedIndex(static_cast<int>(settings_.theme_mode));
+    LayoutCombo().SelectedIndex(
+        settings_.candidate_layout == ziliu::core::CandidateLayout::kHorizontal
+            ? 0
+            : 1);
+    CandidateCountCombo().SelectedIndex(static_cast<int>(
+        std::clamp(settings_.candidate_count,
+                   ziliu::core::kMinimumCandidateCount,
+                   ziliu::core::kMaximumCandidateCount) -
+        ziliu::core::kMinimumCandidateCount));
+    CandidatePageModeCombo().SelectedIndex(
+        settings_.candidate_page_mode ==
+                ziliu::core::CandidatePageMode::kMultiLine
+            ? 1
+            : 0);
+    CustomColorsToggle().IsOn(settings_.custom_candidate_colors);
+    PreeditColorPicker().Color(ToColor(settings_.preedit_color));
+    HighlightedColorPicker().Color(
+        ToColor(settings_.highlighted_candidate_color));
+    CandidateTextColorPicker().Color(ToColor(settings_.candidate_text_color));
+    BackgroundColorPicker().Color(
+        ToColor(settings_.candidate_background_color));
+    CustomFontsToggle().IsOn(settings_.custom_candidate_fonts);
+    SelectFontComboBox(CandidateChineseFontCombo(),
+                       settings_.candidate_chinese_font_family,
+                       L"Microsoft YaHei UI");
+    SelectFontComboBox(CandidateEnglishFontCombo(),
+                       settings_.candidate_english_font_family,
+                       L"Segoe UI Variable Text");
+    CustomFontSizeToggle().IsOn(settings_.custom_candidate_font_size);
+    CandidateFontSizeCombo().SelectedIndex(static_cast<int>(
+        std::clamp(settings_.candidate_font_size,
+                   ziliu::core::kMinimumCandidateFontSize,
+                   ziliu::core::kMaximumCandidateFontSize) -
+        ziliu::core::kMinimumCandidateFontSize));
+    CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
+    suppress_appearance_events_ = false;
+    ApplyThemeFromControls();
+    UpdateAppearanceControlStates();
+    UpdateColorSwatches();
+    RebuildThemeList();
+    UpdateCandidatePreview();
+    AppearanceInfoBar().Title(L"未能恢复默认外观");
+    AppearanceInfoBar().Message(
+        L"设置文件无法写入，界面已恢复到更改前的外观。");
   });
 }
 
@@ -618,6 +1857,7 @@ void MainWindow::ShowSettingsPage(std::wstring_view page) {
   const auto visible = Microsoft::UI::Xaml::Visibility::Visible;
   if (page == L"appearance") {
     AppearancePage().Visibility(visible);
+    UpdateCandidatePreview();
   } else if (page == L"dictionary") {
     DictionaryPage().Visibility(visible);
   } else if (page == L"keys") {
@@ -632,8 +1872,12 @@ void MainWindow::ShowSettingsPage(std::wstring_view page) {
     PunctuationPage().Visibility(visible);
   } else if (page == L"theme") {
     ThemePage().Visibility(visible);
+    RebuildThemeList();
   } else {
     CommonPage().Visibility(visible);
+  }
+  if (page != L"appearance") {
+    candidate_preview_.Hide();
   }
 }
 
@@ -667,7 +1911,210 @@ void MainWindow::UpdateColorSwatches() {
       Microsoft::UI::Xaml::Media::SolidColorBrush(BackgroundColorPicker().Color()));
 }
 
+void MainWindow::EnsureCandidatePreview() {
+  if (candidate_preview_ready_) {
+    return;
+  }
+  HWND window_handle = nullptr;
+  Microsoft::UI::Xaml::Window window = *this;
+  if (FAILED(window.as<::IWindowNative>()->get_WindowHandle(&window_handle)) ||
+      window_handle == nullptr) {
+    return;
+  }
+  candidate_preview_ready_ = candidate_preview_.CreatePreview(window_handle);
+}
+
+std::optional<RECT> MainWindow::CandidatePreviewBounds() {
+  if (!CandidatePreviewHost().IsLoaded() || CandidatePreviewHost().ActualWidth() <= 0.0 ||
+      CandidatePreviewHost().ActualHeight() <= 0.0 || RootGrid().XamlRoot() == nullptr) {
+    return std::nullopt;
+  }
+  const auto transform = CandidatePreviewHost().TransformToVisual(RootGrid());
+  const auto origin = transform.TransformPoint({0.0F, 0.0F});
+  const double scale = RootGrid().XamlRoot().RasterizationScale();
+  const auto to_pixel = [scale](double value) {
+    return static_cast<LONG>(std::lround(value * scale));
+  };
+  RECT bounds{};
+  bounds.left = to_pixel(origin.X);
+  bounds.top = to_pixel(origin.Y);
+  bounds.right = bounds.left + to_pixel(CandidatePreviewHost().ActualWidth());
+  bounds.bottom = bounds.top + to_pixel(CandidatePreviewHost().ActualHeight());
+  return bounds;
+}
+
+void MainWindow::ReloadThemeCatalog() {
+  installed_themes_.clear();
+  installed_themes_.push_back({ziliu::core::MakeDefaultThemeManifest(), {}});
+  if (const auto themes_directory = ThemesDirectoryPath(); themes_directory.has_value()) {
+    std::error_code directory_error;
+    std::filesystem::create_directories(*themes_directory, directory_error);
+    if (!directory_error) {
+      auto installed = ziliu::core::LoadInstalledThemes(*themes_directory);
+      installed_themes_.insert(installed_themes_.end(),
+                               std::make_move_iterator(installed.begin()),
+                               std::make_move_iterator(installed.end()));
+    }
+  }
+
+  const auto active = std::find_if(
+      installed_themes_.begin(), installed_themes_.end(), [this](const auto& theme) {
+        return theme.manifest.id == settings_.active_theme_id;
+      });
+  if (active == installed_themes_.end()) {
+    settings_.active_theme_id = ziliu::core::MakeDefaultThemeManifest().id;
+    if (!SaveSettings(settings_)) {
+      ThemeInfoBar().Severity(Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+      ThemeInfoBar().Title(L"无法保存主题设置");
+      ThemeInfoBar().Message(L"当前主题已回退为字流默认，但设置文件无法写入。");
+      ThemeInfoBar().IsOpen(true);
+    }
+  }
+  RebuildThemeList();
+}
+
+void MainWindow::RebuildThemeList() {
+  ThemeList().Children().Clear();
+  bool first_theme = true;
+  for (const auto& installed : installed_themes_) {
+    const auto& manifest = installed.manifest;
+    const bool selected = manifest.id == settings_.active_theme_id;
+    const bool can_delete = !installed.directory.empty();
+
+    if (!first_theme) {
+      Microsoft::UI::Xaml::Controls::Border divider;
+      divider.Height(1.0);
+      divider.Margin(Microsoft::UI::Xaml::Thickness{20.0, 0.0, 20.0, 0.0});
+      divider.Background(SystemBrush(L"DividerStrokeColorDefaultBrush", 0xE5E7EB));
+      ThemeList().Children().Append(divider);
+    }
+    first_theme = false;
+
+    Microsoft::UI::Xaml::Controls::Border row;
+    row.Padding(Microsoft::UI::Xaml::Thickness{20.0, 13.0, 16.0, 13.0});
+
+    Microsoft::UI::Xaml::Controls::Grid layout;
+    layout.ColumnSpacing(14.0);
+    Microsoft::UI::Xaml::Controls::ColumnDefinition icon_column;
+    icon_column.Width(Microsoft::UI::Xaml::GridLengthHelper::Auto());
+    layout.ColumnDefinitions().Append(icon_column);
+    layout.ColumnDefinitions().Append(Microsoft::UI::Xaml::Controls::ColumnDefinition());
+    Microsoft::UI::Xaml::Controls::ColumnDefinition status_column;
+    status_column.Width(Microsoft::UI::Xaml::GridLengthHelper::Auto());
+    layout.ColumnDefinitions().Append(status_column);
+    Microsoft::UI::Xaml::Controls::ColumnDefinition delete_column;
+    delete_column.Width(Microsoft::UI::Xaml::GridLengthHelper::Auto());
+    layout.ColumnDefinitions().Append(delete_column);
+
+    Microsoft::UI::Xaml::Controls::FontIcon theme_icon;
+    theme_icon.Glyph(L"\uE790");
+    theme_icon.FontSize(20.0);
+    theme_icon.Foreground(SystemBrush(L"TextFillColorSecondaryBrush", 0x5F6368));
+    theme_icon.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+    layout.Children().Append(theme_icon);
+
+    Microsoft::UI::Xaml::Controls::StackPanel labels;
+    labels.Spacing(2.0);
+    labels.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+    Microsoft::UI::Xaml::Controls::TextBlock name;
+    name.Text(winrt::to_hstring(manifest.name));
+    name.FontSize(15.0);
+    name.TextTrimming(Microsoft::UI::Xaml::TextTrimming::CharacterEllipsis);
+    Microsoft::UI::Xaml::Controls::TextBlock metadata;
+    std::wstring metadata_text = winrt::to_hstring(manifest.author).c_str();
+    metadata_text += L" · 版本 ";
+    metadata_text += winrt::to_hstring(manifest.version).c_str();
+    metadata_text += can_delete ? L" · 本地主题" : L" · 内置主题";
+    metadata.Text(winrt::hstring(metadata_text));
+    metadata.FontSize(12.0);
+    metadata.Foreground(SystemBrush(L"TextFillColorSecondaryBrush", 0x5F6368));
+    metadata.TextTrimming(Microsoft::UI::Xaml::TextTrimming::CharacterEllipsis);
+    labels.Children().Append(name);
+    labels.Children().Append(metadata);
+    Microsoft::UI::Xaml::Controls::Grid::SetColumn(labels, 1);
+    layout.Children().Append(labels);
+
+    if (selected) {
+      Microsoft::UI::Xaml::Controls::StackPanel status;
+      status.Orientation(Microsoft::UI::Xaml::Controls::Orientation::Horizontal);
+      status.Spacing(5.0);
+      status.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+      Microsoft::UI::Xaml::Controls::FontIcon check;
+      check.Glyph(L"\uE73E");
+      check.FontSize(13.0);
+      check.Foreground(SystemBrush(L"AccentTextFillColorPrimaryBrush", 0x0067C0));
+      Microsoft::UI::Xaml::Controls::TextBlock status_text;
+      status_text.Text(L"正在使用");
+      status_text.FontSize(13.0);
+      status_text.Foreground(SystemBrush(L"AccentTextFillColorPrimaryBrush", 0x0067C0));
+      status.Children().Append(check);
+      status.Children().Append(status_text);
+      Microsoft::UI::Xaml::Controls::Grid::SetColumn(status, 2);
+      layout.Children().Append(status);
+    } else {
+      Microsoft::UI::Xaml::Controls::Button apply_button;
+      apply_button.Content(winrt::box_value(L"应用"));
+      apply_button.MinWidth(72.0);
+      apply_button.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+      Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+          apply_button,
+          winrt::hstring(std::wstring(L"应用主题 ") + winrt::to_hstring(manifest.name).c_str()));
+      const std::string theme_id = manifest.id;
+      apply_button.Click([this, theme_id](auto const&, auto const&) { SelectTheme(theme_id); });
+      Microsoft::UI::Xaml::Controls::Grid::SetColumn(apply_button, 2);
+      layout.Children().Append(apply_button);
+    }
+
+    if (can_delete) {
+      Microsoft::UI::Xaml::Controls::Button delete_button;
+      delete_button.Content(winrt::box_value(L"删除"));
+      delete_button.Margin(Microsoft::UI::Xaml::Thickness{0.0, 0.0, 0.0, 0.0});
+      delete_button.VerticalAlignment(Microsoft::UI::Xaml::VerticalAlignment::Center);
+      Microsoft::UI::Xaml::Automation::AutomationProperties::SetName(
+          delete_button,
+          winrt::hstring(std::wstring(L"删除主题 ") + winrt::to_hstring(manifest.name).c_str()));
+      const std::string theme_id = manifest.id;
+      delete_button.Click(
+          [this, theme_id](auto const&, auto const&) { DeleteTheme(theme_id); });
+      Microsoft::UI::Xaml::Controls::Grid::SetColumn(delete_button, 3);
+      layout.Children().Append(delete_button);
+    }
+
+    row.Child(layout);
+    ThemeList().Children().Append(row);
+  }
+}
+
+bool MainWindow::SelectTheme(std::string_view theme_id) {
+  const auto selected =
+      std::find_if(installed_themes_.begin(), installed_themes_.end(),
+                   [theme_id](const auto& installed) {
+                     return installed.manifest.id == theme_id;
+                   });
+  if (selected == installed_themes_.end()) {
+    return false;
+  }
+  if (settings_.active_theme_id == theme_id) {
+    return true;
+  }
+  const std::string previous_theme_id = settings_.active_theme_id;
+  settings_.active_theme_id = std::string(theme_id);
+  if (!SaveFromControls()) {
+    settings_.active_theme_id = previous_theme_id;
+    ThemeInfoBar().Severity(Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+    ThemeInfoBar().Title(L"无法应用主题");
+    ThemeInfoBar().Message(L"设置文件无法写入，当前主题没有改变。");
+    ThemeInfoBar().IsOpen(true);
+    return false;
+  }
+  RebuildThemeList();
+  return true;
+}
+
 void MainWindow::UpdateCandidatePreview() {
+  CandidatePreviewWindow().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+  CandidatePreviewUnavailable().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
+
   const int theme_index = ThemeCombo().SelectedIndex();
   const int layout_index = LayoutCombo().SelectedIndex();
   const int candidate_count_index = CandidateCountCombo().SelectedIndex();
@@ -708,6 +2155,26 @@ void MainWindow::UpdateCandidatePreview() {
         ziliu::core::kMaximumCandidateFontSize);
   }
   preview_settings.candidate_scale_with_text = CandidateScaleToggle().IsOn();
+
+  EnsureCandidatePreview();
+  const auto preview_bounds = CandidatePreviewBounds();
+  if (candidate_preview_ready_ && preview_bounds.has_value()) {
+    CandidatePreviewUnavailable().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+    ziliu::core::CompositionSnapshot snapshot;
+    snapshot.preedit = L"ziliu'shu'ru'fa";
+    snapshot.candidates = {
+        {L"字流", L"", 1.0}, {L"输入法", L"", 0.9}, {L"简洁", L"", 0.8},
+        {L"高效", L"", 0.7}, {L"纯粹", L"", 0.6},  {L"中文", L"", 0.5},
+        {L"拼音", L"", 0.4}, {L"开源", L"", 0.3},  {L"轻巧", L"", 0.2},
+    };
+    snapshot.highlighted_index = 0;
+    candidate_preview_.ShowPreview(snapshot, *preview_bounds, preview_settings, 0);
+    return;
+  }
+
+  candidate_preview_.Hide();
+  CandidatePreviewUnavailable().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
+  CandidatePreviewWindow().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
 
   const bool dark_theme = UseDarkTheme(preview_settings.theme_mode);
   const ziliu::core::CandidatePalette palette =
@@ -876,6 +2343,301 @@ void MainWindow::UpdateCandidatePreview() {
   }
 }
 
+winrt::fire_and_forget MainWindow::ImportTheme() {
+  const auto show_error = [this](std::wstring_view message) {
+    ThemeInfoBar().Severity(Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+    ThemeInfoBar().Title(L"无法导入主题");
+    ThemeInfoBar().Message(winrt::hstring(message));
+    ThemeInfoBar().IsOpen(true);
+  };
+
+  std::filesystem::path archive_path;
+  {
+    ::Microsoft::WRL::ComPtr<IFileOpenDialog> dialog;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(dialog.GetAddressOf())))) {
+      show_error(L"无法打开文件选择器。");
+      co_return;
+    }
+    static constexpr COMDLG_FILTERSPEC filters[] = {
+        {L"字流主题包 (*.zlt)", L"*.zlt"},
+        {L"所有文件 (*.*)", L"*.*"},
+    };
+    static_cast<void>(
+        dialog->SetFileTypes(static_cast<UINT>(std::size(filters)), filters));
+    static_cast<void>(dialog->SetDefaultExtension(L"zlt"));
+    static_cast<void>(dialog->SetTitle(L"导入字流主题"));
+
+    HWND window_handle = nullptr;
+    Microsoft::UI::Xaml::Window window = *this;
+    if (FAILED(window.as<::IWindowNative>()->get_WindowHandle(&window_handle))) {
+      show_error(L"无法取得设置窗口句柄。");
+      co_return;
+    }
+    const HRESULT show_result = dialog->Show(window_handle);
+    if (show_result == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+      co_return;
+    }
+    if (FAILED(show_result)) {
+      show_error(L"文件选择器打开失败。");
+      co_return;
+    }
+
+    ::Microsoft::WRL::ComPtr<IShellItem> selected_item;
+    if (FAILED(dialog->GetResult(selected_item.GetAddressOf()))) {
+      show_error(L"无法读取所选文件。");
+      co_return;
+    }
+    wchar_t* selected_path_text = nullptr;
+    if (FAILED(selected_item->GetDisplayName(SIGDN_FILESYSPATH,
+                                             &selected_path_text)) ||
+        selected_path_text == nullptr) {
+      show_error(L"所选项目不是本地文件。");
+      co_return;
+    }
+    archive_path = std::filesystem::path(selected_path_text);
+    CoTaskMemFree(selected_path_text);
+  }
+  if (_wcsicmp(archive_path.extension().c_str(), L".zlt") != 0) {
+    show_error(L"请选择扩展名为 .zlt 的主题包。");
+    co_return;
+  }
+
+  const auto themes_directory = ThemesDirectoryPath();
+  if (!themes_directory.has_value()) {
+    show_error(L"无法定位字流主题目录。");
+    co_return;
+  }
+
+  ImportThemeButton().IsEnabled(false);
+  ThemeInfoBar().Severity(Microsoft::UI::Xaml::Controls::InfoBarSeverity::Informational);
+  ThemeInfoBar().Title(L"正在导入主题");
+  ThemeInfoBar().Message(winrt::hstring(archive_path.filename().wstring()));
+  ThemeInfoBar().IsOpen(true);
+
+  const auto dispatcher = RootGrid().DispatcherQueue();
+  const auto weak_this = get_weak();
+  co_await winrt::resume_background();
+
+  ThemeImportResult import_result;
+  try {
+    import_result = InstallThemePackage(archive_path, *themes_directory);
+  } catch (...) {
+    import_result.error = L"导入过程中发生意外错误，临时文件已清理。";
+  }
+
+  const bool queued = dispatcher.TryEnqueue(
+      [weak_this, import_result = std::move(import_result)]() mutable {
+        const auto strong_this = weak_this.get();
+        if (!strong_this) {
+          return;
+        }
+        strong_this->ImportThemeButton().IsEnabled(true);
+        if (!import_result.ok()) {
+          strong_this->ThemeInfoBar().Severity(
+              Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+          strong_this->ThemeInfoBar().Title(L"无法导入主题");
+          strong_this->ThemeInfoBar().Message(winrt::hstring(import_result.error));
+          strong_this->ThemeInfoBar().IsOpen(true);
+          return;
+        }
+
+        strong_this->ReloadThemeCatalog();
+        if (!strong_this->SelectTheme(import_result.manifest->id)) {
+          strong_this->ThemeInfoBar().Severity(
+              Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+          strong_this->ThemeInfoBar().Title(L"主题已安装，但未能应用");
+          strong_this->ThemeInfoBar().Message(
+              L"无法保存当前主题设置。主题文件已保留，可稍后重新应用。");
+          strong_this->ThemeInfoBar().IsOpen(true);
+          return;
+        }
+        strong_this->ThemeInfoBar().Severity(
+            Microsoft::UI::Xaml::Controls::InfoBarSeverity::Success);
+        strong_this->ThemeInfoBar().Title(L"主题已导入并应用");
+        strong_this->ThemeInfoBar().Message(
+            winrt::to_hstring(import_result.manifest->name));
+        strong_this->ThemeInfoBar().IsOpen(true);
+      });
+  static_cast<void>(queued);
+}
+
+winrt::fire_and_forget MainWindow::DeleteTheme(std::string theme_id) {
+  const auto show_error = [this](std::wstring_view message) {
+    ThemeInfoBar().Severity(Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+    ThemeInfoBar().Title(L"无法删除主题");
+    ThemeInfoBar().Message(winrt::hstring(message));
+    ThemeInfoBar().IsOpen(true);
+  };
+  const auto selected = std::find_if(
+      installed_themes_.begin(), installed_themes_.end(), [&theme_id](const auto& installed) {
+        return installed.manifest.id == theme_id;
+      });
+  if (selected == installed_themes_.end() || selected->directory.empty()) {
+    co_return;
+  }
+  const std::string theme_name = selected->manifest.name;
+  const std::filesystem::path theme_directory = selected->directory;
+  const auto themes_directory = ThemesDirectoryPath();
+  if (!themes_directory.has_value()) {
+    show_error(L"无法定位字流主题目录。");
+    co_return;
+  }
+  const std::filesystem::path expected_directory =
+      *themes_directory / std::filesystem::path(theme_id);
+  if (theme_directory.lexically_normal() != expected_directory.lexically_normal()) {
+    show_error(L"主题目录不在预期位置，已取消删除。");
+    co_return;
+  }
+
+  std::filesystem::path quarantine_directory;
+  ScopedHandle quarantine_handle;
+  bool deleting_active_theme = false;
+  {
+    const auto lifetime = get_strong();
+    static_cast<void>(lifetime);
+    ScopedHandle directory_handle =
+        OpenThemeDirectoryForRename(expected_directory);
+    const auto original_identity =
+        ReadDirectoryIdentity(directory_handle.Get());
+    if (!original_identity.has_value()) {
+      show_error(L"主题目录不是可安全删除的本地目录。");
+      co_return;
+    }
+
+    if (theme_dialog_open_) {
+      show_error(L"另一个主题确认窗口仍在打开，请先完成该操作。");
+      co_return;
+    }
+    theme_dialog_open_ = true;
+    Microsoft::UI::Xaml::Controls::ContentDialogResult dialog_result{};
+    try {
+      Microsoft::UI::Xaml::Controls::ContentDialog confirmation;
+      confirmation.XamlRoot(RootGrid().XamlRoot());
+      confirmation.Title(winrt::box_value(L"删除主题"));
+      const std::wstring confirmation_text =
+          std::wstring(L"确定要删除“") +
+          winrt::to_hstring(theme_name).c_str() +
+          L"”吗？此操作会移除本地主题文件。";
+      confirmation.Content(
+          winrt::box_value(winrt::hstring(confirmation_text)));
+      confirmation.PrimaryButtonText(L"删除");
+      confirmation.CloseButtonText(L"取消");
+      confirmation.DefaultButton(
+          Microsoft::UI::Xaml::Controls::ContentDialogButton::Close);
+      dialog_result = co_await confirmation.ShowAsync();
+    } catch (...) {
+      theme_dialog_open_ = false;
+      show_error(L"删除确认窗口无法打开。");
+      co_return;
+    }
+    theme_dialog_open_ = false;
+    if (dialog_result !=
+        Microsoft::UI::Xaml::Controls::ContentDialogResult::Primary) {
+      co_return;
+    }
+
+    const auto current_identity = ReadDirectoryIdentity(expected_directory);
+    const auto current_theme =
+        ziliu::core::LoadInstalledTheme(*themes_directory, theme_id);
+    if (!current_identity.has_value() ||
+        !SameFileIdentity(*original_identity, *current_identity) ||
+        !current_theme.has_value() ||
+        current_theme->directory.lexically_normal() !=
+            expected_directory.lexically_normal()) {
+      show_error(L"确认期间主题目录已变化，已取消删除。");
+      co_return;
+    }
+
+    const auto quarantined =
+        QuarantineThemeDirectory(directory_handle.Get(), *themes_directory);
+    if (!quarantined.has_value()) {
+      show_error(L"无法安全隔离主题目录，未删除任何文件。");
+      co_return;
+    }
+    quarantine_directory = *quarantined;
+    const auto quarantined_identity =
+        ReadDirectoryIdentity(quarantine_directory);
+    if (!quarantined_identity.has_value() ||
+        !SameFileIdentity(*original_identity, *quarantined_identity)) {
+      show_error(L"隔离后的主题目录身份不一致，已停止删除。");
+      co_return;
+    }
+
+    deleting_active_theme = theme_id == settings_.active_theme_id;
+    if (deleting_active_theme) {
+      const std::string previous_theme_id = settings_.active_theme_id;
+      settings_.active_theme_id = std::string(ziliu::core::kDefaultThemeId);
+      if (!SaveFromControls()) {
+        settings_.active_theme_id = previous_theme_id;
+        const bool restored =
+            RenameDirectoryHandle(directory_handle.Get(), expected_directory);
+        ReloadThemeCatalog();
+        show_error(restored
+                       ? L"无法先切换到默认主题，未删除任何文件。"
+                       : L"无法保存默认主题；原主题已安全隔离，但未删除。");
+        co_return;
+      }
+    }
+    quarantine_handle = std::move(directory_handle);
+    ReloadThemeCatalog();
+  }
+
+  ThemeInfoBar().Severity(
+      Microsoft::UI::Xaml::Controls::InfoBarSeverity::Informational);
+  ThemeInfoBar().Title(L"正在删除主题");
+  ThemeInfoBar().Message(winrt::to_hstring(theme_name));
+  ThemeInfoBar().IsOpen(true);
+
+  const auto dispatcher = RootGrid().DispatcherQueue();
+  const auto weak_this = get_weak();
+  co_await winrt::resume_background();
+
+  bool removed = false;
+  std::error_code existence_error;
+  const bool exists =
+      std::filesystem::exists(quarantine_directory, existence_error);
+  if (!existence_error && !exists) {
+    removed = true;
+  } else if (!existence_error) {
+    removed = RemoveQuarantinedThemeTree(
+        quarantine_directory, quarantine_handle.Get());
+  }
+  quarantine_handle.Reset();
+  if (removed) {
+    std::error_code verification_error;
+    removed = !std::filesystem::exists(quarantine_directory,
+                                       verification_error) &&
+              !verification_error;
+  }
+
+  const bool queued = dispatcher.TryEnqueue(
+      [weak_this, removed, deleting_active_theme, theme_name]() {
+        const auto strong_this = weak_this.get();
+        if (!strong_this) {
+          return;
+        }
+        strong_this->ReloadThemeCatalog();
+        if (!removed) {
+          strong_this->ThemeInfoBar().Severity(
+              Microsoft::UI::Xaml::Controls::InfoBarSeverity::Error);
+          strong_this->ThemeInfoBar().Title(L"主题清理未完成");
+          strong_this->ThemeInfoBar().Message(
+              deleting_active_theme
+                  ? L"主题已停用并移出列表，但部分本地文件无法安全删除。"
+                  : L"主题已移出列表，但部分本地文件无法安全删除。");
+          strong_this->ThemeInfoBar().IsOpen(true);
+          return;
+        }
+        strong_this->ThemeInfoBar().Severity(
+            Microsoft::UI::Xaml::Controls::InfoBarSeverity::Success);
+        strong_this->ThemeInfoBar().Title(L"主题已删除");
+        strong_this->ThemeInfoBar().Message(winrt::to_hstring(theme_name));
+        strong_this->ThemeInfoBar().IsOpen(true);
+      });
+  static_cast<void>(queued);
+}
+
 void MainWindow::InitializeQuickMenuControls() {
   CharacterSetToggle().IsOn(settings_.character_set ==
                             ziliu::core::CharacterSet::kTraditional);
@@ -926,7 +2688,7 @@ void MainWindow::PlayQuickMenuOpenAnimation() {
   visual.StartAnimation(L"Offset", offset_animation);
 }
 
-void MainWindow::SaveFromControls() {
+bool MainWindow::SaveFromControls() {
   settings_.character_set = CharacterSetCombo().SelectedIndex() == 1
                                 ? ziliu::core::CharacterSet::kTraditional
                                 : ziliu::core::CharacterSet::kSimplified;
@@ -994,7 +2756,7 @@ void MainWindow::SaveFromControls() {
     settings_.page_key_set = ziliu::core::PageKeySet::kCommaPeriod;
   }
 
-  static_cast<void>(SaveSettings(settings_));
+  return SaveSettings(settings_);
 }
 
 }  // namespace winrt::ZiliuSettings::implementation

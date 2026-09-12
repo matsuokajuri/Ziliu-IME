@@ -146,17 +146,19 @@ bool PipeServer::ServeClient(void* pipe_handle) {
   DWORD bytes_read = 0;
   core::ipc::Request request;
   core::ipc::Response response;
+  std::uint16_t protocol_version = core::ipc::kProtocolVersion;
   if (!ReadFile(pipe, request_bytes.data(), static_cast<DWORD>(request_bytes.size()), &bytes_read,
                 nullptr) ||
       !core::ipc::DecodeRequest(
-          std::span<const std::byte>(request_bytes.data(), bytes_read), &request)) {
+          std::span<const std::byte>(request_bytes.data(), bytes_read), &request,
+          &protocol_version)) {
     response.status = core::ipc::Status::kInvalidRequest;
   } else {
     response = session_host_.Handle(request);
   }
 
   std::vector<std::byte> response_bytes;
-  if (!core::ipc::EncodeResponse(response, &response_bytes)) {
+  if (!core::ipc::EncodeResponse(response, protocol_version, &response_bytes)) {
     return false;
   }
   DWORD bytes_written = 0;

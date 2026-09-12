@@ -12,6 +12,7 @@ if not "%~2"=="" (
   exit /b 2
 )
 set "BUILD_DIR=%~dp0..\build\local-x64-!BUILD_CONFIG!"
+if not defined ZILIU_DEPENDENCY_ROOT set "ZILIU_DEPENDENCY_ROOT=%~dp0.."
 
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 if not exist "%VSWHERE%" (
@@ -71,7 +72,8 @@ if not exist "!VC_TOOLS!\lib\x64\msvcrt.lib" (
 )
 
 cmake --fresh -S "%~dp0.." -B "!BUILD_DIR!" -G "NMake Makefiles" ^
-  -DCMAKE_BUILD_TYPE=!BUILD_CONFIG! -DZILIU_BUILD_TESTS=ON -DZILIU_ENABLE_RIME=OFF
+  -DCMAKE_BUILD_TYPE=!BUILD_CONFIG! -DZILIU_BUILD_TESTS=ON -DZILIU_ENABLE_RIME=ON ^
+  "-DZILIU_DEPENDENCY_ROOT=!ZILIU_DEPENDENCY_ROOT!"
 if errorlevel 1 exit /b %errorlevel%
 
 cmake --build "!BUILD_DIR!"
