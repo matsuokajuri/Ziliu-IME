@@ -574,7 +574,10 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                 theme_typography.font_size,
                 static_cast<std::uint32_t>(core::kMinimumCandidateFontSize),
                 static_cast<std::uint32_t>(core::kMaximumCandidateFontSize)));
-  layout_scale_ = settings_.candidate_scale_with_text
+  // SSF insets are already authored for the skin's declared font size. Only a
+  // user font-size override may rescale them; DPI is applied separately below.
+  layout_scale_ = settings_.candidate_scale_with_text &&
+                          (!UsesSogouRendering() || settings_.custom_candidate_font_size)
                       ? std::clamp(effective_font_size / 17.0F, 0.82F, 1.42F)
                       : 1.0F;
   const bool horizontal =
@@ -711,7 +714,8 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   const float menu_width = compact ? 32.0F : kHorizontalMenuButtonWidth;
   const float expand_width = compact ? 28.0F : kHorizontalExpandButtonWidth;
   const float minimum_candidate_width = compact ? 48.0F : kMinimumHorizontalCandidateWidth;
-  const std::wstring_view label_gap = compact ? L" " : L"  ";
+  const std::wstring_view label_gap = horizontal && UsesSogouRendering()
+      ? L"." : (compact ? L" " : L"  ");
   const float reserved_action_width =
       ((show_menu_action ? menu_width : 0.0F) +
        (show_expand_action ? expand_width : 0.0F)) *
@@ -884,10 +888,14 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
           std::min(std::max(window_width_, natural_background_size.width),
                    maximum_window_width);
     }
-    if (surface.background->vertical_layout == core::ThemeImageLayout::kFixed &&
-        natural_background_size.height > 0.0F) {
-      height_dip =
-          std::min(natural_background_size.height, maximum_window_height);
+    if (natural_background_size.height > 0.0F) {
+      if (surface.background->vertical_layout == core::ThemeImageLayout::kFixed) {
+        height_dip = std::min(natural_background_size.height, maximum_window_height);
+      } else if (horizontal) {
+        // H1 background artwork supplies a minimum height even when its center
+        // is stretchable. Short candidate rows must not compress the artwork.
+        height_dip = std::max(height_dip, natural_background_size.height);
+      }
     }
   }
   if (horizontal && reserved_action_width > 0.0F) {
@@ -2184,7 +2192,8 @@ void CandidateWindow::Paint() {
                           candidate_index < page_window.active.offset + page_window.active.count;
       const std::wstring label =
           active
-              ? std::to_wstring(candidate_index - page_window.active.offset + 1) + (compact ? L" " : L"  ") +
+              ? std::to_wstring(candidate_index - page_window.active.offset + 1) +
+                    (horizontal && UsesSogouRendering() ? L"." : (compact ? L" " : L"  ")) +
                     snapshot_.candidates[candidate_index].text
               : snapshot_.candidates[candidate_index].text;
       const auto& annotation = snapshot_.candidates[candidate_index].annotation;
@@ -2196,7 +2205,8 @@ void CandidateWindow::Paint() {
                              120.0F * layout_scale_);
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
-                                D2D1::RectF(horizontal ? left + (compact ? 6.0F : 8.0F) * layout_scale_
+                                D2D1::RectF(horizontal ? left +
+                                    (UsesSogouRendering() ? 0.0F : (compact ? 6.0F : 8.0F)) * layout_scale_
                                                        : candidate_insets_.left,
                                             top,
                                             horizontal ? right - 6.0F * layout_scale_

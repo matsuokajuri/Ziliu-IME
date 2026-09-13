@@ -1,10 +1,13 @@
 #include "ziliu/ui/candidate_window.h"
+#include "ziliu/core/sogou_theme.h"
 
 #include <cstdlib>
 #include <algorithm>
 #include <iostream>
 #include <string_view>
 #include <thread>
+#include <fstream>
+#include <iterator>
 
 namespace ziliu::ui {
 // Deterministic delivery of asynchronous geometry, without querying or taking
@@ -16,6 +19,53 @@ struct CandidateWindowTestAccess {
   }
   static void Complete(CandidateWindow& window, const std::optional<RECT>& caret) {
     window.PresentAtCaret(caret);
+  }
+  static void SetTheme(CandidateWindow& window, const core::ThemeManifest& manifest,
+                       const std::filesystem::path& directory) {
+    window.DiscardDeviceResources();
+    window.theme_manifest_ = manifest;
+    window.theme_directory_ = directory;
+    window.theme_initialized_ = true;
+    window.settings_.active_theme_id = manifest.id;
+  }
+  static bool SetMemoryBackground(CandidateWindow& window, UINT height) {
+    if (!window.EnsureDeviceResources()) return false;
+    std::vector<std::uint32_t> pixels(static_cast<std::size_t>(height) * 2, 0xffffffffU);
+    window.theme_manifest_.light.horizontal.background = core::ThemeImage{};
+    const auto properties = D2D1::BitmapProperties(
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
+    return SUCCEEDED(window.render_target_->CreateBitmap(D2D1::SizeU(2, height), pixels.data(), 8,
+        properties, window.surface_bitmaps_.background.ReleaseAndGetAddressOf()));
+  }
+  static bool HasAuthoredInsets(const CandidateWindow& window) {
+    return window.layout_scale_ == 1.0F && window.preedit_insets_.left == 11.0F &&
+           window.preedit_insets_.top == 31.0F && window.candidate_insets_.left == 13.0F;
+  }
+  static float Height(const CandidateWindow& window) { return window.window_height_; }
+  static float Scale(const CandidateWindow& window) { return window.layout_scale_; }
+  static bool SavePng(CandidateWindow& window, const std::filesystem::path& path) {
+    using Microsoft::WRL::ComPtr;
+    ComPtr<IWICImagingFactory> factory;
+    ComPtr<IWICBitmap> bitmap;
+    ComPtr<IWICStream> stream;
+    ComPtr<IWICBitmapEncoder> encoder;
+    ComPtr<IWICBitmapFrameEncode> frame;
+    if (!window.layered_bitmap_ ||
+        FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&factory))) ||
+        FAILED(factory->CreateBitmapFromHBITMAP(window.layered_bitmap_, nullptr,
+                                                WICBitmapUsePremultipliedAlpha, &bitmap)) ||
+        FAILED(factory->CreateStream(&stream)) ||
+        FAILED(stream->InitializeFromFilename(path.c_str(), GENERIC_WRITE)) ||
+        FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+        FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
+        FAILED(encoder->CreateNewFrame(&frame, nullptr)) ||
+        FAILED(frame->Initialize(nullptr)) ||
+        FAILED(frame->WriteSource(bitmap.Get(), nullptr)) ||
+        FAILED(frame->Commit()) || FAILED(encoder->Commit())) {
+      return false;
+    }
+    return true;
   }
 };
 }  // namespace ziliu::ui
@@ -230,6 +280,43 @@ void CheckRealWidthAnimation() {
     Expect(fallback.top == bottom.top, "a newly available caret replaces fallback exactly once");
     std::cout << "Anchor arbitration PASS: 24 content updates, timeout, first-show, hide and fallback; "
               << presented_positions.size() << " HWND moves checked\n";
+    popup.Hide();
+    PumpFor(150);
+    auto theme = ziliu::core::MakeDefaultThemeManifest();
+    theme.id = "test.custom-ssf";
+    theme.source_format = "sogou-ssf";
+    theme.light.typography.font_size = 20;
+    theme.light.horizontal.preedit_insets = ziliu::core::ThemeInsets{11, 31, 17, 7};
+    theme.light.horizontal.candidate_insets = ziliu::core::ThemeInsets{13, 4, 19, 3};
+    Access::SetTheme(popup, theme, {});
+    settings.active_theme_id = theme.id;
+    settings.candidate_scale_with_text = true;
+    settings.custom_candidate_font_size = false;
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
+    Expect(Access::HasAuthoredInsets(popup), "SSF declared font size must not magnify authored insets");
+    Expect(Access::SetMemoryBackground(popup, 220), "create synthetic H1 background");
+    popup.Show(narrow, caret, settings, 0);
+    Expect(Access::Height(popup) == 220, "short H1 text must preserve natural background height");
+    settings.custom_candidate_font_size = true;
+    settings.candidate_font_size = 24;
+    popup.Show(narrow, caret, settings, 0);
+    Expect(Access::Scale(popup) > 1, "explicit user font scaling remains effective");
+    Expect(Access::SetMemoryBackground(popup, 4096), "create oversized synthetic H1 background");
+    popup.Show(narrow, caret, settings, 0);
+    Expect(Access::Height(popup) > 0 && Access::Height(popup) < 4096,
+           "natural image height must not bypass work-area limits");
+    popup.Hide();
+    PumpFor(150);
+    const auto default_theme = ziliu::core::MakeDefaultThemeManifest();
+    Access::SetTheme(popup, default_theme, {});
+    settings.active_theme_id = default_theme.id;
+    settings.custom_candidate_font_size = false;
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(220);
+    Expect(WindowWidth(window) == narrow_width, "returning from SSF preserves the native baseline layout");
+    popup.Hide();
+    std::cout << "Authored SSF insets, H1 height limits, override and native-return checks PASS\n";
     std::cout << "Isolated layered HWND width transition checks PASS; animation enabled=" << enabled << '\n';
   }
   DestroyWindow(owner);
@@ -239,7 +326,84 @@ void CheckRealWidthAnimation() {
 }
 }  // namespace
 
-int main() {
+// This diagnostic mode consumes an extracted UTF-8 skin.ini and original assets.
+// It deliberately selects H1 only; it does not certify SSF import or TSF input.
+int CaptureSsfH1(const std::filesystem::path& source, const std::filesystem::path& output) {
+  std::ifstream input(source / "skin.ini", std::ios::binary);
+  Expect(static_cast<bool>(input), "read extracted UTF-8 skin.ini");
+  const std::string ini{std::istreambuf_iterator<char>(input), {}};
+  std::string selected;
+  bool include = false;
+  for (std::size_t pos = 0; pos < ini.size();) {
+    const auto end = ini.find('\n', pos);
+    const auto line = ini.substr(pos, end == std::string::npos ? end : end - pos);
+    if (!line.empty() && line.front() == '[') {
+      include = line.starts_with("[General]") || line.starts_with("[Display]") ||
+                line.starts_with("[Scheme_H1]");
+    }
+    if (include) selected += line + '\n';
+    if (end == std::string::npos) break;
+    pos = end + 1;
+  }
+  const auto conversion = ziliu::core::ConvertSogouThemeIni(selected, "geometry.ssf");
+  for (const auto& issue : conversion.issues) std::cerr << issue.path << ": " << issue.message << '\n';
+  Expect(conversion.ok(), "convert selected custom H1 without guessed fields");
+  const auto resources = output.parent_path() / (output.stem().string() + "-resources");
+  Expect(!std::filesystem::exists(resources) && !std::filesystem::exists(output), "fresh output only");
+  std::filesystem::create_directories(resources);
+  for (const auto& asset : conversion.assets) {
+    const auto destination = resources / asset.target_path;
+    std::filesystem::create_directories(destination.parent_path());
+    Expect(std::filesystem::path(asset.source_path).extension() == ".png", "diagnostic copies PNG assets only");
+    std::filesystem::copy_file(source / asset.source_path, destination);
+  }
+  std::ofstream(resources / "manifest.json") << ziliu::core::SerializeThemeManifest(conversion.manifest);
+  std::thread render([&] {
+    HDESK original = GetThreadDesktop(GetCurrentThreadId());
+    const std::wstring name = L"ZiliuSsfGeometry-" + std::to_wstring(GetCurrentProcessId());
+    HDESK isolated = CreateDesktopW(name.c_str(), nullptr, nullptr, 0, GENERIC_ALL, nullptr);
+    Expect(isolated && SetThreadDesktop(isolated), "private render desktop");
+    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+    Expect(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)), "render COM");
+    HWND owner = CreateHiddenOwner();
+    {
+      ziliu::ui::CandidateWindow popup;
+      Expect(popup.Create(owner), "create private candidate surface");
+      ziliu::ui::CandidateWindowTestAccess::SetTheme(popup, conversion.manifest, resources);
+      ziliu::core::Settings settings;
+      settings.theme_mode = ziliu::core::ThemeMode::kLight;
+      settings.active_theme_id = conversion.manifest.id;
+      settings.candidate_count = 7;
+      settings.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
+      ziliu::core::CompositionSnapshot snapshot;
+      snapshot.preedit = L"ni'hao";
+      snapshot.candidates = {{L"你好", L"", 1}, {L"你是", L"", 1}, {L"不好", L"", 1},
+                             {L"拟好", L"", 1}, {L"你还", L"", 1}, {L"拨号", L"", 1}, {L"你", L"", 1}};
+      popup.Show(snapshot, RECT{100, 100, 101, 120}, settings, 0);
+      PumpFor(250);
+      HWND window = FindWindowW(L"Ziliu.CandidateWindow.v1", nullptr);
+      Expect(window && GetDpiForWindow(window) == 96, "exact 96-DPI surface");
+      Expect(ziliu::ui::CandidateWindowTestAccess::SavePng(popup, output), "write native rendered pixels");
+      RECT rect{}; GetWindowRect(window, &rect);
+      std::cout << "H1_RENDER width=" << rect.right - rect.left << " height=" << rect.bottom - rect.top
+                << " dpi=96 candidates=7 source=private-desktop-render NOT_REAL_INPUT_CAPTURE\n";
+    }
+    DestroyWindow(owner);
+    CoUninitialize();
+    Expect(SetThreadDesktop(original) && CloseDesktop(isolated), "release private desktop");
+  });
+  render.join();
+  return EXIT_SUCCESS;
+}
+
+int main(int argc, char* argv[]) {
+  if (argc == 4 && std::string_view(argv[1]) == "--capture-ssf-h1") {
+    return CaptureSsfH1(argv[2], argv[3]);
+  }
+  if (argc != 1) {
+    std::cerr << "Usage: ziliu_ui_preview_window_tests [--capture-ssf-h1 source-dir output.png]\n";
+    return EXIT_FAILURE;
+  }
   Expect(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)), "initialize COM");
   HWND owner = CreateHiddenOwner();
   {
