@@ -63,6 +63,9 @@ class TextService final : public ITfTextInputProcessorEx,
                      std::size_t caret_back = 0);
   HRESULT ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* eaten);
   HRESULT ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context);
+  HRESULT VerifyCommittedPairCaret(TfEditCookie edit_cookie, ITfContext* context);
+  void FinishCommittedPairCaret(ITfContext* context);
+  void ClearCommittedPairCaret();
   void AbandonSession(ITfContext* context);
   void RefreshSettings(bool force);
   HRESULT AdviseInputModeSinks();

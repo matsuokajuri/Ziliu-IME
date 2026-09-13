@@ -42,6 +42,13 @@ struct TextServiceState {
   std::filesystem::file_time_type settings_write_time{};
   std::size_t candidate_page_offset = 0;
   std::size_t pending_caret_back = 0;
+  Microsoft::WRL::ComPtr<ITfRange> committed_pair_range;
+  Microsoft::WRL::ComPtr<ITfContext> committed_pair_context;
+  std::wstring committed_pair;
+  HWND committed_pair_focus = nullptr;
+  HWND committed_pair_foreground = nullptr;
+  ULONGLONG committed_pair_time = 0;
+  bool committed_pair_needs_left = false;
   bool broker_started = false;
   bool settings_file_known = false;
   bool chinese_mode = true;
@@ -53,8 +60,8 @@ struct TextServiceState {
 
 class CompositionEditSession final : public ITfEditSession {
  public:
-  CompositionEditSession(TextService* service, ITfContext* context)
-      : service_(service), context_(context) {
+  CompositionEditSession(TextService* service, ITfContext* context, bool verify_caret = false)
+      : service_(service), context_(context), verify_caret_(verify_caret) {
     service_->AddRef();
     context_->AddRef();
   }
@@ -84,6 +91,9 @@ class CompositionEditSession final : public ITfEditSession {
   }
 
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
+    if (verify_caret_) {
+      return service_->VerifyCommittedPairCaret(edit_cookie, context_);
+    }
     return service_->ApplyCompositionEdit(edit_cookie, context_);
   }
 
@@ -96,6 +106,7 @@ class CompositionEditSession final : public ITfEditSession {
   std::atomic<ULONG> reference_count_{1};
   TextService* service_;
   ITfContext* context_;
+  bool verify_caret_;
 };
 
 namespace {
@@ -881,6 +892,7 @@ void TextService::PublishInputMode() {
 }
 
 void TextService::ResetRuntimeState() {
+  ClearCommittedPairCaret();
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
@@ -1004,6 +1016,7 @@ STDMETHODIMP TextService::OnSetThreadFocus() {
 }
 
 STDMETHODIMP TextService::OnKillThreadFocus() {
+  ClearCommittedPairCaret();
   state_->candidate_window.Hide();
   return S_OK;
 }
@@ -1016,6 +1029,8 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
     return E_INVALIDARG;
   }
   RefreshSettings(false);
+  // Never move the caret after another key has begun a new edit.
+  ClearCommittedPairCaret();
   if (state_->switch_key_down && !IsInputModeSwitchKey(wparam)) {
     state_->switch_key_used = true;
   }
@@ -1269,6 +1284,14 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
           static_cast<LONG>(commit.size()), inserted.GetAddressOf());
       if (SUCCEEDED(text_result)) {
         range = std::move(inserted);
+        if (caret_back == 1 && range != nullptr &&
+            SUCCEEDED(range->Clone(state_->committed_pair_range.ReleaseAndGetAddressOf()))) {
+          state_->committed_pair_context = context;
+          state_->committed_pair = commit;
+          state_->committed_pair_focus = GetFocus();
+          state_->committed_pair_foreground = GetForegroundWindow();
+          state_->committed_pair_time = GetTickCount64();
+        }
       }
     } else {
       text_result = range->SetText(edit_cookie, 0, commit.data(), static_cast<LONG>(commit.size()));
@@ -1304,6 +1327,112 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
   return E_FAIL;
 }
 
+void TextService::ClearCommittedPairCaret() {
+  state_->committed_pair_range.Reset();
+  state_->committed_pair_context.Reset();
+  state_->committed_pair.clear();
+  state_->committed_pair_needs_left = false;
+}
+
+HRESULT TextService::VerifyCommittedPairCaret(TfEditCookie cookie, ITfContext* context) {
+  using Microsoft::WRL::ComPtr;
+  state_->committed_pair_needs_left = false;
+  if (!state_->committed_pair_range || context != state_->committed_pair_context.Get() ||
+      state_->committed_pair.empty() || state_->committed_pair.size() > 16) {
+    return S_FALSE;
+  }
+  wchar_t text[16]{};
+  ULONG read = 0;
+  const HRESULT read_result = state_->committed_pair_range->GetText(cookie, 0, text, 16, &read);
+  if (FAILED(read_result) ||
+      std::wstring_view(text, read) != state_->committed_pair) {
+    return S_FALSE;
+  }
+  TF_SELECTION selection{};
+  ULONG fetched = 0;
+  if (FAILED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) ||
+      fetched != 1 || selection.range == nullptr) {
+    return S_FALSE;
+  }
+  ComPtr<ITfRange> current;
+  current.Attach(selection.range);
+  LONG start = 1;
+  LONG end = 1;
+  if (SUCCEEDED(current->CompareStart(cookie, state_->committed_pair_range.Get(),
+                                      TF_ANCHOR_END, &start)) &&
+      SUCCEEDED(current->CompareEnd(cookie, state_->committed_pair_range.Get(),
+                                    TF_ANCHOR_END, &end)) && start == 0 && end == 0) {
+    state_->committed_pair_needs_left = true;
+  }
+  // Chromium's transitory TSF store can report our requested selection while
+  // Blink commits with kMoveCursorAfterText. Do not extend this compatibility
+  // path to other text stores merely because they are transitory.
+  wchar_t class_name[64]{};
+  TF_STATUS status{};
+  ComPtr<ITfRange> intended;
+  if (!state_->committed_pair_needs_left &&
+      GetClassNameW(state_->committed_pair_foreground, class_name, 64) > 0 &&
+      std::wstring_view(class_name).starts_with(L"Chrome_WidgetWin_") &&
+      SUCCEEDED(context->GetStatus(&status)) &&
+      (status.dwStaticFlags & TF_SS_TRANSITORY) != 0 &&
+      SUCCEEDED(state_->committed_pair_range->Clone(intended.GetAddressOf())) &&
+      SUCCEEDED(detail::CollapseInsertedRange(intended.Get(), cookie, 1)) &&
+      SUCCEEDED(current->CompareStart(cookie, intended.Get(), TF_ANCHOR_START, &start)) &&
+      SUCCEEDED(current->CompareEnd(cookie, intended.Get(), TF_ANCHOR_END, &end)) &&
+      start == 0 && end == 0) {
+    state_->committed_pair_needs_left = true;
+  }
+  return S_OK;
+}
+
+void TextService::FinishCommittedPairCaret(ITfContext* context) {
+  if (!state_->committed_pair_range) {
+    return;
+  }
+  // Wait for the originating punctuation chord to be released, without a timer,
+  // process wait, or global keyboard hook. Native text stores need no fallback.
+  if (HasShiftModifier() || HasControlModifier() || HasAltModifier()) {
+    return;
+  }
+  const auto same_focus = [this, context]() {
+    return context == state_->committed_pair_context.Get() &&
+           state_->committed_pair_focus != nullptr &&
+           GetFocus() == state_->committed_pair_focus &&
+           GetForegroundWindow() == state_->committed_pair_foreground &&
+           GetWindowThreadProcessId(GetForegroundWindow(), nullptr) == GetCurrentThreadId() &&
+           GetTickCount64() - state_->committed_pair_time <= 1000;
+  };
+  if (same_focus()) {
+    auto* edit = new (std::nothrow) CompositionEditSession(this, context, true);
+    if (edit != nullptr) {
+      HRESULT result = E_FAIL;
+      const HRESULT requested = context->RequestEditSession(
+          client_id_, edit, TF_ES_SYNC | TF_ES_READ, &result);
+      edit->Release();
+      MSG queued_key{};
+      // The originating key-up can still be queued while TSF calls this sink.
+      // Only a later key-down starts another user edit.
+      const bool later_key =
+          PeekMessageW(&queued_key, nullptr, WM_KEYDOWN, WM_KEYDOWN, PM_NOREMOVE) != FALSE ||
+          PeekMessageW(&queued_key, nullptr, WM_SYSKEYDOWN, WM_SYSKEYDOWN, PM_NOREMOVE) != FALSE;
+      if (SUCCEEDED(requested) && SUCCEEDED(result) &&
+          state_->committed_pair_needs_left && same_focus() &&
+          !later_key) {
+        // Some text stores discard SetSelection when committing an IME string.
+        // Correct only an unchanged pair and a validated host selection state.
+        // Never enqueue the correction behind another user's pending keystroke.
+        INPUT keys[2]{};
+        keys[0].type = keys[1].type = INPUT_KEYBOARD;
+        keys[0].ki.wVk = keys[1].ki.wVk = VK_LEFT;
+        keys[0].ki.dwFlags = KEYEVENTF_EXTENDEDKEY;
+        keys[1].ki.dwFlags = KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP;
+        static_cast<void>(SendInput(2, keys, sizeof(INPUT)));
+      }
+    }
+  }
+  ClearCommittedPairCaret();
+}
+
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
                                       BOOL* eaten) {
   static_cast<void>(context);
@@ -1311,7 +1440,8 @@ STDMETHODIMP TextService::OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM
   if (eaten == nullptr) {
     return E_INVALIDARG;
   }
-  *eaten = IsInputModeSwitchKey(wparam) && state_->switch_key_down ? TRUE : FALSE;
+  *eaten = (IsInputModeSwitchKey(wparam) && state_->switch_key_down) ||
+                   state_->committed_pair_range != nullptr ? TRUE : FALSE;
   return S_OK;
 }
 
@@ -1322,6 +1452,7 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lpa
     return E_INVALIDARG;
   }
   *eaten = FALSE;
+  FinishCommittedPairCaret(context);
   if (!IsInputModeSwitchKey(wparam) || !state_->switch_key_down) {
     return S_OK;
   }
