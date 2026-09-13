@@ -1474,8 +1474,13 @@ MainWindow::MainWindow() {
     AppWindow().Closing(
         [this](Microsoft::UI::Windowing::AppWindow const&,
                Microsoft::UI::Windowing::AppWindowClosingEventArgs const&) {
+          candidate_preview_.Hide();
           static_cast<void>(SaveFromControls());
         });
+    Closed([this](auto const&, auto const&) {
+      candidate_preview_closed_ = true;
+      candidate_preview_.Hide();
+    });
   }
   ConfigureWindow(options.quick_menu, options.anchor_x, options.anchor_y);
   if (options.quick_menu) {
@@ -1698,6 +1703,12 @@ void MainWindow::InitializeNavigation() {
     UpdateCandidatePreview();
   });
   CandidatePreviewHost().SizeChanged(
+      [this](auto const&, auto const&) { UpdateCandidatePreview(); });
+  CandidatePreviewHost().Unloaded(
+      [this](auto const&, auto const&) { candidate_preview_.Hide(); });
+  AppearancePage().ViewChanged(
+      [this](auto const&, auto const&) { UpdateCandidatePreview(); });
+  RootGrid().SizeChanged(
       [this](auto const&, auto const&) { UpdateCandidatePreview(); });
   const auto save_appearance = [this]() {
     if (SaveFromControls()) {
@@ -1924,7 +1935,7 @@ void MainWindow::EnsureCandidatePreview() {
   candidate_preview_ready_ = candidate_preview_.CreatePreview(window_handle);
 }
 
-std::optional<RECT> MainWindow::CandidatePreviewBounds() {
+std::optional<RECT> MainWindow::CandidatePreviewBounds(RECT& viewport_bounds) {
   if (!CandidatePreviewHost().IsLoaded() || CandidatePreviewHost().ActualWidth() <= 0.0 ||
       CandidatePreviewHost().ActualHeight() <= 0.0 || RootGrid().XamlRoot() == nullptr) {
     return std::nullopt;
@@ -1940,6 +1951,11 @@ std::optional<RECT> MainWindow::CandidatePreviewBounds() {
   bounds.top = to_pixel(origin.Y);
   bounds.right = bounds.left + to_pixel(CandidatePreviewHost().ActualWidth());
   bounds.bottom = bounds.top + to_pixel(CandidatePreviewHost().ActualHeight());
+  const auto viewport_transform = AppearancePage().TransformToVisual(RootGrid());
+  const auto viewport_origin = viewport_transform.TransformPoint({0.0F, 0.0F});
+  viewport_bounds = {to_pixel(viewport_origin.X), to_pixel(viewport_origin.Y),
+                     to_pixel(viewport_origin.X + AppearancePage().ActualWidth()),
+                     to_pixel(viewport_origin.Y + AppearancePage().ActualHeight())};
   return bounds;
 }
 
@@ -2112,6 +2128,19 @@ bool MainWindow::SelectTheme(std::string_view theme_id) {
 }
 
 void MainWindow::UpdateCandidatePreview() {
+  if (candidate_preview_closed_ || candidate_preview_updating_) {
+    return;
+  }
+  if (AppearancePage().Visibility() != Microsoft::UI::Xaml::Visibility::Visible ||
+      !CandidatePreviewHost().IsLoaded()) {
+    candidate_preview_.Hide();
+    return;
+  }
+  candidate_preview_updating_ = true;
+  struct PreviewUpdateScope {
+    bool& updating;
+    ~PreviewUpdateScope() { updating = false; }
+  } update_scope{candidate_preview_updating_};
   CandidatePreviewWindow().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
   CandidatePreviewUnavailable().Visibility(Microsoft::UI::Xaml::Visibility::Visible);
 
@@ -2157,7 +2186,8 @@ void MainWindow::UpdateCandidatePreview() {
   preview_settings.candidate_scale_with_text = CandidateScaleToggle().IsOn();
 
   EnsureCandidatePreview();
-  const auto preview_bounds = CandidatePreviewBounds();
+  RECT viewport_bounds{};
+  const auto preview_bounds = CandidatePreviewBounds(viewport_bounds);
   if (candidate_preview_ready_ && preview_bounds.has_value()) {
     CandidatePreviewUnavailable().Visibility(Microsoft::UI::Xaml::Visibility::Collapsed);
     ziliu::core::CompositionSnapshot snapshot;
@@ -2168,7 +2198,7 @@ void MainWindow::UpdateCandidatePreview() {
         {L"拼音", L"", 0.4}, {L"开源", L"", 0.3},  {L"轻巧", L"", 0.2},
     };
     snapshot.highlighted_index = 0;
-    candidate_preview_.ShowPreview(snapshot, *preview_bounds, preview_settings, 0);
+    candidate_preview_.ShowPreview(snapshot, *preview_bounds, preview_settings, 0, &viewport_bounds);
     return;
   }
 

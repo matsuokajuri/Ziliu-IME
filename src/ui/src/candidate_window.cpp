@@ -26,6 +26,7 @@ namespace ziliu::ui {
 namespace {
 
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
+constexpr wchar_t kCandidatePreviewClass[] = L"Ziliu.CandidatePreview.v1";
 constexpr float kVerticalWindowWidth = 420.0F;
 constexpr float kMinimumHorizontalWindowWidth = 280.0F;
 constexpr float kMinimumHorizontalCandidateWidth = 68.0F;
@@ -232,19 +233,21 @@ std::wstring Utf8ToWide(std::string_view value) {
   return result;
 }
 
-bool RegisterCandidateWindowClass() {
-  static std::once_flag once;
-  static bool result = false;
-  std::call_once(once, [] {
+bool RegisterCandidateWindowClass(bool preview) {
+  static std::array<std::once_flag, 2> once;
+  static std::array<bool, 2> result{};
+  const std::size_t index = preview ? 1 : 0;
+  std::call_once(once[index], [preview, index] {
     WNDCLASSEXW window_class{sizeof(window_class)};
     window_class.style = CS_HREDRAW | CS_VREDRAW;
     window_class.lpfnWndProc = CandidateWindow::WindowProcedure;
     window_class.hInstance = GetModuleHandleW(nullptr);
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    window_class.lpszClassName = kCandidateWindowClass;
-    result = RegisterClassExW(&window_class) != 0;
+    // Settings can also load the real TIP. Do not share its window class.
+    window_class.lpszClassName = preview ? kCandidatePreviewClass : kCandidateWindowClass;
+    result[index] = RegisterClassExW(&window_class) != 0;
   });
-  return result;
+  return result[index];
 }
 
 }  // namespace
@@ -264,10 +267,13 @@ bool CandidateWindow::CreatePreview(HWND owner) {
 }
 
 bool CandidateWindow::CreateInternal(HWND owner, bool preview) {
-  if (window_ != nullptr) {
-    return preview_mode_ == preview;
+  if (preview && (owner == nullptr || !IsWindow(owner))) {
+    return false;
   }
-  if (!RegisterCandidateWindowClass()) {
+  if (window_ != nullptr) {
+    return preview_mode_ == preview && (!preview || GetParent(window_) == owner);
+  }
+  if (!RegisterCandidateWindowClass(preview)) {
     return false;
   }
 
@@ -283,9 +289,10 @@ bool CandidateWindow::CreateInternal(HWND owner, bool preview) {
   static_cast<void>(EnsureImagingFactory());
 
   preview_mode_ = preview;
-  const DWORD extended_style = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
-  const DWORD style = WS_POPUP;
-  window_ = CreateWindowExW(extended_style, kCandidateWindowClass, L"", style, 0, 0,
+  const DWORD extended_style = WS_EX_NOACTIVATE | (preview ? 0 : WS_EX_TOOLWINDOW);
+  const DWORD style = preview ? WS_CHILD | WS_CLIPSIBLINGS : WS_POPUP;
+  window_ = CreateWindowExW(extended_style,
+                            preview ? kCandidatePreviewClass : kCandidateWindowClass, L"", style, 0, 0,
                             static_cast<int>(kVerticalWindowWidth), 64, owner, nullptr,
                             GetModuleHandleW(nullptr), this);
   if (window_ == nullptr) {
@@ -309,9 +316,34 @@ void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
 void CandidateWindow::ShowPreview(const core::CompositionSnapshot& snapshot,
                                   const RECT& preview_bounds,
                                   const core::Settings& settings,
-                                  std::size_t page_offset) {
+                                  std::size_t page_offset,
+                                  const RECT* viewport_bounds) {
+  if (!preview_mode_ || preview_bounds.right <= preview_bounds.left ||
+      preview_bounds.bottom <= preview_bounds.top) {
+    Hide();
+    return;
+  }
   const RECT empty_text_rectangle{};
   ShowInternal(snapshot, empty_text_rectangle, &preview_bounds, settings, page_offset);
+  if (window_ == nullptr) {
+    return;
+  }
+  // The XAML host and viewport are in owner-client physical pixels. Keep the
+  // child in that space, including when the ScrollViewer clips part of it.
+  RECT child_bounds{};
+  GetWindowRect(window_, &child_bounds);
+  MapWindowPoints(nullptr, GetParent(window_), reinterpret_cast<POINT*>(&child_bounds), 2);
+  RECT visible{};
+  const RECT& clip = viewport_bounds == nullptr ? preview_bounds : *viewport_bounds;
+  if (!IntersectRect(&visible, &child_bounds, &clip)) {
+    Hide();
+    return;
+  }
+  HRGN region = CreateRectRgn(visible.left - child_bounds.left, visible.top - child_bounds.top,
+                             visible.right - child_bounds.left, visible.bottom - child_bounds.top);
+  if (region != nullptr && SetWindowRgn(window_, region, TRUE) == 0) {
+    DeleteObject(region);
+  }
 }
 
 void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
@@ -775,6 +807,10 @@ LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPA
 
 LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
+    case WM_NCHITTEST:
+      // A preview is display-only; allow the underlying XAML ScrollViewer to
+      // receive pointer and wheel input instead of intercepting it.
+      return preview_mode_ ? HTTRANSPARENT : DefWindowProcW(window_, message, wparam, lparam);
     case WM_PAINT:
       Paint();
       return 0;
@@ -1338,7 +1374,7 @@ bool CandidateWindow::PresentLayeredSurface() {
   POINT source{};
   BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
   const BOOL presented = UpdateLayeredWindow(
-      window_, screen_dc, &destination, &layered_pixel_size_,
+      window_, screen_dc, preview_mode_ ? nullptr : &destination, &layered_pixel_size_,
       layered_memory_dc_, &source, 0, &blend, ULW_ALPHA);
   ReleaseDC(nullptr, screen_dc);
   return presented != FALSE;

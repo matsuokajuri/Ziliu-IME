@@ -4,6 +4,12 @@ ziliu_configure_target(ziliu_core_tests)
 
 add_test(NAME ziliu_core_tests COMMAND ziliu_core_tests)
 
+add_executable(ziliu_ui_preview_window_tests ui_preview_window_tests.cpp ../src/settings/app.manifest)
+target_link_libraries(ziliu_ui_preview_window_tests PRIVATE ziliu_ui)
+ziliu_configure_target(ziliu_ui_preview_window_tests)
+add_test(NAME ziliu_ui_preview_window_tests COMMAND ziliu_ui_preview_window_tests)
+set_tests_properties(ziliu_ui_preview_window_tests PROPERTIES TIMEOUT 20)
+
 add_executable(ziliu_ui_native_candidate_geometry_tests ui_native_candidate_geometry_tests.cpp)
 target_link_libraries(ziliu_ui_native_candidate_geometry_tests PRIVATE d2d1 dwrite ole32 windowscodecs)
 ziliu_configure_target(ziliu_ui_native_candidate_geometry_tests)

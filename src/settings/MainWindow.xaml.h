@@ -30,7 +30,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void UpdateColorSwatches();
   void UpdateCandidatePreview();
   void EnsureCandidatePreview();
-  [[nodiscard]] std::optional<RECT> CandidatePreviewBounds();
+  [[nodiscard]] std::optional<RECT> CandidatePreviewBounds(RECT& viewport_bounds);
   void ReloadThemeCatalog();
   void RebuildThemeList();
   bool SelectTheme(std::string_view theme_id);
@@ -42,6 +42,8 @@ struct MainWindow : MainWindowT<MainWindow> {
   ziliu::ui::CandidateWindow candidate_preview_;
   std::vector<ziliu::core::InstalledTheme> installed_themes_;
   bool candidate_preview_ready_ = false;
+  bool candidate_preview_updating_ = false;
+  bool candidate_preview_closed_ = false;
   bool suppress_appearance_events_ = false;
   std::optional<bool> appearance_layout_narrow_;
   bool theme_dialog_open_ = false;

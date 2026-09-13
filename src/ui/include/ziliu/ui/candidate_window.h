@@ -30,7 +30,8 @@ class CandidateWindow final {
   void Show(const core::CompositionSnapshot& snapshot, const RECT& text_rectangle,
             const core::Settings& settings, std::size_t page_offset);
   void ShowPreview(const core::CompositionSnapshot& snapshot, const RECT& preview_bounds,
-                   const core::Settings& settings, std::size_t page_offset);
+                   const core::Settings& settings, std::size_t page_offset,
+                   const RECT* viewport_bounds = nullptr);
   void SetExpanded(bool expanded);
   void SetQuickMenuAction(std::function<void(POINT)> action);
   void Hide();
