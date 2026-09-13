@@ -2,9 +2,11 @@
 
 #include <msctf.h>
 #include <windows.h>
+#include <aclapi.h>
 #include <wrl/client.h>
 
 #include <array>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <iterator>
@@ -58,6 +60,44 @@ HRESULT UpdateUserLayoutOrTip(bool install) {
   FreeLibrary(input_module);
   return succeeded ? S_OK
                    : (error == ERROR_SUCCESS ? E_FAIL : HRESULT_FROM_WIN32(error));
+}
+
+HRESULT GrantTipLoadAccess(const std::filesystem::path& dll_path) {
+  PACL previous = nullptr;
+  PSECURITY_DESCRIPTOR descriptor = nullptr;
+  const DWORD queried = GetNamedSecurityInfoW(dll_path.c_str(), SE_FILE_OBJECT,
+      DACL_SECURITY_INFORMATION, nullptr, nullptr, &previous, nullptr, &descriptor);
+  if (queried != ERROR_SUCCESS) {
+    return HRESULT_FROM_WIN32(queried);
+  }
+  // A null DACL already allows access; do not replace it with a package-only ACL.
+  if (previous == nullptr) {
+    LocalFree(descriptor);
+    return S_OK;
+  }
+  std::array<std::byte, SECURITY_MAX_SID_SIZE> sid_buffer{};
+  DWORD sid_size = static_cast<DWORD>(sid_buffer.size());
+  if (!CreateWellKnownSid(WinBuiltinAnyPackageSid, nullptr, sid_buffer.data(), &sid_size)) {
+    const DWORD error = GetLastError();
+    LocalFree(descriptor);
+    return HRESULT_FROM_WIN32(error);
+  }
+  EXPLICIT_ACCESSW access{};
+  access.grfAccessPermissions = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
+  access.grfAccessMode = GRANT_ACCESS;
+  access.grfInheritance = NO_INHERITANCE;
+  access.Trustee.TrusteeForm = TRUSTEE_IS_SID;
+  access.Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+  access.Trustee.ptstrName = reinterpret_cast<wchar_t*>(sid_buffer.data());
+  PACL updated = nullptr;
+  DWORD result = SetEntriesInAclW(1, &access, previous, &updated);
+  if (result == ERROR_SUCCESS) {
+    result = SetNamedSecurityInfoW(const_cast<wchar_t*>(dll_path.c_str()), SE_FILE_OBJECT,
+        DACL_SECURITY_INFORMATION, nullptr, nullptr, updated, nullptr);
+  }
+  LocalFree(updated);
+  LocalFree(descriptor);
+  return HRESULT_FROM_WIN32(result);
 }
 
 HRESULT RegisterComServer(const std::filesystem::path& dll_path) {
@@ -150,7 +190,13 @@ HRESULT Install() {
     return HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
   }
 
-  HRESULT result = RegisterComServer(dll_path);
+  HRESULT result = GrantTipLoadAccess(dll_path);
+  if (FAILED(result)) {
+    std::cerr << "GrantTipLoadAccess failed: 0x" << std::hex
+              << static_cast<unsigned long>(result) << '\n';
+    return result;
+  }
+  result = RegisterComServer(dll_path);
   if (FAILED(result)) {
     std::cerr << "RegisterComServer failed: 0x" << std::hex
               << static_cast<unsigned long>(result) << '\n';

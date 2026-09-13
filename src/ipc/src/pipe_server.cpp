@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstddef>
+#include <exception>
 #include <utility>
 #include <vector>
 
@@ -78,7 +79,10 @@ class PipeSecurity final {
       return false;
     }
     const auto* sid = static_cast<const wchar_t*>(sid_text.get());
-    const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;" + std::wstring(sid) + L")";
+    // SearchHost and other AppContainer text clients need the package SID as
+    // well as a low mandatory label. Requests are still authenticated below.
+    const std::wstring sddl = L"D:P(A;;GA;;;SY)(A;;GRGW;;;S-1-15-2-1)(A;;GA;;;" +
+                              std::wstring(sid) + L")S:(ML;;NW;;;LW)";
     if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
             sddl.c_str(), SDDL_REVISION_1, descriptor_.address(), nullptr)) {
       return false;
@@ -95,6 +99,52 @@ class PipeSecurity final {
   SECURITY_ATTRIBUTES attributes_{};
   LocalMemory descriptor_;
 };
+
+bool SameUserAndSession(HANDLE pipe) {
+  HANDLE server_value = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &server_value)) {
+    return false;
+  }
+  Handle server(server_value);
+  if (!ImpersonateNamedPipeClient(pipe)) {
+    return false;
+  }
+  HANDLE client_value = nullptr;
+  const BOOL opened = OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &client_value);
+  // Never execute the engine or continue serving while impersonating a client.
+  if (!RevertToSelf()) {
+    std::terminate();
+  }
+  Handle client(client_value);
+  if (!opened) {
+    return false;
+  }
+  DWORD server_session = 0;
+  DWORD client_session = 0;
+  DWORD returned = 0;
+  if (!GetTokenInformation(server.get(), TokenSessionId, &server_session,
+                           sizeof(server_session), &returned) ||
+      !GetTokenInformation(client.get(), TokenSessionId, &client_session,
+                           sizeof(client_session), &returned) ||
+      server_session != client_session) {
+    return false;
+  }
+  DWORD server_size = 0;
+  DWORD client_size = 0;
+  GetTokenInformation(server.get(), TokenUser, nullptr, 0, &server_size);
+  GetTokenInformation(client.get(), TokenUser, nullptr, 0, &client_size);
+  if (server_size == 0 || client_size == 0) {
+    return false;
+  }
+  std::vector<std::byte> server_user(server_size);
+  std::vector<std::byte> client_user(client_size);
+  if (!GetTokenInformation(server.get(), TokenUser, server_user.data(), server_size, &returned) ||
+      !GetTokenInformation(client.get(), TokenUser, client_user.data(), client_size, &returned)) {
+    return false;
+  }
+  return EqualSid(reinterpret_cast<TOKEN_USER*>(server_user.data())->User.Sid,
+                  reinterpret_cast<TOKEN_USER*>(client_user.data())->User.Sid) != FALSE;
+}
 
 }  // namespace
 
@@ -154,6 +204,9 @@ bool PipeServer::ServeClient(void* pipe_handle) {
           &protocol_version)) {
     response.status = core::ipc::Status::kInvalidRequest;
   } else {
+    if (!SameUserAndSession(pipe)) {
+      return false;
+    }
     response = session_host_.Handle(request);
   }
 

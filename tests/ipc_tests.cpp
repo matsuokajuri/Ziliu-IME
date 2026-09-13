@@ -174,6 +174,27 @@ int main() {
   Expect(response.has_value() && response->status == Status::kOk,
          "close session should succeed");
 
+  // An anonymous SQOS client must not gain access through the AppContainer ACE.
+  Expect(WaitNamedPipeW(pipe_name.c_str(), 1000) != FALSE, "pipe should be available");
+  HANDLE anonymous = CreateFileW(pipe_name.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+      nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS, nullptr);
+  Expect(anonymous != INVALID_HANDLE_VALUE, "anonymous test should reach authentication");
+  DWORD mode = PIPE_READMODE_MESSAGE;
+  Expect(SetNamedPipeHandleState(anonymous, &mode, nullptr, nullptr) != FALSE,
+         "anonymous test should use message mode");
+  std::vector<std::byte> ping;
+  Expect(ziliu::core::ipc::EncodeRequest(Request{request_id++, 0, Command::kPing, 0}, &ping),
+         "anonymous ping should encode");
+  std::byte reply[256]{};
+  DWORD reply_size = 0;
+  const BOOL anonymous_result = TransactNamedPipe(anonymous, ping.data(),
+      static_cast<DWORD>(ping.size()), reply, sizeof(reply), &reply_size, nullptr);
+  CloseHandle(anonymous);
+  Expect(!anonymous_result, "anonymous client must be disconnected without an engine response");
+  response = client.Exchange(Request{request_id++, 0, Command::kPing, 0});
+  Expect(response.has_value() && response->status == Status::kOk,
+         "authorized client should still work after rejecting anonymous client");
+
   server.Stop();
   server_thread.join();
   std::cout << "ziliu_ipc_tests: OK\n";
