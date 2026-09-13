@@ -29,7 +29,21 @@ constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr wchar_t kCandidatePreviewClass[] = L"Ziliu.CandidatePreview.v1";
 constexpr UINT_PTR kNativeFadeTimer = 0x5A01;
 constexpr UINT_PTR kNativeWidthTimer = 0x5A02;
+// A 16ms USER timer can land on every other 15.6ms system tick (~32 FPS).
+// Request the supported 10ms minimum, without changing system timer resolution.
+constexpr UINT kNativeWidthInterval = USER_TIMER_MINIMUM;
 constexpr float kNativeWidthDuration = 180.0F;
+
+double NativeAnimationMilliseconds() {
+  static const double ticks_per_ms = [] {
+    LARGE_INTEGER frequency{};
+    QueryPerformanceFrequency(&frequency);
+    return static_cast<double>(frequency.QuadPart) / 1000.0;
+  }();
+  LARGE_INTEGER counter{};
+  QueryPerformanceCounter(&counter);
+  return static_cast<double>(counter.QuadPart) / ticks_per_ms;
+}
 constexpr float kVerticalWindowWidth = 420.0F;
 constexpr float kMinimumHorizontalWindowWidth = 280.0F;
 constexpr float kMinimumHorizontalCandidateWidth = 68.0F;
@@ -788,8 +802,8 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     width_presented_rectangle_ = target_rectangle;
     if (can_animate_width && width != previous_rectangle.right - previous_rectangle.left) {
       width_from_rectangle_ = previous_rectangle;
-      width_started_ = GetTickCount64();
-      width_active_ = SetTimer(window_, kNativeWidthTimer, 16, nullptr) != 0;
+      width_started_ms_ = NativeAnimationMilliseconds();
+      width_active_ = SetTimer(window_, kNativeWidthTimer, kNativeWidthInterval, nullptr) != 0;
       if (width_active_) {
         width_presented_rectangle_ = detail::NativeWidthFrame(
             width_from_rectangle_, target_rectangle, 0.0F, kNativeWidthDuration);
@@ -908,7 +922,7 @@ void CandidateWindow::AdvanceNativeWidth() {
   if (!width_active_) {
     return;
   }
-  const float elapsed = static_cast<float>(GetTickCount64() - width_started_);
+  const float elapsed = static_cast<float>(NativeAnimationMilliseconds() - width_started_ms_);
   if (elapsed >= kNativeWidthDuration || !NativeAnimationsEnabled()) {
     KillTimer(window_, kNativeWidthTimer);
     width_active_ = false;

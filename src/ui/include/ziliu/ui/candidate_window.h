@@ -136,7 +136,7 @@ class CandidateWindow final {
   RECT width_from_rectangle_{};
   RECT width_to_rectangle_{};
   RECT width_presented_rectangle_{};
-  ULONGLONG width_started_ = 0;
+  double width_started_ms_ = 0.0;
   float dpi_scale_ = 1.0F;
   float layout_scale_ = 1.0F;
   float preedit_height_ = 42.0F;

@@ -1,11 +1,56 @@
 #include "ziliu/ui/candidate_window.h"
 
 #include <cstdlib>
+#include <algorithm>
 #include <iostream>
 #include <string_view>
 #include <thread>
 
 namespace {
+struct AnimationFrameTiming {
+  double time_ms;
+  double work_ms;
+};
+thread_local WNDPROC original_window_procedure = nullptr;
+thread_local bool measure_frames = false;
+thread_local std::vector<AnimationFrameTiming> animation_frames;
+
+double PreciseMilliseconds() {
+  LARGE_INTEGER counter{}, frequency{};
+  QueryPerformanceCounter(&counter);
+  QueryPerformanceFrequency(&frequency);
+  return static_cast<double>(counter.QuadPart) * 1000.0 / static_cast<double>(frequency.QuadPart);
+}
+
+LRESULT CALLBACK MeasureAnimationFrame(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  const bool measure = measure_frames && message == WM_TIMER && wparam == 0x5A02;
+  const double started = measure ? PreciseMilliseconds() : 0.0;
+  const auto result = CallWindowProcW(original_window_procedure, window, message, wparam, lparam);
+  if (measure) {
+    animation_frames.push_back({started, PreciseMilliseconds() - started});
+  }
+  return result;
+}
+
+void ReportFrameTiming() {
+  std::vector<double> intervals, work;
+  for (std::size_t index = 0; index < animation_frames.size(); ++index) {
+    work.push_back(animation_frames[index].work_ms);
+    if (index != 0) {
+      intervals.push_back(animation_frames[index].time_ms - animation_frames[index - 1].time_ms);
+    }
+  }
+  std::sort(intervals.begin(), intervals.end());
+  std::sort(work.begin(), work.end());
+  if (!intervals.empty()) {
+    std::cout << "ANIMATION_TIMING frames=" << animation_frames.size()
+              << " interval_median_ms=" << intervals[intervals.size() / 2]
+              << " interval_max_ms=" << intervals.back()
+              << " work_median_ms=" << work[work.size() / 2]
+              << " work_max_ms=" << work.back() << '\n';
+  }
+}
+
 void Expect(bool condition, std::string_view message) {
   if (!condition) {
     std::cerr << "FAILED: " << message << '\n';
@@ -60,6 +105,9 @@ void CheckRealWidthAnimation() {
     Expect(popup.Create(owner), "create isolated candidate popup");
     HWND window = FindWindowW(L"Ziliu.CandidateWindow.v1", nullptr);
     Expect(window != nullptr, "find popup on private desktop");
+    original_window_procedure = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
+        window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(MeasureAnimationFrame)));
+    Expect(original_window_procedure != nullptr, "observe real animation frame timings");
     ziliu::core::Settings settings;
     settings.theme_mode = ziliu::core::ThemeMode::kLight;
     settings.active_theme_id = ziliu::core::kDefaultThemeId;
@@ -76,6 +124,8 @@ void CheckRealWidthAnimation() {
     const LONG narrow_width = WindowWidth(window);
     BOOL animate = FALSE;
     const bool enabled = SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &animate, 0) && animate;
+    animation_frames.clear();
+    measure_frames = true;
     popup.Show(wide, caret, settings, 0);
     if (enabled) {
       Expect(WindowWidth(window) == narrow_width, "new content must not snap the popup width");
@@ -85,6 +135,8 @@ void CheckRealWidthAnimation() {
     // An identical snapshot must preserve the running transition's deadline.
     popup.Show(wide, caret, settings, 0);
     PumpFor(150);
+    measure_frames = false;
+    ReportFrameTiming();
     const LONG wide_width = WindowWidth(window);
     Expect(wide_width > narrow_width, "fixture produces genuinely different widths");
     if (enabled) {
