@@ -8,6 +8,7 @@
 #include <d2d1helper.h>
 #include <dwmapi.h>
 #include <windowsx.h>
+#include <UIAutomation.h>
 
 #include <algorithm>
 #include <array>
@@ -23,7 +24,113 @@
 #include <utility>
 
 namespace ziliu::ui {
+
+struct CandidateCaretMailbox {
+  std::mutex mutex;
+  HWND window = nullptr;
+  bool alive = true;
+  bool pending = false;
+  std::uint64_t revision = 0;
+  std::uint64_t completed_revision = 0;
+  std::optional<RECT> rectangle;
+};
+
 namespace {
+
+constexpr UINT kCaretPositionReady = WM_APP + 0x271;
+constexpr UINT_PTR kCaretPositionTimer = 0x5A03;
+
+std::optional<RECT> ReadFocusedCaret() {
+  using Microsoft::WRL::ComPtr;
+  const HWND foreground = GetForegroundWindow();
+  DWORD process = 0;
+  GetWindowThreadProcessId(foreground, &process);
+  if (process != GetCurrentProcessId()) {
+    return std::nullopt;
+  }
+  ComPtr<IUIAutomation2> automation;
+  // Windows rejects the earlier 30-ms setting; 100 ms is a supported bound.
+  if (FAILED(CoCreateInstance(__uuidof(CUIAutomation8), nullptr, CLSCTX_INPROC_SERVER,
+                               IID_PPV_ARGS(automation.GetAddressOf()))) ||
+      FAILED(automation->put_ConnectionTimeout(100)) ||
+      FAILED(automation->put_TransactionTimeout(100))) {
+    return std::nullopt;
+  }
+  static_cast<void>(automation->put_AutoSetFocus(FALSE));
+  ComPtr<IUIAutomationElement> element;
+  int element_process = 0;
+  if (FAILED(automation->GetFocusedElement(element.GetAddressOf())) || !element ||
+      FAILED(element->get_CurrentProcessId(&element_process)) ||
+      static_cast<DWORD>(element_process) != process) {
+    return std::nullopt;
+  }
+  ComPtr<IUIAutomationTextPattern2> pattern;
+  ComPtr<IUIAutomationTextRange> range;
+  BOOL active = FALSE;
+  if (FAILED(element->GetCurrentPatternAs(UIA_TextPattern2Id,
+          IID_PPV_ARGS(pattern.GetAddressOf()))) || !pattern ||
+      FAILED(pattern->GetCaretRange(&active, range.GetAddressOf())) || !active || !range) {
+    return std::nullopt;
+  }
+  SAFEARRAY* bounds = nullptr;
+  if (FAILED(range->GetBoundingRectangles(&bounds)) || !bounds) {
+    return std::nullopt;
+  }
+  LONG first = 0;
+  LONG last = -1;
+  double* values = nullptr;
+  std::optional<RECT> result;
+  if (SafeArrayGetDim(bounds) == 1 && SafeArrayGetElemsize(bounds) == sizeof(double) &&
+      SUCCEEDED(SafeArrayGetLBound(bounds, 1, &first)) &&
+      SUCCEEDED(SafeArrayGetUBound(bounds, 1, &last)) && last - first + 1 == 4 &&
+      SUCCEEDED(SafeArrayAccessData(bounds, reinterpret_cast<void**>(&values)))) {
+    if (std::all_of(values, values + 4, [](double v) { return std::isfinite(v) && std::abs(v) < 1000000; }) &&
+        values[2] >= 0 && values[3] > 0) {
+      result = RECT{static_cast<LONG>(std::floor(values[0])),
+                    static_cast<LONG>(std::floor(values[1])),
+                    static_cast<LONG>(std::ceil(values[0] + values[2])),
+                    static_cast<LONG>(std::ceil(values[1] + values[3]))};
+    }
+    SafeArrayUnaccessData(bounds);
+  }
+  SafeArrayDestroy(bounds);
+  ComPtr<IUIAutomationElement> current;
+  BOOL same = FALSE;
+  if (GetForegroundWindow() != foreground ||
+      FAILED(automation->GetFocusedElement(current.GetAddressOf())) || !current ||
+      FAILED(automation->CompareElements(element.Get(), current.Get(), &same)) || !same) {
+    return std::nullopt;
+  }
+  return result;
+}
+
+struct CaretQuery {
+  std::shared_ptr<CandidateCaretMailbox> mailbox;
+  std::uint64_t revision;
+  HMODULE module;
+};
+
+void CALLBACK QueryCaretOnWorker(PTP_CALLBACK_INSTANCE callback, void* parameter) {
+  std::unique_ptr<CaretQuery> query(static_cast<CaretQuery*>(parameter));
+  // UI Automation can call back into the app's UI thread. Never block that
+  // thread waiting for it, and keep this DLL mapped until the callback returns.
+  FreeLibraryWhenCallbackReturns(callback, query->module);
+  std::optional<RECT> rectangle;
+  const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+  if (SUCCEEDED(initialized)) {
+    rectangle = ReadFocusedCaret();
+    CoUninitialize();
+  }
+  auto& box = *query->mailbox;
+  std::lock_guard lock(box.mutex);
+  box.pending = false;
+  box.completed_revision = query->revision;
+  box.rectangle = rectangle;
+  if (box.alive && box.window) {
+    PostMessageW(box.window, kCaretPositionReady,
+                 reinterpret_cast<WPARAM>(query->mailbox.get()), 0);
+  }
+}
 
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr wchar_t kCandidatePreviewClass[] = L"Ziliu.CandidatePreview.v1";
@@ -270,6 +377,7 @@ bool RegisterCandidateWindowClass(bool preview) {
 }  // namespace
 
 CandidateWindow::~CandidateWindow() {
+  StopCaretPosition();
   if (window_ != nullptr) {
     DestroyWindow(window_);
   }
@@ -317,6 +425,8 @@ bool CandidateWindow::CreateInternal(HWND owner, bool preview) {
   }
 
   if (!preview) {
+    caret_mailbox_ = std::make_shared<CandidateCaretMailbox>();
+    caret_mailbox_->window = window_;
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
     DwmSetWindowAttribute(window_, DWMWA_WINDOW_CORNER_PREFERENCE, &preference,
                           sizeof(preference));
@@ -371,6 +481,7 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     return;
   }
   const bool was_visible = IsWindowVisible(window_) != FALSE;
+  candidate_requested_visible_ = true;
   const bool was_hiding = hide_after_fade_;
   RECT previous_rectangle{};
   GetWindowRect(window_, &previous_rectangle);
@@ -826,6 +937,78 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   }
   layered_present_retry_attempted_ = false;
   InvalidateRect(window_, nullptr, FALSE);
+  if (!preview_mode_ && !caret_repositioning_) {
+    // Some controls move their input surface without a TSF layout notification.
+    // Poll only while this candidate is requested; never change system timer resolution.
+    SetTimer(window_, kCaretPositionTimer, 100, nullptr);
+    RequestCaretPosition();
+  }
+}
+
+void CandidateWindow::StopCaretPosition() {
+  if (caret_mailbox_) {
+    std::lock_guard lock(caret_mailbox_->mutex);
+    caret_mailbox_->alive = false;
+    caret_mailbox_->window = nullptr;
+    ++caret_mailbox_->revision;
+  }
+}
+
+void CandidateWindow::RequestCaretPosition(bool invalidate_pending) {
+  DWORD foreground_process = 0;
+  GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
+  if (!caret_mailbox_ || !candidate_requested_visible_ ||
+      foreground_process != GetCurrentProcessId()) {
+    return;
+  }
+  std::lock_guard lock(caret_mailbox_->mutex);
+  if (!invalidate_pending && caret_mailbox_->pending) {
+    return;
+  }
+  ++caret_mailbox_->revision;
+  if (!caret_mailbox_->alive || caret_mailbox_->pending) {
+    return;
+  }
+  HMODULE module = nullptr;
+  if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+          reinterpret_cast<const wchar_t*>(&QueryCaretOnWorker), &module)) {
+    return;
+  }
+  auto query = std::make_unique<CaretQuery>(CaretQuery{caret_mailbox_, caret_mailbox_->revision, module});
+  caret_mailbox_->pending = true;
+  if (TrySubmitThreadpoolCallback(QueryCaretOnWorker, query.get(), nullptr)) {
+    static_cast<void>(query.release());
+  } else {
+    caret_mailbox_->pending = false;
+    FreeLibrary(module);
+  }
+}
+
+void CandidateWindow::ApplyCaretPosition() {
+  if (!caret_mailbox_ || !candidate_requested_visible_) {
+    return;
+  }
+  DWORD foreground_process = 0;
+  GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
+  if (foreground_process != GetCurrentProcessId()) {
+    return;
+  }
+  std::optional<RECT> rectangle;
+  bool stale = false;
+  {
+    std::lock_guard lock(caret_mailbox_->mutex);
+    stale = caret_mailbox_->completed_revision != caret_mailbox_->revision;
+    if (!stale) {
+      rectangle = caret_mailbox_->rectangle;
+    }
+  }
+  if (stale) {
+    RequestCaretPosition();
+  } else if (rectangle && !EqualRect(&*rectangle, &text_rectangle_)) {
+    caret_repositioning_ = true;
+    Show(snapshot_, *rectangle, settings_, page_offset_);
+    caret_repositioning_ = false;
+  }
 }
 
 void CandidateWindow::SetExpanded(bool expanded) {
@@ -843,6 +1026,14 @@ void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
 }
 
 void CandidateWindow::Hide() {
+  candidate_requested_visible_ = false;
+  if (window_) {
+    KillTimer(window_, kCaretPositionTimer);
+  }
+  if (caret_mailbox_) {
+    std::lock_guard lock(caret_mailbox_->mutex);
+    ++caret_mailbox_->revision;
+  }
   if (window_ != nullptr) {
     KillTimer(window_, kNativeWidthTimer);
     width_active_ = false;
@@ -958,7 +1149,30 @@ LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPA
 
 LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
+    case WM_ACTIVATEAPP:
+      // A host can keep its TSF context focused while another app (e.g. Start)
+      // becomes foreground. Its no-activate popup must not remain on that app.
+      if (!wparam && !preview_mode_) {
+        const bool requested = candidate_requested_visible_;
+        Hide();
+        candidate_requested_visible_ = requested;
+      } else if (wparam && !preview_mode_) {
+        if (candidate_requested_visible_) {
+          SetTimer(window_, kCaretPositionTimer, 100, nullptr);
+        }
+        RequestCaretPosition();
+      }
+      return DefWindowProcW(window_, message, wparam, lparam);
+    case kCaretPositionReady:
+      if (wparam == reinterpret_cast<WPARAM>(caret_mailbox_.get())) {
+        ApplyCaretPosition();
+      }
+      return 0;
     case WM_TIMER:
+      if (wparam == kCaretPositionTimer) {
+        RequestCaretPosition(false);
+        return 0;
+      }
       if (wparam == kNativeWidthTimer) {
         AdvanceNativeWidth();
         return 0;
@@ -1107,6 +1321,7 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
     case WM_ERASEBKGND:
       return 1;
     case WM_NCDESTROY:
+      StopCaretPosition();
       KillTimer(window_, kNativeFadeTimer);
       KillTimer(window_, kNativeWidthTimer);
       width_active_ = false;

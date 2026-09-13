@@ -159,6 +159,11 @@ void CheckRealWidthAnimation() {
     popup.Hide();
     PumpFor(150);
     Expect(!IsWindowVisible(window), "hide during resize must terminate and leave no visible popup");
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(200);
+    SendMessageW(window, WM_ACTIVATEAPP, FALSE, 0);
+    PumpFor(150);
+    Expect(!IsWindowVisible(window), "deactivated app must not leave a candidate over another app");
     std::cout << "Isolated layered HWND width transition checks PASS; animation enabled=" << enabled << '\n';
   }
   DestroyWindow(owner);

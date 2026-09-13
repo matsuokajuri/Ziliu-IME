@@ -12,10 +12,13 @@
 
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string_view>
 #include <vector>
 
 namespace ziliu::ui {
+
+struct CandidateCaretMailbox;
 
 class CandidateWindow final {
  public:
@@ -40,6 +43,12 @@ class CandidateWindow final {
                                           LPARAM lparam);
 
  private:
+  void RequestCaretPosition(bool invalidate_pending = true);
+  void ApplyCaretPosition();
+  void StopCaretPosition();
+  std::shared_ptr<CandidateCaretMailbox> caret_mailbox_;
+  bool caret_repositioning_ = false;
+  bool candidate_requested_visible_ = false;
   struct RenderPalette {
     D2D1_COLOR_F preedit{};
     D2D1_COLOR_F highlighted_candidate{};
