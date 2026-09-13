@@ -4,6 +4,10 @@ ziliu_configure_target(ziliu_core_tests)
 
 add_test(NAME ziliu_core_tests COMMAND ziliu_core_tests)
 
+add_executable(ziliu_tsf_commit_caret_tests tsf_commit_caret_tests.cpp)
+ziliu_configure_target(ziliu_tsf_commit_caret_tests)
+add_test(NAME ziliu_tsf_commit_caret_tests COMMAND ziliu_tsf_commit_caret_tests)
+
 add_executable(ziliu_ui_preview_window_tests ui_preview_window_tests.cpp ../src/settings/app.manifest)
 target_link_libraries(ziliu_ui_preview_window_tests PRIVATE ziliu_ui)
 ziliu_configure_target(ziliu_ui_preview_window_tests)

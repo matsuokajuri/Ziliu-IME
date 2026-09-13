@@ -1,4 +1,5 @@
 #include "ziliu/tsf/text_service.h"
+#include "commit_caret.h"
 
 #include "ziliu/core/ipc_protocol.h"
 #include "ziliu/core/settings.h"
@@ -1235,7 +1236,14 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
 
 HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context) {
   using Microsoft::WRL::ComPtr;
-  const auto& response = state_->pending_response;
+  // A text-store call can reenter TSF. Freeze this edit's payload and consume its
+  // caret request before calling the host, rather than rereading mutable state.
+  const std::wstring commit = state_->pending_response.commit;
+  const std::size_t caret_back = std::exchange(state_->pending_caret_back, 0);
+  if (commit.size() > static_cast<std::size_t>(std::numeric_limits<LONG>::max()) ||
+      caret_back > commit.size()) {
+    return E_INVALIDARG;
+  }
   ComPtr<ITfRange> range;
   TF_SELECTION selection{};
   ULONG fetched = 0;
@@ -1246,9 +1254,25 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
   }
   range.Attach(selection.range);
 
-  if (!response.commit.empty()) {
-    const HRESULT text_result = range->SetText(edit_cookie, 0, response.commit.data(),
-                                               static_cast<LONG>(response.commit.size()));
+  if (!commit.empty()) {
+    HRESULT text_result = E_FAIL;
+    if (caret_back != 0) {
+      ComPtr<ITfInsertAtSelection> insertion;
+      const HRESULT query_result = context->QueryInterface(IID_PPV_ARGS(&insertion));
+      if (FAILED(query_result)) {
+        return query_result;
+      }
+      // Use the range returned for the actual insertion, not the old selection
+      // whose anchors may have moved while the text store inserted the pair.
+      ComPtr<ITfRange> inserted;
+      text_result = insertion->InsertTextAtSelection(edit_cookie, 0, commit.data(),
+          static_cast<LONG>(commit.size()), inserted.GetAddressOf());
+      if (SUCCEEDED(text_result)) {
+        range = std::move(inserted);
+      }
+    } else {
+      text_result = range->SetText(edit_cookie, 0, commit.data(), static_cast<LONG>(commit.size()));
+    }
     if (FAILED(text_result)) {
       return text_result;
     }
@@ -1267,26 +1291,17 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
       }
       static_cast<void>(view->GetWnd(&state_->candidate_owner));
     }
-    const HRESULT collapse_result = range->Collapse(edit_cookie, TF_ANCHOR_END);
-    if (SUCCEEDED(collapse_result)) {
-      if (state_->pending_caret_back != 0) {
-        LONG shifted = 0;
-        const HRESULT shift_result =
-            range->ShiftStart(edit_cookie, -static_cast<LONG>(state_->pending_caret_back), &shifted,
-                              nullptr);
-        if (SUCCEEDED(shift_result) && shifted != 0) {
-          static_cast<void>(range->Collapse(edit_cookie, TF_ANCHOR_START));
-        }
-      }
-      TF_SELECTION updated_selection{};
-      updated_selection.range = range.Get();
-      updated_selection.style.ase = TF_AE_NONE;
-      updated_selection.style.fInterimChar = FALSE;
-      static_cast<void>(context->SetSelection(edit_cookie, 1, &updated_selection));
+    const HRESULT collapse_result = detail::CollapseInsertedRange(range.Get(), edit_cookie, caret_back);
+    if (FAILED(collapse_result)) {
+      return collapse_result;
     }
+    TF_SELECTION updated_selection{};
+    updated_selection.range = range.Get();
+    updated_selection.style.ase = TF_AE_END;
+    updated_selection.style.fInterimChar = FALSE;
+    return context->SetSelection(edit_cookie, 1, &updated_selection);
   }
-  state_->pending_caret_back = 0;
-  return S_OK;
+  return E_FAIL;
 }
 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
