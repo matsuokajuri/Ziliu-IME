@@ -65,6 +65,12 @@ inline float NativeCandidateRowHeight(float ink_height, float layout_scale) {
   return std::ceil(ink_height + 4.0F * layout_scale);
 }
 
+inline float NativeFadeOpacity(float from, float to, float elapsed, float duration) {
+  const float t = duration <= 0.0F ? 1.0F : std::clamp(elapsed / duration, 0.0F, 1.0F);
+  const float eased = t * t * (3.0F - 2.0F * t);
+  return std::clamp(from + (to - from) * eased, 0.0F, 1.0F);
+}
+
 // Each corner is a cubic Bezier with both controls at the rectangle corner.
 // Its tangent follows the adjoining straight edge and its endpoint curvature
 // is zero, giving a continuous transition instead of a circular arc join.
@@ -100,6 +106,35 @@ inline Microsoft::WRL::ComPtr<ID2D1PathGeometry> CreateNativeRoundedGeometry(
     return {};
   }
   return geometry;
+}
+
+// Nested cubic silhouettes approximate a Gaussian falloff without a second
+// HWND or a new graphics device. The opaque surface covers the inner shadow.
+inline void DrawNativeCandidateShadow(ID2D1Factory* factory, ID2D1RenderTarget* target,
+                                      const D2D1_RECT_F& surface, float radius,
+                                      float scale, bool dark) {
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
+  if (FAILED(target->CreateSolidColorBrush(D2D1::ColorF(D2D1::ColorF::Black),
+                                          brush.GetAddressOf()))) {
+    return;
+  }
+  const float strength = dark ? 0.30F : 0.20F;
+  const auto alpha = [strength](float distance) {
+    return strength * std::exp(-distance * distance / 24.5F);
+  };
+  float accumulated = 0.0F;
+  for (int ring = 9; ring >= 0; --ring) {
+    const float opacity = alpha(static_cast<float>(ring));
+    brush->SetOpacity((opacity - accumulated) / (1.0F - accumulated));
+    accumulated = opacity;
+    const float spread = static_cast<float>(ring) * scale;
+    const auto bounds = D2D1::RectF(surface.left - spread, surface.top - spread + 2.0F * scale,
+                                    surface.right + spread, surface.bottom + spread + 2.0F * scale);
+    const auto geometry = CreateNativeRoundedGeometry(factory, bounds, radius + spread);
+    if (geometry != nullptr) {
+      target->FillGeometry(geometry.Get(), brush.Get());
+    }
+  }
 }
 
 }  // namespace ziliu::ui::detail

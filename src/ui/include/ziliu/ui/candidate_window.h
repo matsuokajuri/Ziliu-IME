@@ -103,6 +103,9 @@ class CandidateWindow final {
   bool EnsureLayeredSurface(UINT32 width, UINT32 height);
   void ReleaseLayeredSurface();
   [[nodiscard]] bool PresentLayeredSurface();
+  [[nodiscard]] bool NativeAnimationsEnabled() const;
+  void StartNativeFade(float from, float to, UINT duration, bool hide_after);
+  void AdvanceNativeFade();
   void DrawSurfaceBackground();
   void DrawSurfaceOverlays();
   void DrawSurfaceSeparator(float y);
@@ -118,6 +121,15 @@ class CandidateWindow final {
   RECT text_rectangle_{};
   std::size_t page_offset_ = 0;
   float window_width_ = 420.0F;
+  float window_height_ = 64.0F;
+  float shadow_margin_ = 0.0F;
+  float surface_opacity_ = 1.0F;
+  float fade_from_ = 1.0F;
+  float fade_to_ = 1.0F;
+  ULONGLONG fade_started_ = 0;
+  UINT fade_duration_ = 0;
+  bool fade_active_ = false;
+  bool hide_after_fade_ = false;
   float dpi_scale_ = 1.0F;
   float layout_scale_ = 1.0F;
   float preedit_height_ = 42.0F;

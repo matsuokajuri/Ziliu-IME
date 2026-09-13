@@ -51,6 +51,34 @@ std::vector<BYTE> RenderText(IWICImagingFactory* wic, ID2D1Factory* factory,
                                       pixels.data())), "read offscreen text pixels");
   return pixels;
 }
+
+void CheckShadow(IWICImagingFactory* wic, ID2D1Factory* factory) {
+  Microsoft::WRL::ComPtr<IWICBitmap> bitmap;
+  Expect(SUCCEEDED(wic->CreateBitmap(124, 84, GUID_WICPixelFormat32bppPBGRA,
+                                     WICBitmapCacheOnLoad, bitmap.GetAddressOf())), "create shadow bitmap");
+  Microsoft::WRL::ComPtr<ID2D1RenderTarget> target;
+  const auto properties = D2D1::RenderTargetProperties(D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
+  Expect(SUCCEEDED(factory->CreateWicBitmapRenderTarget(bitmap.Get(), properties,
+                                                       target.GetAddressOf())), "create shadow target");
+  target->BeginDraw();
+  target->Clear(D2D1::ColorF(0, 0, 0, 0));
+  ziliu::ui::detail::DrawNativeCandidateShadow(factory, target.Get(),
+      D2D1::RectF(12, 12, 112, 72), 12, 1.0F, false);
+  Expect(SUCCEEDED(target->EndDraw()), "draw shadow");
+  std::vector<BYTE> pixels(124 * 84 * 4);
+  Expect(SUCCEEDED(bitmap->CopyPixels(nullptr, 124 * 4, static_cast<UINT>(pixels.size()), pixels.data())),
+         "read shadow pixels");
+  const auto alpha = [&pixels](std::size_t x, std::size_t y) { return pixels[(y * 124 + x) * 4 + 3]; };
+  Expect(alpha(10, 42) > 0 && alpha(10, 42) < 80, "a soft translucent shadow extends outside the frame");
+  Expect(alpha(62, 75) > alpha(62, 9), "shadow is gently offset below the frame");
+  for (std::size_t x = 0; x < 124; ++x) {
+    Expect(alpha(x, 0) == 0 && alpha(x, 83) == 0, "shadow fades before the top and bottom canvas edges");
+  }
+  for (std::size_t y = 0; y < 84; ++y) {
+    Expect(alpha(0, y) == 0 && alpha(123, y) == 0, "shadow fades before the side canvas edges");
+  }
+}
 }  // namespace
 
 int main() {
@@ -66,6 +94,20 @@ int main() {
            "create Direct2D factory");
     Expect(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                       IID_PPV_ARGS(wic.GetAddressOf()))), "create WIC factory");
+    CheckShadow(wic.Get(), factory.Get());
+    Expect(NativeFadeOpacity(0, 1, 0, 110) == 0 && NativeFadeOpacity(0, 1, 110, 110) == 1,
+           "appearance fade has exact endpoints");
+    Expect(NativeFadeOpacity(1, 0, 80, 80) == 0 && NativeFadeOpacity(0, 1, 0, 0) == 1,
+           "hide and disabled-duration fades terminate");
+    float previous = 0.0F;
+    for (int elapsed = 0; elapsed <= 130; ++elapsed) {
+      const float value = NativeFadeOpacity(0, 1, static_cast<float>(elapsed), 110);
+      Expect(value >= previous && value <= 1.0F, "appearance fade is monotonic without overshoot");
+      previous = value;
+    }
+    const float interrupted = NativeFadeOpacity(1, 0, 30, 80);
+    Expect(NativeFadeOpacity(interrupted, 1, 0, 80) == interrupted,
+           "new input can reverse a hide fade without an opacity jump");
     std::size_t cases = 0;
     for (const wchar_t* family : {L"Segoe UI Variable Text", L"Arial", L"Source Han Sans SC"}) {
       for (const float size : {12.0F, 18.0F, 24.0F, 48.0F}) {

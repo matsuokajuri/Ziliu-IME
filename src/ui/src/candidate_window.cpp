@@ -27,6 +27,7 @@ namespace {
 
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr wchar_t kCandidatePreviewClass[] = L"Ziliu.CandidatePreview.v1";
+constexpr UINT_PTR kNativeFadeTimer = 0x5A01;
 constexpr float kVerticalWindowWidth = 420.0F;
 constexpr float kMinimumHorizontalWindowWidth = 280.0F;
 constexpr float kMinimumHorizontalCandidateWidth = 68.0F;
@@ -353,6 +354,10 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     Hide();
     return;
   }
+  const bool was_visible = IsWindowVisible(window_) != FALSE;
+  const bool was_hiding = hide_after_fade_;
+  RECT previous_rectangle{};
+  GetWindowRect(window_, &previous_rectangle);
 
   const bool theme_changed =
       !theme_initialized_ || settings_.active_theme_id != settings.active_theme_id;
@@ -415,6 +420,13 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   const auto& surface = ActiveThemeSurface();
   const bool native_default = UsesNativeDefaultTheme();
   const bool compact = native_default && horizontal;
+  const bool animate = NativeAnimationsEnabled();
+  if (!animate) {
+    KillTimer(window_, kNativeFadeTimer);
+    fade_active_ = false;
+    surface_opacity_ = 1.0F;
+  }
+  hide_after_fade_ = false;
   preedit_insets_ =
       surface.preedit_insets.has_value()
           ? scale_insets(*surface.preedit_insets)
@@ -481,8 +493,13 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   const int work_bottom = static_cast<int>(work_area.bottom);
   const int work_width = work_right - work_left;
   const int work_height = work_bottom - work_top;
-  const float maximum_window_width = static_cast<float>(work_width) / dpi_scale_;
-  const float maximum_window_height = static_cast<float>(work_height) / dpi_scale_;
+  const float available_width = static_cast<float>(work_width) / dpi_scale_;
+  const float available_height = static_cast<float>(work_height) / dpi_scale_;
+  shadow_margin_ = native_default
+      ? std::min(12.0F * layout_scale_, std::max(0.0F, (std::min(available_width, available_height) - 1.0F) * 0.5F))
+      : 0.0F;
+  const float maximum_window_width = std::max(1.0F, available_width - 2.0F * shadow_margin_);
+  const float maximum_window_height = std::max(1.0F, available_height - 2.0F * shadow_margin_);
   const auto fit_horizontal_insets = [](ScaledInsets* insets,
                                         float maximum_total) {
     const float total = insets->left + insets->right;
@@ -722,8 +739,9 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                       button_top, right, button_bottom);
     }
   }
-  int width = ToPixels(window_width_, dpi_scale_);
-  int height = ToPixels(height_dip, dpi_scale_);
+  window_height_ = std::min(height_dip, maximum_window_height);
+  int width = ToPixels(window_width_ + 2.0F * shadow_margin_, dpi_scale_);
+  int height = ToPixels(window_height_ + 2.0F * shadow_margin_, dpi_scale_);
   width = std::min(width, work_width);
   height = std::min(height, work_height);
 
@@ -736,18 +754,30 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     y = work_top + std::max((work_height - height) / 2, 0);
     insert_after = HWND_TOP;
   } else {
-    x = text_rectangle.left;
-    y = text_rectangle.bottom + 2;
+    x = text_rectangle.left - ToPixels(shadow_margin_, dpi_scale_);
+    y = text_rectangle.bottom + 2 - ToPixels(shadow_margin_, dpi_scale_);
     if (x + width > work_right) {
       x = work_right - width;
     }
     x = std::max(x, work_left);
     if (y + height > work_bottom) {
-      y = text_rectangle.top - height - 2;
+      y = text_rectangle.top - height - 2 + ToPixels(shadow_margin_, dpi_scale_);
     }
     y = std::clamp(y, work_top, work_bottom - height);
   }
 
+  if (animate) {
+    if (!was_visible) {
+      StartNativeFade(0.0F, 1.0F, 110, false);
+    } else if (was_hiding) {
+      StartNativeFade(surface_opacity_, 1.0F, 80, false);
+    } else if (!fade_active_ &&
+               (width != previous_rectangle.right - previous_rectangle.left ||
+                height != previous_rectangle.bottom - previous_rectangle.top)) {
+      // New text is shown immediately; only its presentation fades briefly.
+      StartNativeFade(0.90F, 1.0F, 70, false);
+    }
+  }
   SetWindowPos(window_, insert_after, x, y, width, height, position_flags);
   if (preview_bounds != nullptr && !layered_rendering_enabled_) {
     const int corner_diameter = ToPixels(kCornerRadius * 2.0F, dpi_scale_);
@@ -777,7 +807,17 @@ void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
 
 void CandidateWindow::Hide() {
   if (window_ != nullptr) {
-    ShowWindow(window_, SW_HIDE);
+    if (NativeAnimationsEnabled() && IsWindowVisible(window_)) {
+      if (!hide_after_fade_) {
+        StartNativeFade(surface_opacity_, 0.0F, 80, true);
+      }
+    } else {
+      KillTimer(window_, kNativeFadeTimer);
+      fade_active_ = false;
+      hide_after_fade_ = false;
+      surface_opacity_ = 1.0F;
+      ShowWindow(window_, SW_HIDE);
+    }
   }
   expanded_ = false;
   expand_button_hovered_ = false;
@@ -785,6 +825,51 @@ void CandidateWindow::Hide() {
   expand_button_pressed_ = false;
   menu_button_pressed_ = false;
   tracking_mouse_leave_ = false;
+}
+
+bool CandidateWindow::NativeAnimationsEnabled() const {
+  BOOL enabled = FALSE;
+  return !preview_mode_ && UsesNativeDefaultTheme() &&
+         SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) && enabled;
+}
+
+void CandidateWindow::StartNativeFade(float from, float to, UINT duration, bool hide_after) {
+  fade_from_ = surface_opacity_ = from;
+  fade_to_ = to;
+  fade_started_ = GetTickCount64();
+  fade_duration_ = duration;
+  hide_after_fade_ = hide_after;
+  fade_active_ = SetTimer(window_, kNativeFadeTimer, 16, nullptr) != 0;
+  if (!fade_active_) {
+    surface_opacity_ = to;
+    hide_after_fade_ = false;
+    if (hide_after) {
+      ShowWindow(window_, SW_HIDE);
+    }
+  }
+  static_cast<void>(PresentLayeredSurface());
+}
+
+void CandidateWindow::AdvanceNativeFade() {
+  if (!fade_active_) {
+    return;
+  }
+  const ULONGLONG elapsed = GetTickCount64() - fade_started_;
+  surface_opacity_ = detail::NativeFadeOpacity(fade_from_, fade_to_,
+                                               static_cast<float>(elapsed),
+                                               static_cast<float>(fade_duration_));
+  if (elapsed >= fade_duration_ || !NativeAnimationsEnabled()) {
+    KillTimer(window_, kNativeFadeTimer);
+    fade_active_ = false;
+    surface_opacity_ = fade_to_;
+    if (hide_after_fade_) {
+      hide_after_fade_ = false;
+      ShowWindow(window_, SW_HIDE);
+      surface_opacity_ = 1.0F;
+      return;
+    }
+  }
+  static_cast<void>(PresentLayeredSurface());
 }
 
 LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -807,10 +892,27 @@ LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPA
 
 LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
-    case WM_NCHITTEST:
+    case WM_TIMER:
+      if (wparam == kNativeFadeTimer) {
+        AdvanceNativeFade();
+        return 0;
+      }
+      return DefWindowProcW(window_, message, wparam, lparam);
+    case WM_NCHITTEST: {
       // A preview is display-only; allow the underlying XAML ScrollViewer to
       // receive pointer and wheel input instead of intercepting it.
-      return preview_mode_ ? HTTRANSPARENT : DefWindowProcW(window_, message, wparam, lparam);
+      if (preview_mode_ || hide_after_fade_) {
+        return HTTRANSPARENT;
+      }
+      POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+      ScreenToClient(window_, &point);
+      const float x = static_cast<float>(point.x) / dpi_scale_ - shadow_margin_;
+      const float y = static_cast<float>(point.y) / dpi_scale_ - shadow_margin_;
+      if (shadow_margin_ > 0.0F && (x < 0.0F || y < 0.0F || x >= window_width_ || y >= window_height_)) {
+        return HTTRANSPARENT;
+      }
+      return DefWindowProcW(window_, message, wparam, lparam);
+    }
     case WM_PAINT:
       Paint();
       return 0;
@@ -850,8 +952,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
       const bool expand_hovered = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       const bool menu_hovered = ContainsPoint(menu_button_bounds_, x, y);
       if (expand_button_hovered_ != expand_hovered || menu_button_hovered_ != menu_hovered) {
@@ -877,8 +979,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
       expand_button_pressed_ = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       menu_button_pressed_ = ContainsPoint(menu_button_bounds_, x, y);
       if (expand_button_pressed_ || menu_button_pressed_) {
@@ -892,8 +994,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_;
+      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
       const bool activate_expand =
           expand_button_pressed_ && can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       const bool activate_menu =
@@ -913,9 +1015,9 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
         if (GetWindowRect(window_, &window_rectangle)) {
           const POINT anchor{
               window_rectangle.left +
-                  ToPixels((menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F,
+                  ToPixels(shadow_margin_ + (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F,
                            dpi_scale_),
-              window_rectangle.top + ToPixels(menu_button_bounds_.top, dpi_scale_)};
+              window_rectangle.top + ToPixels(shadow_margin_ + menu_button_bounds_.top, dpi_scale_)};
           quick_menu_action_(anchor);
         }
         return 0;
@@ -932,6 +1034,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
     case WM_ERASEBKGND:
       return 1;
     case WM_NCDESTROY:
+      KillTimer(window_, kNativeFadeTimer);
+      fade_active_ = false;
       window_ = nullptr;
       DiscardDeviceResources();
       return 0;
@@ -1372,7 +1476,9 @@ bool CandidateWindow::PresentLayeredSurface() {
   }
   POINT destination{window_rectangle.left, window_rectangle.top};
   POINT source{};
-  BLENDFUNCTION blend{AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+  BLENDFUNCTION blend{AC_SRC_OVER, 0,
+                      static_cast<BYTE>(std::lround(std::clamp(surface_opacity_, 0.0F, 1.0F) * 255.0F)),
+                      AC_SRC_ALPHA};
   const BOOL presented = UpdateLayeredWindow(
       window_, screen_dc, preview_mode_ ? nullptr : &destination, &layered_pixel_size_,
       layered_memory_dc_, &source, 0, &blend, ULW_ALPHA);
@@ -1388,12 +1494,21 @@ void CandidateWindow::DrawSurfaceBackground() {
   const auto& surface = ActiveThemeSurface();
   render_target_->Clear(layered_rendering_enabled_
                             ? D2D1::ColorF(0.0F, 0.0F, 0.0F, 0.0F)
-                            : ResolveRenderPalette().background);
+                             : ResolveRenderPalette().background);
+  if (shadow_margin_ > 0.0F) {
+    detail::DrawNativeCandidateShadow(
+        d2d_factory_.Get(), render_target_.Get(),
+        D2D1::RectF(shadow_margin_, shadow_margin_, shadow_margin_ + window_width_,
+                    shadow_margin_ + window_height_),
+        12.0F * layout_scale_, layout_scale_, dark_theme_);
+    render_target_->SetTransform(D2D1::Matrix3x2F::Translation(shadow_margin_, shadow_margin_));
+  }
   const auto draw_palette_surface = [this]() {
     if (background_brush_ == nullptr || surface_border_brush_ == nullptr) {
       return;
     }
-    const D2D1_SIZE_F target_size = render_target_->GetSize();
+    const D2D1_SIZE_F target_size = UsesNativeDefaultTheme()
+        ? D2D1::SizeF(window_width_, window_height_) : render_target_->GetSize();
     if (target_size.width <= 0.0F || target_size.height <= 0.0F) {
       return;
     }
@@ -1618,10 +1733,20 @@ bool CandidateWindow::DrawThemeButton(const ButtonBitmaps& bitmaps,
 void CandidateWindow::Paint() {
   PAINTSTRUCT paint{};
   BeginPaint(window_, &paint);
+  if (hide_after_fade_ && layered_memory_dc_ != nullptr) {
+    static_cast<void>(PresentLayeredSurface());
+    EndPaint(window_, &paint);
+    return;
+  }
 
   if (EnsureDeviceResources()) {
     render_target_->BeginDraw();
+    render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
     DrawSurfaceBackground();
+    if (shadow_margin_ > 0.0F) {
+      render_target_->PushAxisAlignedClip(D2D1::RectF(0, 0, window_width_, window_height_),
+                                          D2D1_ANTIALIAS_MODE_ALIASED);
+    }
     DrawSurfaceOverlays();
 
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
@@ -1779,6 +1904,10 @@ void CandidateWindow::Paint() {
       }
     }
 
+    if (shadow_margin_ > 0.0F) {
+      render_target_->PopAxisAlignedClip();
+    }
+    render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
     const HRESULT draw_result = render_target_->EndDraw();
     if (draw_result == D2DERR_RECREATE_TARGET || FAILED(draw_result)) {
       DiscardDeviceResources();
