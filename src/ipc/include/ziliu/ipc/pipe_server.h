@@ -4,14 +4,18 @@
 #include "ziliu/ipc/pipe_client.h"
 
 #include <atomic>
+#include <functional>
+#include <optional>
 #include <string>
 
 namespace ziliu::ipc {
 
 class PipeServer final {
  public:
+  using SettingsProvider = std::function<std::optional<std::string>()>;
   explicit PipeServer(std::wstring pipe_name = kBrokerPipeName,
-                      core::SessionHost::EngineFactory engine_factory = core::CreateStubEngine);
+                      core::SessionHost::EngineFactory engine_factory = core::CreateStubEngine,
+                      SettingsProvider settings_provider = {});
 
   PipeServer(const PipeServer&) = delete;
   PipeServer& operator=(const PipeServer&) = delete;
@@ -24,6 +28,7 @@ class PipeServer final {
 
   std::wstring pipe_name_;
   core::SessionHost session_host_;
+  SettingsProvider settings_provider_;
   std::atomic_bool stopping_ = false;
 };
 

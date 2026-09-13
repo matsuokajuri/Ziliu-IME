@@ -40,6 +40,7 @@ struct TextServiceState {
   HWND candidate_owner = nullptr;
   core::Settings settings;
   std::filesystem::file_time_type settings_write_time{};
+  ULONGLONG remote_settings_probe_time = 0;
   std::size_t candidate_page_offset = 0;
   std::size_t pending_caret_back = 0;
   Microsoft::WRL::ComPtr<ITfRange> committed_pair_range;
@@ -625,69 +626,38 @@ bool TextService::EnsureSession() {
 
 void TextService::RefreshSettings(bool force) {
   const auto path = SettingsPath();
-  if (!path.has_value()) {
-    return;
-  }
-
+  std::optional<std::string> contents;
+  std::filesystem::file_time_type write_time{};
   std::error_code time_error;
-  const auto write_time = std::filesystem::last_write_time(*path, time_error);
-  if (time_error) {
-    if (force || state_->settings_file_known) {
-      const bool was_traditional =
-          state_->settings.character_set == core::CharacterSet::kTraditional;
-      const std::size_t previous_candidate_count = state_->settings.candidate_count;
-      const core::CandidatePageMode previous_page_mode =
-          state_->settings.candidate_page_mode;
-      const bool previous_chinese_candidates_only =
-          state_->settings.chinese_candidates_only;
-      state_->settings = {};
-      state_->settings_file_known = false;
-      state_->settings_write_time = {};
-      state_->candidate_page_offset = 0;
-      if (state_->session_id != 0 && was_traditional) {
-        const core::ipc::Request request{state_->request_id++, state_->session_id,
-                                         core::ipc::Command::kSetTraditional, 0U};
-        static_cast<void>(state_->client.Exchange(request));
+  if (path.has_value()) {
+    write_time = std::filesystem::last_write_time(*path, time_error);
+    if (!time_error) {
+      if (!force && state_->settings_file_known && write_time == state_->settings_write_time) {
+        return;
       }
-      if (state_->session_id != 0 &&
-          previous_candidate_count != state_->settings.candidate_count) {
-        const core::ipc::Request request{
-            state_->request_id++, state_->session_id, core::ipc::Command::kSetCandidatePageSize,
-            static_cast<std::uint32_t>(state_->settings.candidate_count)};
-        static_cast<void>(state_->client.Exchange(request));
-      }
-      if (state_->session_id != 0 &&
-          previous_page_mode != state_->settings.candidate_page_mode) {
-        const core::ipc::Request request{
-            state_->request_id++, state_->session_id,
-            core::ipc::Command::kSetCandidateWindowPageCount,
-            state_->settings.candidate_page_mode == core::CandidatePageMode::kMultiLine
-                ? static_cast<std::uint32_t>(core::kCandidateWindowPageCount)
-                : 1U};
-        static_cast<void>(state_->client.Exchange(request));
-      }
-      if (state_->session_id != 0 &&
-          previous_chinese_candidates_only != state_->settings.chinese_candidates_only) {
-        const core::ipc::Request request{
-            state_->request_id++, state_->session_id,
-            core::ipc::Command::kSetChineseCandidatesOnly,
-            state_->settings.chinese_candidates_only ? 1U : 0U};
-        static_cast<void>(state_->client.Exchange(request));
-      }
+      contents = ReadSettingsFile(*path);
     }
-    return;
   }
-  if (!force && state_->settings_file_known && write_time == state_->settings_write_time) {
-    return;
-  }
-
-  const auto contents = ReadSettingsFile(*path);
+  const bool remote = !contents.has_value();
   if (!contents.has_value()) {
-    return;
+    // AppContainer hosts cannot read the desktop user's settings file. Reuse
+    // the authenticated pipe; do not weaken the profile directory's ACL.
+    const ULONGLONG now = GetTickCount64();
+    if (!force && now - state_->remote_settings_probe_time < 500) {
+      return;
+    }
+    state_->remote_settings_probe_time = now;
+    StartBroker();
+    const core::ipc::Request request{state_->request_id++, 0, core::ipc::Command::kGetSettings, 0};
+    const auto response = state_->client.Exchange(request);
+    if (!response.has_value() || response->status != core::ipc::Status::kOk) {
+      return;  // Keep the last good preferences on temporary broker/read failures.
+    }
+    contents = response->settings_text;
   }
   const core::Settings updated_settings = core::ParseSettings(*contents);
   state_->settings_write_time = write_time;
-  state_->settings_file_known = true;
+  state_->settings_file_known = !remote;
   if (updated_settings == state_->settings) {
     return;
   }

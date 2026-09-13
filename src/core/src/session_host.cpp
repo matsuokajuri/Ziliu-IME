@@ -106,6 +106,9 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
     case ipc::Command::kPing:
     case ipc::Command::kCreateSession:
       break;
+    case ipc::Command::kGetSettings:
+      response.status = ipc::Status::kUnsupported;
+      return response;
   }
   response.snapshot = engine.Snapshot();
   return response;

@@ -38,6 +38,17 @@ class Writer final {
 
   [[nodiscard]] std::vector<std::byte> Take() && { return std::move(bytes_); }
 
+  bool Utf8String(std::string_view value) {
+    if (value.size() > kMaximumStringBytes) {
+      return false;
+    }
+    Integer(static_cast<std::uint32_t>(value.size()));
+    for (const unsigned char character : value) {
+      bytes_.push_back(static_cast<std::byte>(character));
+    }
+    return true;
+  }
+
  private:
   static bool AppendCodePoint(std::uint32_t code_point, std::string* output) {
     if (code_point <= 0x7FU) {
@@ -124,6 +135,21 @@ class Reader final {
 
   [[nodiscard]] bool finished() const noexcept { return offset_ == bytes_.size(); }
 
+  bool Utf8String(std::string* value) {
+    std::uint32_t count = 0;
+    if (value == nullptr || !Integer(&count) || count > kMaximumStringBytes || remaining() < count) {
+      return false;
+    }
+    const auto data = bytes_.subspan(offset_, count);
+    std::wstring validated;
+    if (!FromUtf8(data, &validated)) {
+      return false;
+    }
+    value->assign(reinterpret_cast<const char*>(data.data()), data.size());
+    offset_ += count;
+    return true;
+  }
+
  private:
   [[nodiscard]] std::size_t remaining() const noexcept { return bytes_.size() - offset_; }
 
@@ -200,6 +226,7 @@ bool IsKnownCommand(Command command) {
     case Command::kSetChineseCandidatesOnly:
     case Command::kInputSeparator:
     case Command::kSetCandidateWindowPageCount:
+    case Command::kGetSettings:
       return true;
   }
   return false;
@@ -233,7 +260,8 @@ bool EncodeRequest(const Request& request, std::uint16_t protocol_version,
   if (bytes == nullptr || !IsKnownCommand(request.command)) {
     return false;
   }
-  if (!IsSupportedProtocolVersion(protocol_version)) {
+  if (!IsSupportedProtocolVersion(protocol_version) ||
+      (request.command == Command::kGetSettings && protocol_version < 6)) {
     return false;
   }
   Writer writer;
@@ -268,7 +296,8 @@ bool DecodeRequest(std::span<const std::byte> bytes, Request* request,
     return false;
   }
   decoded.command = static_cast<Command>(command);
-  if (!IsKnownCommand(decoded.command)) {
+  if (!IsKnownCommand(decoded.command) ||
+      (decoded.command == Command::kGetSettings && version < 6)) {
     return false;
   }
   *request = decoded;
@@ -312,6 +341,9 @@ bool EncodeResponse(const Response& response, std::uint16_t protocol_version,
       return false;
     }
     writer.Integer(std::bit_cast<std::uint64_t>(candidate.score));
+  }
+  if (protocol_version >= 6 && !writer.Utf8String(response.settings_text)) {
+    return false;
   }
   *bytes = std::move(writer).Take();
   return bytes->size() <= kMaximumMessageBytes;
@@ -371,7 +403,7 @@ bool DecodeResponse(std::span<const std::byte> bytes, Response* response,
     candidate.score = std::bit_cast<double>(score);
     decoded.snapshot.candidates.push_back(std::move(candidate));
   }
-  if (!reader.finished() ||
+  if ((version >= 6 && !reader.Utf8String(&decoded.settings_text)) || !reader.finished() ||
       (!decoded.snapshot.candidates.empty() &&
        decoded.snapshot.highlighted_index >= decoded.snapshot.candidates.size())) {
     return false;

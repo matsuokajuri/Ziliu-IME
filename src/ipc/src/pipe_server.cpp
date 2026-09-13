@@ -148,8 +148,10 @@ bool SameUserAndSession(HANDLE pipe) {
 
 }  // namespace
 
-PipeServer::PipeServer(std::wstring pipe_name, core::SessionHost::EngineFactory engine_factory)
-    : pipe_name_(std::move(pipe_name)), session_host_(std::move(engine_factory)) {}
+PipeServer::PipeServer(std::wstring pipe_name, core::SessionHost::EngineFactory engine_factory,
+                       SettingsProvider settings_provider)
+    : pipe_name_(std::move(pipe_name)), session_host_(std::move(engine_factory)),
+      settings_provider_(std::move(settings_provider)) {}
 
 int PipeServer::Run() {
   PipeSecurity security;
@@ -207,7 +209,21 @@ bool PipeServer::ServeClient(void* pipe_handle) {
     if (!SameUserAndSession(pipe)) {
       return false;
     }
-    response = session_host_.Handle(request);
+    if (request.command == core::ipc::Command::kGetSettings) {
+      response.request_id = request.request_id;
+      response.status = core::ipc::Status::kUnsupported;
+      if (request.session_id == 0 && request.value == 0 && settings_provider_) {
+        const auto settings = settings_provider_();
+        if (settings.has_value()) {
+          response.settings_text = *settings;
+          response.status = core::ipc::Status::kOk;
+        } else {
+          response.status = core::ipc::Status::kInternalError;
+        }
+      }
+    } else {
+      response = session_host_.Handle(request);
+    }
   }
 
   std::vector<std::byte> response_bytes;

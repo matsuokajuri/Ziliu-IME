@@ -1,11 +1,13 @@
 #include "ziliu/core/engine.h"
 #include "ziliu/core/ipc_protocol.h"
+#include "ziliu/core/settings.h"
 #include "ziliu/ipc/pipe_client.h"
 #include "ziliu/ipc/pipe_server.h"
 
 #include <windows.h>
 
 #include <chrono>
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -134,7 +136,22 @@ int main() {
 
   const std::wstring pipe_name =
       L"\\\\.\\pipe\\Ziliu.Tests." + std::to_wstring(GetCurrentProcessId());
-  ziliu::ipc::PipeServer server(pipe_name, CreateDelayedEngine);
+  ziliu::core::Settings preferences;
+  preferences.input_mode_switch_key = ziliu::core::InputModeSwitchKey::kControl;
+  preferences.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
+  preferences.candidate_count = 7;
+  preferences.candidate_chinese_font_family = "霞鹜文楷";
+  const std::string configured = ziliu::core::SerializeSettings(preferences);
+  std::atomic<int> settings_state = 0;
+  std::atomic<int> settings_reads = 0;
+  ziliu::ipc::PipeServer server(pipe_name, CreateDelayedEngine,
+      [&]() -> std::optional<std::string> {
+        ++settings_reads;
+        if (settings_state.load() == 2) {
+          return std::nullopt;
+        }
+        return settings_state.load() == 0 ? configured : ziliu::core::SerializeSettings({});
+      });
   std::jthread server_thread([&server] { Expect(server.Run() == 0, "server should stop cleanly"); });
   ziliu::ipc::PipeClient client(pipe_name);
 
@@ -151,6 +168,45 @@ int main() {
   Expect(response->status == Status::kOk && response->session_id != 0,
          "create session should return an id");
   const std::uint64_t session_id = response->session_id;
+
+  response = client.Exchange(Request{request_id++, 0, Command::kGetSettings, 0});
+  Expect(response.has_value() && response->status == Status::kOk &&
+             response->session_id == 0 && response->commit.empty() &&
+             ziliu::core::ParseSettings(response->settings_text) == preferences,
+         "authenticated settings should preserve Ctrl, horizontal layout, count and UTF-8 fonts");
+  settings_state = 1;
+  response = client.Exchange(Request{request_id++, 0, Command::kGetSettings, 0});
+  Expect(response.has_value() && response->status == Status::kOk &&
+             ziliu::core::ParseSettings(response->settings_text) == ziliu::core::Settings{},
+         "settings changes should be visible without recreating a session");
+  settings_state = 2;
+  response = client.Exchange(Request{request_id++, 0, Command::kGetSettings, 0});
+  Expect(response.has_value() && response->status == Status::kInternalError,
+         "settings read failure must not be reported as successful default settings");
+  settings_state = 0;
+
+  Response settings_response;
+  settings_response.settings_text = configured;
+  std::vector<std::byte> settings_bytes;
+  Expect(ziliu::core::ipc::EncodeResponse(settings_response, 5, &settings_bytes),
+         "old v5 clients should still receive their original wire format");
+  Response old_settings_response;
+  Expect(ziliu::core::ipc::DecodeResponse(settings_bytes, &old_settings_response) &&
+             old_settings_response.settings_text.empty(), "v5 must omit v6 settings payload");
+  Expect(ziliu::core::ipc::EncodeResponse(settings_response, &settings_bytes),
+         "v6 settings should encode");
+  settings_bytes.pop_back();
+  Expect(!ziliu::core::ipc::DecodeResponse(settings_bytes, &old_settings_response),
+         "truncated settings must be rejected");
+  settings_response.settings_text.assign(16385, 'x');
+  Expect(!ziliu::core::ipc::EncodeResponse(settings_response, &settings_bytes),
+         "settings payload must have a fixed size limit");
+  settings_response.settings_text = "\xff";
+  Expect(ziliu::core::ipc::EncodeResponse(settings_response, &settings_bytes) &&
+             !ziliu::core::ipc::DecodeResponse(settings_bytes, &old_settings_response),
+         "invalid UTF-8 settings must be rejected");
+  Expect(!ziliu::core::ipc::EncodeRequest(Request{1, 0, Command::kGetSettings, 0}, 5,
+                                         &settings_bytes), "settings query requires v6");
 
   for (const wchar_t letter : std::wstring_view(L"ziliu")) {
     response = client.Exchange(
@@ -183,7 +239,8 @@ int main() {
   Expect(SetNamedPipeHandleState(anonymous, &mode, nullptr, nullptr) != FALSE,
          "anonymous test should use message mode");
   std::vector<std::byte> ping;
-  Expect(ziliu::core::ipc::EncodeRequest(Request{request_id++, 0, Command::kPing, 0}, &ping),
+  const int reads_before_anonymous = settings_reads.load();
+  Expect(ziliu::core::ipc::EncodeRequest(Request{request_id++, 0, Command::kGetSettings, 0}, &ping),
          "anonymous ping should encode");
   std::byte reply[256]{};
   DWORD reply_size = 0;
@@ -191,6 +248,8 @@ int main() {
       static_cast<DWORD>(ping.size()), reply, sizeof(reply), &reply_size, nullptr);
   CloseHandle(anonymous);
   Expect(!anonymous_result, "anonymous client must be disconnected without an engine response");
+  Expect(settings_reads.load() == reads_before_anonymous,
+         "anonymous client must not invoke the settings provider");
   response = client.Exchange(Request{request_id++, 0, Command::kPing, 0});
   Expect(response.has_value() && response->status == Status::kOk,
          "authorized client should still work after rejecting anonymous client");

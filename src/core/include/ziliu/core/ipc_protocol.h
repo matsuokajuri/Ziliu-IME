@@ -10,7 +10,7 @@
 
 namespace ziliu::core::ipc {
 
-inline constexpr std::uint16_t kProtocolVersion = 5;
+inline constexpr std::uint16_t kProtocolVersion = 6;
 inline constexpr std::uint16_t kOldestCompatibleProtocolVersion = 4;
 inline constexpr std::size_t kMaximumMessageBytes = 64U * 1024U;
 inline constexpr std::size_t kMaximumCandidatesPerPage = 9;
@@ -33,6 +33,7 @@ enum class Command : std::uint16_t {
   kSetChineseCandidatesOnly = 12,
   kInputSeparator = 13,
   kSetCandidateWindowPageCount = 14,
+  kGetSettings = 15,
 };
 
 enum class Status : std::uint16_t {
@@ -57,6 +58,7 @@ struct Response {
   bool consumed = false;
   std::wstring commit;
   CompositionSnapshot snapshot;
+  std::string settings_text;  // Protocol v6: bounded UTF-8 serialized settings.
 };
 
 [[nodiscard]] bool EncodeRequest(const Request& request, std::vector<std::byte>* bytes);
