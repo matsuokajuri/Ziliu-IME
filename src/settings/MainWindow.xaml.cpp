@@ -1457,6 +1457,10 @@ std::string SelectedFontFamily(Microsoft::UI::Xaml::Controls::ComboBox const& co
 MainWindow::MainWindow() {
   InitializeComponent();
   settings_ = LoadSettings();
+  // Both full Settings and the quick menu must apply the saved theme before
+  // either surface is shown. Quick-menu launches skip InitializeSettingsControls.
+  ThemeCombo().SelectedIndex(static_cast<int>(settings_.theme_mode));
+  ApplyThemeFromControls();
 
   const LaunchOptions options = ParseLaunchOptions();
   if (options.quick_menu) {
@@ -1634,7 +1638,6 @@ void MainWindow::InitializeSettingsControls() {
   set_checked(FuzzyIanIangCheck(), settings_.fuzzy_ian_iang);
   set_checked(FuzzyUanUangCheck(), settings_.fuzzy_uan_uang);
 
-  ThemeCombo().SelectedIndex(static_cast<int>(settings_.theme_mode));
   LayoutCombo().SelectedIndex(settings_.candidate_layout ==
                                       ziliu::core::CandidateLayout::kHorizontal
                                   ? 0
@@ -1668,7 +1671,6 @@ void MainWindow::InitializeSettingsControls() {
   }
   PageKeyCombo().SelectedIndex(page_key_index);
   ReloadThemeCatalog();
-  ApplyThemeFromControls();
   UpdateAppearanceControlStates();
   UpdateColorSwatches();
   UpdateCandidatePreview();
