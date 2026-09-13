@@ -28,6 +28,8 @@ namespace {
 constexpr wchar_t kCandidateWindowClass[] = L"Ziliu.CandidateWindow.v1";
 constexpr wchar_t kCandidatePreviewClass[] = L"Ziliu.CandidatePreview.v1";
 constexpr UINT_PTR kNativeFadeTimer = 0x5A01;
+constexpr UINT_PTR kNativeWidthTimer = 0x5A02;
+constexpr float kNativeWidthDuration = 180.0F;
 constexpr float kVerticalWindowWidth = 420.0F;
 constexpr float kMinimumHorizontalWindowWidth = 280.0F;
 constexpr float kMinimumHorizontalCandidateWidth = 68.0F;
@@ -771,14 +773,35 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
       StartNativeFade(0.0F, 1.0F, 110, false);
     } else if (was_hiding) {
       StartNativeFade(surface_opacity_, 1.0F, 80, false);
-    } else if (!fade_active_ &&
-               (width != previous_rectangle.right - previous_rectangle.left ||
-                height != previous_rectangle.bottom - previous_rectangle.top)) {
-      // New text is shown immediately; only its presentation fades briefly.
-      StartNativeFade(0.90F, 1.0F, 70, false);
     }
   }
-  SetWindowPos(window_, insert_after, x, y, width, height, position_flags);
+  const RECT target_rectangle{x, y, x + width, y + height};
+  const bool can_animate_width = animate && was_visible && !was_hiding &&
+      height == previous_rectangle.bottom - previous_rectangle.top &&
+      previous_rectangle.left >= work_left && previous_rectangle.right <= work_right;
+  // Repeated snapshots at the same target must not restart the timer. New input
+  // retargets from the last presented window rectangle, including mid-animation.
+  if (!can_animate_width || !width_active_ || !EqualRect(&target_rectangle, &width_to_rectangle_)) {
+    KillTimer(window_, kNativeWidthTimer);
+    width_active_ = false;
+    width_to_rectangle_ = target_rectangle;
+    width_presented_rectangle_ = target_rectangle;
+    if (can_animate_width && width != previous_rectangle.right - previous_rectangle.left) {
+      width_from_rectangle_ = previous_rectangle;
+      width_started_ = GetTickCount64();
+      width_active_ = SetTimer(window_, kNativeWidthTimer, 16, nullptr) != 0;
+      if (width_active_) {
+        width_presented_rectangle_ = detail::NativeWidthFrame(
+            width_from_rectangle_, target_rectangle, 0.0F, kNativeWidthDuration);
+      }
+    }
+  }
+  const auto& presented = width_presented_rectangle_;
+  SetWindowPos(window_, insert_after, presented.left, presented.top,
+               presented.right - presented.left, height, position_flags);
+  if (width_active_ && (layered_pixel_size_.cx < width || layered_pixel_size_.cy != height)) {
+    DiscardDeviceResources();
+  }
   if (preview_bounds != nullptr && !layered_rendering_enabled_) {
     const int corner_diameter = ToPixels(kCornerRadius * 2.0F, dpi_scale_);
     HRGN region =
@@ -807,6 +830,8 @@ void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
 
 void CandidateWindow::Hide() {
   if (window_ != nullptr) {
+    KillTimer(window_, kNativeWidthTimer);
+    width_active_ = false;
     if (NativeAnimationsEnabled() && IsWindowVisible(window_)) {
       if (!hide_after_fade_) {
         StartNativeFade(surface_opacity_, 0.0F, 80, true);
@@ -872,6 +897,33 @@ void CandidateWindow::AdvanceNativeFade() {
   static_cast<void>(PresentLayeredSurface());
 }
 
+float CandidateWindow::PresentedContentWidth() const {
+  return width_active_
+      ? std::max(1.0F, static_cast<float>(width_presented_rectangle_.right -
+          width_presented_rectangle_.left) / dpi_scale_ - 2.0F * shadow_margin_)
+      : window_width_;
+}
+
+void CandidateWindow::AdvanceNativeWidth() {
+  if (!width_active_) {
+    return;
+  }
+  const float elapsed = static_cast<float>(GetTickCount64() - width_started_);
+  if (elapsed >= kNativeWidthDuration || !NativeAnimationsEnabled()) {
+    KillTimer(window_, kNativeWidthTimer);
+    width_active_ = false;
+    width_presented_rectangle_ = width_to_rectangle_;
+  } else {
+    width_presented_rectangle_ = detail::NativeWidthFrame(
+        width_from_rectangle_, width_to_rectangle_, elapsed, kNativeWidthDuration);
+  }
+  const auto& frame = width_presented_rectangle_;
+  SetWindowPos(window_, nullptr, frame.left, frame.top, frame.right - frame.left,
+               frame.bottom - frame.top, SWP_NOACTIVATE | SWP_NOZORDER);
+  InvalidateRect(window_, nullptr, FALSE);
+  UpdateWindow(window_);
+}
+
 LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPARAM wparam,
                                                    LPARAM lparam) {
   CandidateWindow* self = nullptr;
@@ -893,6 +945,10 @@ LRESULT CALLBACK CandidateWindow::WindowProcedure(HWND window, UINT message, WPA
 LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
     case WM_TIMER:
+      if (wparam == kNativeWidthTimer) {
+        AdvanceNativeWidth();
+        return 0;
+      }
       if (wparam == kNativeFadeTimer) {
         AdvanceNativeFade();
         return 0;
@@ -908,7 +964,7 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       ScreenToClient(window_, &point);
       const float x = static_cast<float>(point.x) / dpi_scale_ - shadow_margin_;
       const float y = static_cast<float>(point.y) / dpi_scale_ - shadow_margin_;
-      if (shadow_margin_ > 0.0F && (x < 0.0F || y < 0.0F || x >= window_width_ || y >= window_height_)) {
+      if (shadow_margin_ > 0.0F && (x < 0.0F || y < 0.0F || x >= PresentedContentWidth() || y >= window_height_)) {
         return HTTRANSPARENT;
       }
       return DefWindowProcW(window_, message, wparam, lparam);
@@ -920,7 +976,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (layered_rendering_enabled_) {
         const SIZE requested_size{static_cast<LONG>(LOWORD(lparam)),
                                   static_cast<LONG>(HIWORD(lparam))};
-        if (requested_size.cx != layered_pixel_size_.cx ||
+        if ((UsesNativeDefaultTheme() ? requested_size.cx > layered_pixel_size_.cx
+                                     : requested_size.cx != layered_pixel_size_.cx) ||
             requested_size.cy != layered_pixel_size_.cy) {
           DiscardDeviceResources();
           InvalidateRect(window_, nullptr, FALSE);
@@ -935,6 +992,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       }
       return 0;
     case WM_DPICHANGED: {
+      KillTimer(window_, kNativeWidthTimer);
+      width_active_ = false;
       const UINT dpi =
           std::max<UINT>(LOWORD(wparam), USER_DEFAULT_SCREEN_DPI);
       dpi_scale_ =
@@ -1035,6 +1094,8 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       return 1;
     case WM_NCDESTROY:
       KillTimer(window_, kNativeFadeTimer);
+      KillTimer(window_, kNativeWidthTimer);
+      width_active_ = false;
       fade_active_ = false;
       window_ = nullptr;
       DiscardDeviceResources();
@@ -1271,7 +1332,8 @@ bool CandidateWindow::EnsureDeviceResources() {
   RECT client{};
   GetClientRect(window_, &client);
   const UINT32 width =
-      static_cast<UINT32>(std::max(client.right - client.left, 1L));
+      static_cast<UINT32>(std::max({client.right - client.left, 1L,
+          width_active_ ? width_to_rectangle_.right - width_to_rectangle_.left : 1L}));
   const UINT32 height =
       static_cast<UINT32>(std::max(client.bottom - client.top, 1L));
   const D2D1_SIZE_U size = D2D1::SizeU(width, height);
@@ -1476,11 +1538,18 @@ bool CandidateWindow::PresentLayeredSurface() {
   }
   POINT destination{window_rectangle.left, window_rectangle.top};
   POINT source{};
+  SIZE presentation_size = layered_pixel_size_;
+  if (UsesNativeDefaultTheme()) {
+    // The backing bitmap can be wider during a resize. Present only the current
+    // physical width; otherwise UpdateLayeredWindow snaps back to the bitmap size.
+    presentation_size.cx = std::min(presentation_size.cx,
+                                    window_rectangle.right - window_rectangle.left);
+  }
   BLENDFUNCTION blend{AC_SRC_OVER, 0,
                       static_cast<BYTE>(std::lround(std::clamp(surface_opacity_, 0.0F, 1.0F) * 255.0F)),
                       AC_SRC_ALPHA};
   const BOOL presented = UpdateLayeredWindow(
-      window_, screen_dc, preview_mode_ ? nullptr : &destination, &layered_pixel_size_,
+      window_, screen_dc, preview_mode_ ? nullptr : &destination, &presentation_size,
       layered_memory_dc_, &source, 0, &blend, ULW_ALPHA);
   ReleaseDC(nullptr, screen_dc);
   return presented != FALSE;
@@ -1498,7 +1567,7 @@ void CandidateWindow::DrawSurfaceBackground() {
   if (shadow_margin_ > 0.0F) {
     detail::DrawNativeCandidateShadow(
         d2d_factory_.Get(), render_target_.Get(),
-        D2D1::RectF(shadow_margin_, shadow_margin_, shadow_margin_ + window_width_,
+        D2D1::RectF(shadow_margin_, shadow_margin_, shadow_margin_ + PresentedContentWidth(),
                     shadow_margin_ + window_height_),
         12.0F * layout_scale_, layout_scale_, dark_theme_);
     render_target_->SetTransform(D2D1::Matrix3x2F::Translation(shadow_margin_, shadow_margin_));
@@ -1508,7 +1577,7 @@ void CandidateWindow::DrawSurfaceBackground() {
       return;
     }
     const D2D1_SIZE_F target_size = UsesNativeDefaultTheme()
-        ? D2D1::SizeF(window_width_, window_height_) : render_target_->GetSize();
+        ? D2D1::SizeF(PresentedContentWidth(), window_height_) : render_target_->GetSize();
     if (target_size.width <= 0.0F || target_size.height <= 0.0F) {
       return;
     }
@@ -1664,7 +1733,7 @@ void CandidateWindow::DrawSurfaceSeparator(float y) {
     }
     render_target_->DrawLine(
         D2D1::Point2F((UsesNativeDefaultTheme() ? 10.0F : kHorizontalPadding) * layout_scale_, y),
-        D2D1::Point2F(window_width_ - (UsesNativeDefaultTheme() ? 10.0F : kHorizontalPadding) * layout_scale_, y),
+        D2D1::Point2F(PresentedContentWidth() - (UsesNativeDefaultTheme() ? 10.0F : kHorizontalPadding) * layout_scale_, y),
         muted_brush_.Get(), 0.5F);
     return;
   }
@@ -1744,7 +1813,7 @@ void CandidateWindow::Paint() {
     render_target_->SetTransform(D2D1::Matrix3x2F::Identity());
     DrawSurfaceBackground();
     if (shadow_margin_ > 0.0F) {
-      render_target_->PushAxisAlignedClip(D2D1::RectF(0, 0, window_width_, window_height_),
+      render_target_->PushAxisAlignedClip(D2D1::RectF(0, 0, PresentedContentWidth(), window_height_),
                                           D2D1_ANTIALIAS_MODE_ALIASED);
     }
     DrawSurfaceOverlays();

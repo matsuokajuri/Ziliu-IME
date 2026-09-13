@@ -106,6 +106,8 @@ class CandidateWindow final {
   [[nodiscard]] bool NativeAnimationsEnabled() const;
   void StartNativeFade(float from, float to, UINT duration, bool hide_after);
   void AdvanceNativeFade();
+  void AdvanceNativeWidth();
+  [[nodiscard]] float PresentedContentWidth() const;
   void DrawSurfaceBackground();
   void DrawSurfaceOverlays();
   void DrawSurfaceSeparator(float y);
@@ -130,6 +132,11 @@ class CandidateWindow final {
   UINT fade_duration_ = 0;
   bool fade_active_ = false;
   bool hide_after_fade_ = false;
+  bool width_active_ = false;
+  RECT width_from_rectangle_{};
+  RECT width_to_rectangle_{};
+  RECT width_presented_rectangle_{};
+  ULONGLONG width_started_ = 0;
   float dpi_scale_ = 1.0F;
   float layout_scale_ = 1.0F;
   float preedit_height_ = 42.0F;

@@ -71,6 +71,17 @@ inline float NativeFadeOpacity(float from, float to, float elapsed, float durati
   return std::clamp(from + (to - from) * eased, 0.0F, 1.0F);
 }
 
+// Interpolate physical window edges, never glyphs or their advances. Interpolating
+// both edges also keeps a right-edge-constrained popup inside its work area.
+inline RECT NativeWidthFrame(const RECT& from, const RECT& to, float elapsed, float duration) {
+  const float progress = NativeFadeOpacity(0.0F, 1.0F, elapsed, duration);
+  const auto edge = [progress](LONG first, LONG last) {
+    return static_cast<LONG>(std::lround(static_cast<double>(first) +
+        (static_cast<double>(last) - first) * progress));
+  };
+  return RECT{edge(from.left, to.left), to.top, edge(from.right, to.right), to.bottom};
+}
+
 // Each corner is a cubic Bezier with both controls at the rectangle corner.
 // Its tangent follows the adjoining straight edge and its endpoint curvature
 // is zero, giving a continuous transition instead of a circular arc join.

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -95,6 +96,36 @@ int main() {
     Expect(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                       IID_PPV_ARGS(wic.GetAddressOf()))), "create WIC factory");
     CheckShadow(wic.Get(), factory.Get());
+    for (const auto& edges : {std::pair{RECT{100, 0, 400, 80}, RECT{100, 0, 800, 80}},
+                              std::pair{RECT{500, 0, 800, 80}, RECT{100, 0, 800, 80}}}) {
+      const auto& from = edges.first;
+      const auto& to = edges.second;
+      const auto first = NativeWidthFrame(from, to, 0, 180);
+      const auto middle = NativeWidthFrame(from, to, 90, 180);
+      const auto last = NativeWidthFrame(from, to, 180, 180);
+      Expect(EqualRect(&first, &from) && EqualRect(&last, &to), "resize has exact physical endpoints");
+      Expect(middle.right - middle.left == 500, "resize presents a real intermediate width");
+      const auto reversed = NativeWidthFrame(middle, from, 0, 180);
+      Expect(EqualRect(&middle, &reversed), "interrupted resize does not jump on reversal");
+      LONG previous_width = 300;
+      LONG previous_shrinking_width = 700;
+      for (int elapsed = 0; elapsed <= 200; ++elapsed) {
+        const auto frame = NativeWidthFrame(from, to, static_cast<float>(elapsed), 180);
+        Expect(frame.right - frame.left >= previous_width && frame.right <= 800 && frame.left >= 100,
+               "width grows monotonically within the work area");
+        previous_width = frame.right - frame.left;
+        const auto shrinking = NativeWidthFrame(to, from, static_cast<float>(elapsed), 180);
+        const LONG shrinking_width = shrinking.right - shrinking.left;
+        Expect(shrinking_width <= previous_shrinking_width && shrinking_width >= 300 &&
+                   shrinking.left >= 100 && shrinking.right <= 800,
+               "shrinking is monotonic within the work area despite pixel rounding");
+        previous_shrinking_width = shrinking_width;
+      }
+      const auto shrunk = NativeWidthFrame(to, from, 180, 180);
+      Expect(EqualRect(&shrunk, &from), "shrinking reaches its exact endpoint");
+      const auto disabled = NativeWidthFrame(from, to, 0, 0);
+      Expect(EqualRect(&disabled, &to), "disabled resize snaps to the final geometry");
+    }
     Expect(NativeFadeOpacity(0, 1, 0, 110) == 0 && NativeFadeOpacity(0, 1, 110, 110) == 1,
            "appearance fade has exact endpoints");
     Expect(NativeFadeOpacity(1, 0, 80, 80) == 0 && NativeFadeOpacity(0, 1, 0, 0) == 1,
