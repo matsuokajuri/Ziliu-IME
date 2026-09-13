@@ -40,12 +40,13 @@ namespace {
 constexpr UINT kCaretPositionReady = WM_APP + 0x271;
 constexpr UINT_PTR kCaretPositionTimer = 0x5A03;
 
-std::optional<RECT> ReadFocusedCaret() {
+std::optional<RECT> ReadFocusedCaret(HWND foreground, HWND focus) {
   using Microsoft::WRL::ComPtr;
-  const HWND foreground = GetForegroundWindow();
   DWORD process = 0;
-  GetWindowThreadProcessId(foreground, &process);
-  if (process != GetCurrentProcessId()) {
+  const DWORD thread = GetWindowThreadProcessId(foreground, &process);
+  GUITHREADINFO info{sizeof(info)};
+  if (GetForegroundWindow() != foreground || process != GetCurrentProcessId() ||
+      !GetGUIThreadInfo(thread, &info) || info.hwndFocus != focus) {
     return std::nullopt;
   }
   ComPtr<IUIAutomation2> automation;
@@ -96,7 +97,8 @@ std::optional<RECT> ReadFocusedCaret() {
   SafeArrayDestroy(bounds);
   ComPtr<IUIAutomationElement> current;
   BOOL same = FALSE;
-  if (GetForegroundWindow() != foreground ||
+  if (GetForegroundWindow() != foreground || !GetGUIThreadInfo(thread, &info) ||
+      info.hwndFocus != focus ||
       FAILED(automation->GetFocusedElement(current.GetAddressOf())) || !current ||
       FAILED(automation->CompareElements(element.Get(), current.Get(), &same)) || !same) {
     return std::nullopt;
@@ -108,6 +110,8 @@ struct CaretQuery {
   std::shared_ptr<CandidateCaretMailbox> mailbox;
   std::uint64_t revision;
   HMODULE module;
+  HWND foreground;
+  HWND focus;
 };
 
 void CALLBACK QueryCaretOnWorker(PTP_CALLBACK_INSTANCE callback, void* parameter) {
@@ -118,7 +122,7 @@ void CALLBACK QueryCaretOnWorker(PTP_CALLBACK_INSTANCE callback, void* parameter
   std::optional<RECT> rectangle;
   const HRESULT initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
   if (SUCCEEDED(initialized)) {
-    rectangle = ReadFocusedCaret();
+    rectangle = ReadFocusedCaret(query->foreground, query->focus);
     CoUninitialize();
   }
   auto& box = *query->mailbox;
@@ -437,7 +441,45 @@ bool CandidateWindow::CreateInternal(HWND owner, bool preview) {
 void CandidateWindow::Show(const core::CompositionSnapshot& snapshot,
                            const RECT& text_rectangle, const core::Settings& settings,
                            std::size_t page_offset) {
-  ShowInternal(snapshot, text_rectangle, nullptr, settings, page_offset);
+  DWORD process = 0;
+  GetWindowThreadProcessId(GetForegroundWindow(), &process);
+  if (preview_mode_ || !window_ || snapshot.empty() || process != GetCurrentProcessId()) {
+    ShowInternal(snapshot, text_rectangle, nullptr, settings, page_offset);
+    return;
+  }
+  QueuePresentation(snapshot, text_rectangle, settings, page_offset);
+  SetTimer(window_, kCaretPositionTimer, 100, nullptr);
+  RequestCaretPosition();
+  // Content updates do not get to overwrite a verified position with the TSF
+  // fallback. On first show, wait for the asynchronous position decision.
+  if (verified_caret_) {
+    PresentAtCaret(verified_caret_);
+  }
+}
+
+void CandidateWindow::QueuePresentation(const core::CompositionSnapshot& snapshot,
+                                        const RECT& fallback, const core::Settings& settings,
+                                        std::size_t page_offset) {
+  pending_presentation_ = PendingPresentation{snapshot, fallback, settings, page_offset};
+  candidate_requested_visible_ = true;
+  presentation_dirty_ = true;
+}
+
+void CandidateWindow::PresentAtCaret(const std::optional<RECT>& rectangle) {
+  if (!candidate_requested_visible_ || !pending_presentation_) {
+    return;
+  }
+  if (rectangle) {
+    verified_caret_ = rectangle;
+  }
+  // A transient provider failure must not resurrect a stale TSF rectangle.
+  const RECT anchor = verified_caret_.value_or(pending_presentation_->fallback);
+  if (presentation_dirty_ || !IsWindowVisible(window_) || !EqualRect(&anchor, &text_rectangle_)) {
+    const auto presentation = *pending_presentation_;
+    presentation_dirty_ = false;
+    ShowInternal(presentation.snapshot, anchor, nullptr, presentation.settings,
+                 presentation.page_offset);
+  }
 }
 
 void CandidateWindow::ShowPreview(const core::CompositionSnapshot& snapshot,
@@ -937,12 +979,6 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   }
   layered_present_retry_attempted_ = false;
   InvalidateRect(window_, nullptr, FALSE);
-  if (!preview_mode_ && !caret_repositioning_) {
-    // Some controls move their input surface without a TSF layout notification.
-    // Poll only while this candidate is requested; never change system timer resolution.
-    SetTimer(window_, kCaretPositionTimer, 100, nullptr);
-    RequestCaretPosition();
-  }
 }
 
 void CandidateWindow::StopCaretPosition() {
@@ -954,15 +990,36 @@ void CandidateWindow::StopCaretPosition() {
   }
 }
 
-void CandidateWindow::RequestCaretPosition(bool invalidate_pending) {
+void CandidateWindow::RequestCaretPosition() {
+  const HWND foreground = GetForegroundWindow();
   DWORD foreground_process = 0;
-  GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
+  const DWORD thread = GetWindowThreadProcessId(foreground, &foreground_process);
   if (!caret_mailbox_ || !candidate_requested_visible_ ||
       foreground_process != GetCurrentProcessId()) {
     return;
   }
-  std::lock_guard lock(caret_mailbox_->mutex);
-  if (!invalidate_pending && caret_mailbox_->pending) {
+  GUITHREADINFO info{sizeof(info)};
+  if (!GetGUIThreadInfo(thread, &info)) {
+    PresentAtCaret(std::nullopt);
+    return;
+  }
+  if (caret_foreground_ != foreground || caret_focus_ != info.hwndFocus) {
+    caret_foreground_ = foreground;
+    caret_focus_ = info.hwndFocus;
+    verified_caret_.reset();
+    presentation_dirty_ = true;
+    {
+      std::lock_guard lock(caret_mailbox_->mutex);
+      ++caret_mailbox_->revision;
+    }
+    // Never animate an old input surface over a newly focused control.
+    KillTimer(window_, kNativeWidthTimer);
+    KillTimer(window_, kNativeFadeTimer);
+    width_active_ = fade_active_ = hide_after_fade_ = false;
+    ShowWindow(window_, SW_HIDE);
+  }
+  std::unique_lock lock(caret_mailbox_->mutex);
+  if (caret_mailbox_->pending) {
     return;
   }
   ++caret_mailbox_->revision;
@@ -972,15 +1029,20 @@ void CandidateWindow::RequestCaretPosition(bool invalidate_pending) {
   HMODULE module = nullptr;
   if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
           reinterpret_cast<const wchar_t*>(&QueryCaretOnWorker), &module)) {
+    lock.unlock();
+    PresentAtCaret(std::nullopt);
     return;
   }
-  auto query = std::make_unique<CaretQuery>(CaretQuery{caret_mailbox_, caret_mailbox_->revision, module});
+  auto query = std::make_unique<CaretQuery>(CaretQuery{
+      caret_mailbox_, caret_mailbox_->revision, module, foreground, info.hwndFocus});
   caret_mailbox_->pending = true;
   if (TrySubmitThreadpoolCallback(QueryCaretOnWorker, query.get(), nullptr)) {
     static_cast<void>(query.release());
   } else {
     caret_mailbox_->pending = false;
     FreeLibrary(module);
+    lock.unlock();
+    PresentAtCaret(std::nullopt);
   }
 }
 
@@ -991,6 +1053,14 @@ void CandidateWindow::ApplyCaretPosition() {
   DWORD foreground_process = 0;
   GetWindowThreadProcessId(GetForegroundWindow(), &foreground_process);
   if (foreground_process != GetCurrentProcessId()) {
+    return;
+  }
+  GUITHREADINFO info{sizeof(info)};
+  const HWND foreground = GetForegroundWindow();
+  if (foreground != caret_foreground_ ||
+      !GetGUIThreadInfo(GetWindowThreadProcessId(foreground, nullptr), &info) ||
+      info.hwndFocus != caret_focus_) {
+    RequestCaretPosition();
     return;
   }
   std::optional<RECT> rectangle;
@@ -1004,10 +1074,8 @@ void CandidateWindow::ApplyCaretPosition() {
   }
   if (stale) {
     RequestCaretPosition();
-  } else if (rectangle && !EqualRect(&*rectangle, &text_rectangle_)) {
-    caret_repositioning_ = true;
-    Show(snapshot_, *rectangle, settings_, page_offset_);
-    caret_repositioning_ = false;
+  } else {
+    PresentAtCaret(rectangle);
   }
 }
 
@@ -1027,6 +1095,10 @@ void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
 
 void CandidateWindow::Hide() {
   candidate_requested_visible_ = false;
+  pending_presentation_.reset();
+  verified_caret_.reset();
+  presentation_dirty_ = false;
+  caret_foreground_ = caret_focus_ = nullptr;
   if (window_) {
     KillTimer(window_, kCaretPositionTimer);
   }
@@ -1154,7 +1226,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       // becomes foreground. Its no-activate popup must not remain on that app.
       if (!wparam && !preview_mode_) {
         const bool requested = candidate_requested_visible_;
+        auto pending = std::move(pending_presentation_);
         Hide();
+        pending_presentation_ = std::move(pending);
+        presentation_dirty_ = requested;
         candidate_requested_visible_ = requested;
       } else if (wparam && !preview_mode_) {
         if (candidate_requested_visible_) {
@@ -1170,7 +1245,7 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       return 0;
     case WM_TIMER:
       if (wparam == kCaretPositionTimer) {
-        RequestCaretPosition(false);
+        RequestCaretPosition();
         return 0;
       }
       if (wparam == kNativeWidthTimer) {

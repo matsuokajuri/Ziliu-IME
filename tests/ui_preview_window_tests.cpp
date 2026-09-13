@@ -6,6 +6,20 @@
 #include <string_view>
 #include <thread>
 
+namespace ziliu::ui {
+// Deterministic delivery of asynchronous geometry, without querying or taking
+// focus on the user's desktop. Exercises the same queue/presentation methods.
+struct CandidateWindowTestAccess {
+  static void Queue(CandidateWindow& window, const core::CompositionSnapshot& snapshot,
+                    const RECT& fallback, const core::Settings& settings) {
+    window.QueuePresentation(snapshot, fallback, settings, 0);
+  }
+  static void Complete(CandidateWindow& window, const std::optional<RECT>& caret) {
+    window.PresentAtCaret(caret);
+  }
+};
+}  // namespace ziliu::ui
+
 namespace {
 struct AnimationFrameTiming {
   double time_ms;
@@ -14,6 +28,8 @@ struct AnimationFrameTiming {
 thread_local WNDPROC original_window_procedure = nullptr;
 thread_local bool measure_frames = false;
 thread_local std::vector<AnimationFrameTiming> animation_frames;
+thread_local bool track_positions = false;
+thread_local std::vector<POINT> presented_positions;
 
 double PreciseMilliseconds() {
   LARGE_INTEGER counter{}, frequency{};
@@ -23,6 +39,11 @@ double PreciseMilliseconds() {
 }
 
 LRESULT CALLBACK MeasureAnimationFrame(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (track_positions && message == WM_WINDOWPOSCHANGED) {
+    RECT position{};
+    GetWindowRect(window, &position);
+    presented_positions.push_back({position.left, position.top});
+  }
   const bool measure = measure_frames && message == WM_TIMER && wparam == 0x5A02;
   const double started = measure ? PreciseMilliseconds() : 0.0;
   const auto result = CallWindowProcW(original_window_procedure, window, message, wparam, lparam);
@@ -164,6 +185,51 @@ void CheckRealWidthAnimation() {
     SendMessageW(window, WM_ACTIVATEAPP, FALSE, 0);
     PumpFor(150);
     Expect(!IsWindowVisible(window), "deactivated app must not leave a candidate over another app");
+    popup.Hide();
+    PumpFor(150);
+    using Access = ziliu::ui::CandidateWindowTestAccess;
+    const RECT stale_top{100, 40, 102, 60};
+    const RECT actual_bottom{100, 500, 102, 520};
+    Access::Queue(popup, narrow, stale_top, settings);
+    Expect(!IsWindowVisible(window), "first content update must wait for the position decision");
+    Access::Complete(popup, actual_bottom);
+    PumpFor(200);
+    RECT bottom{};
+    GetWindowRect(window, &bottom);
+    presented_positions.clear();
+    track_positions = true;
+    for (int key = 0; key < 24; ++key) {
+      Access::Queue(popup, key % 2 ? narrow : wide, stale_top, settings);
+      // Timeout/null completion must retain the last verified caret, not TSF.
+      Access::Complete(popup, key % 3 ? std::optional<RECT>(actual_bottom) : std::nullopt);
+      PumpFor(17);
+      RECT current{};
+      GetWindowRect(window, &current);
+      Expect(current.top == bottom.top, "every input update keeps the verified vertical position");
+    }
+    PumpFor(220);
+    track_positions = false;
+    Expect(!presented_positions.empty(), "observe actual HWND moves, not just final screenshots");
+    for (const POINT& position : presented_positions) {
+      Expect(position.y == bottom.top, "no intermediate HWND move may flash at the stale top anchor");
+    }
+    popup.Hide();
+    PumpFor(150);
+    Access::Complete(popup, actual_bottom);
+    Expect(!IsWindowVisible(window), "a late geometry reply after commit cannot resurrect candidates");
+    Access::Queue(popup, narrow, stale_top, settings);
+    Expect(!IsWindowVisible(window), "new composition does not inherit the previous caret");
+    Access::Complete(popup, std::nullopt);
+    PumpFor(200);
+    RECT fallback{};
+    GetWindowRect(window, &fallback);
+    Expect(fallback.top != bottom.top, "unsupported providers still use native TSF fallback");
+    Access::Complete(popup, actual_bottom);
+    PumpFor(200);
+    GetWindowRect(window, &fallback);
+    Expect(fallback.top == bottom.top, "a newly available caret replaces fallback exactly once");
+    std::cout << "Anchor arbitration PASS: 24 content updates, timeout, first-show, hide and fallback; "
+              << presented_positions.size() << " HWND moves checked\n";
     std::cout << "Isolated layered HWND width transition checks PASS; animation enabled=" << enabled << '\n';
   }
   DestroyWindow(owner);

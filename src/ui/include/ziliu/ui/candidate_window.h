@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -43,11 +44,25 @@ class CandidateWindow final {
                                           LPARAM lparam);
 
  private:
-  void RequestCaretPosition(bool invalidate_pending = true);
+  friend struct CandidateWindowTestAccess;
+  struct PendingPresentation {
+    core::CompositionSnapshot snapshot;
+    RECT fallback;
+    core::Settings settings;
+    std::size_t page_offset;
+  };
+  void QueuePresentation(const core::CompositionSnapshot& snapshot, const RECT& fallback,
+                         const core::Settings& settings, std::size_t page_offset);
+  void PresentAtCaret(const std::optional<RECT>& rectangle);
+  void RequestCaretPosition();
   void ApplyCaretPosition();
   void StopCaretPosition();
   std::shared_ptr<CandidateCaretMailbox> caret_mailbox_;
-  bool caret_repositioning_ = false;
+  std::optional<PendingPresentation> pending_presentation_;
+  std::optional<RECT> verified_caret_;
+  HWND caret_foreground_ = nullptr;
+  HWND caret_focus_ = nullptr;
+  bool presentation_dirty_ = false;
   bool candidate_requested_visible_ = false;
   struct RenderPalette {
     D2D1_COLOR_F preedit{};
