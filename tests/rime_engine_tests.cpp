@@ -81,6 +81,77 @@ int main(int argument_count, char* arguments[]) {
          "the recovery build must use real Rime candidates, not the two-word Stub");
   engine->Reset();
 
+  // Conversion must operate on words, not a single-character replacement map.
+  struct ConversionCase {
+    std::wstring_view spelling;
+    std::wstring_view simplified;
+    std::wstring_view traditional;
+    std::wstring_view incorrect_characterwise;
+  };
+  for (const auto& test : {
+           ConversionCase{L"toufa", L"头发", L"頭髮", L"頭發"},
+           ConversionCase{L"fazhan", L"发展", L"發展", L"髮展"},
+           ConversionCase{L"ganzao", L"干燥", L"乾燥", L"幹燥"},
+           ConversionCase{L"ganbu", L"干部", L"幹部", L"乾部"},
+           ConversionCase{L"huanghou", L"皇后", L"皇后", L"皇後"},
+           ConversionCase{L"houmian", L"后面", L"後面", L"后面"},
+           ConversionCase{L"miantiao", L"面条", L"麪條", L"面條"},
+           ConversionCase{L"miankong", L"面孔", L"面孔", L"麵孔"}}) {
+    for (const wchar_t letter : test.spelling) {
+      Expect(engine->ProcessLetter(letter), "Rime should consume conversion input");
+    }
+    const auto simplified = engine->Snapshot();
+    Expect(std::ranges::any_of(simplified.candidates, [&](const auto& candidate) {
+             return candidate.text == test.simplified;
+           }), "the simplified phrase should be available before toggling");
+    engine->SetTraditional(true);
+    const auto traditional = engine->Snapshot();
+    Expect(std::ranges::none_of(traditional.candidates, [&](const auto& candidate) {
+             return candidate.text == test.incorrect_characterwise;
+           }), "word-level conversion must not emit the wrong characterwise form");
+    const auto converted = std::ranges::find_if(traditional.candidates, [&](const auto& candidate) {
+      return candidate.text == test.traditional;
+    });
+    if (converted == traditional.candidates.end()) {
+      std::wcerr << L"Conversion case: " << test.spelling << L'\n';
+      for (const auto& candidate : traditional.candidates) {
+        std::cerr << "candidate codepoints:";
+        for (const wchar_t character : candidate.text) {
+          std::cerr << " U+" << std::hex << static_cast<unsigned int>(character);
+        }
+        std::cerr << std::dec << '\n';
+      }
+    }
+    Expect(converted != traditional.candidates.end(),
+           "traditional mode should convert the active phrase with word-level disambiguation");
+    const auto index = static_cast<std::size_t>(converted - traditional.candidates.begin());
+    Expect(engine->Select(index) == ziliu::core::SelectionResult{true, std::wstring(test.traditional)},
+           "committed text must match the selected traditional candidate");
+    engine->Reset();
+    engine->SetTraditional(false);
+    for (const wchar_t letter : test.spelling) {
+      Expect(engine->ProcessLetter(letter), "Rime should consume input after switching back");
+    }
+    const auto restored = engine->Snapshot();
+    Expect(std::ranges::any_of(restored.candidates, [&](const auto& candidate) {
+             return candidate.text == test.simplified;
+           }), "switching back must restore simplified candidates");
+    engine->Reset();
+  }
+
+  engine->SetTraditional(true);
+  for (const wchar_t letter : std::wstring_view(L"fa")) {
+    Expect(engine->ProcessLetter(letter), "Rime should consume an ambiguous single-character input");
+  }
+  const auto ambiguous = engine->Snapshot();
+  Expect(std::ranges::any_of(ambiguous.candidates, [](const auto& candidate) {
+           return candidate.text == L"發";
+         }) && std::ranges::any_of(ambiguous.candidates, [](const auto& candidate) {
+           return candidate.text == L"髮";
+         }), "an ambiguous single character must retain both traditional choices");
+  engine->Reset();
+  engine->SetTraditional(false);
+
   for (const wchar_t letter : std::wstring_view(L"shi")) {
     Expect(engine->ProcessLetter(letter), "Rime should consume a paging test letter");
   }

@@ -15,3 +15,5 @@ CMakeLists.txt text eol=lf
 *.ps1 text eol=crlf
 *.png binary
 *.ico binary
+data/ziliu/opencc/*.txt text eol=lf
+data/ziliu/opencc/LICENSE.OpenCC text eol=lf
