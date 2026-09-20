@@ -1309,7 +1309,7 @@ void CandidateWindow::Hide() {
 
 bool CandidateWindow::NativeAnimationsEnabled() const {
   BOOL enabled = FALSE;
-  return !preview_mode_ && UsesNativeDefaultTheme() &&
+  return !preview_mode_ &&
          SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) && enabled;
 }
 
@@ -1353,10 +1353,39 @@ void CandidateWindow::AdvanceNativeFade() {
 }
 
 float CandidateWindow::PresentedContentWidth() const {
+  RECT client{};
+  if (!UsesNativeDefaultTheme() && window_ != nullptr &&
+      GetClientRect(window_, &client) && client.right > client.left) {
+    return std::max(1.0F,
+        detail::CandidatePixelsToCoordinate(client.right - client.left, dpi_scale_) -
+            2.0F * shadow_margin_);
+  }
   return width_active_
       ? std::max(1.0F, static_cast<float>(width_presented_rectangle_.right -
           width_presented_rectangle_.left) / dpi_scale_ - 2.0F * shadow_margin_)
       : window_width_;
+}
+
+D2D1_SIZE_F CandidateWindow::PresentedThemeSurfaceSize() const {
+  if (render_target_ == nullptr) {
+    return {};
+  }
+  D2D1_SIZE_F size = render_target_->GetSize();
+  size.width = std::min(size.width, PresentedContentWidth());
+  if (UsesNativeDefaultTheme()) {
+    size.height = window_height_;
+  }
+  return size;
+}
+
+D2D1_RECT_F CandidateWindow::PresentedActionBounds(const D2D1_RECT_F& bounds) const {
+  if (!width_active_ || UsesNativeDefaultTheme() ||
+      settings_.candidate_layout != core::CandidateLayout::kHorizontal) {
+    return bounds;
+  }
+  const float offset = PresentedContentWidth() - window_width_;
+  return D2D1::RectF(bounds.left + offset, bounds.top,
+                     bounds.right + offset, bounds.bottom);
 }
 
 void CandidateWindow::AdvanceNativeWidth() {
@@ -1459,8 +1488,7 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (layered_rendering_enabled_) {
         const SIZE requested_size{static_cast<LONG>(LOWORD(lparam)),
                                   static_cast<LONG>(HIWORD(lparam))};
-        if ((UsesNativeDefaultTheme() ? requested_size.cx > layered_pixel_size_.cx
-                                     : requested_size.cx != layered_pixel_size_.cx) ||
+        if (requested_size.cx > layered_pixel_size_.cx ||
             requested_size.cy != layered_pixel_size_.cy) {
           DiscardDeviceResources();
           InvalidateRect(window_, nullptr, FALSE);
@@ -1509,8 +1537,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                           GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       const float y = detail::CandidatePixelsToCoordinate(
                           GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
-      const bool expand_hovered = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
-      const bool menu_hovered = ContainsPoint(menu_button_bounds_, x, y);
+      const bool expand_hovered = can_expand_ &&
+          ContainsPoint(PresentedActionBounds(expand_button_bounds_), x, y);
+      const bool menu_hovered =
+          ContainsPoint(PresentedActionBounds(menu_button_bounds_), x, y);
       if (expand_button_hovered_ != expand_hovered || menu_button_hovered_ != menu_hovered) {
         expand_button_hovered_ = expand_hovered;
         menu_button_hovered_ = menu_hovered;
@@ -1538,8 +1568,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                           GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       const float y = detail::CandidatePixelsToCoordinate(
                           GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
-      expand_button_pressed_ = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
-      menu_button_pressed_ = ContainsPoint(menu_button_bounds_, x, y);
+      expand_button_pressed_ = can_expand_ &&
+          ContainsPoint(PresentedActionBounds(expand_button_bounds_), x, y);
+      menu_button_pressed_ =
+          ContainsPoint(PresentedActionBounds(menu_button_bounds_), x, y);
       if (expand_button_pressed_ || menu_button_pressed_) {
         SetCapture(window_);
         InvalidateRect(window_, nullptr, FALSE);
@@ -1555,10 +1587,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
                           GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       const float y = detail::CandidatePixelsToCoordinate(
                           GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
-      const bool activate_expand =
-          expand_button_pressed_ && can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
-      const bool activate_menu =
-          menu_button_pressed_ && ContainsPoint(menu_button_bounds_, x, y);
+      const bool activate_expand = expand_button_pressed_ && can_expand_ &&
+          ContainsPoint(PresentedActionBounds(expand_button_bounds_), x, y);
+      const bool activate_menu = menu_button_pressed_ &&
+          ContainsPoint(PresentedActionBounds(menu_button_bounds_), x, y);
       expand_button_pressed_ = false;
       menu_button_pressed_ = false;
       if (GetCapture() == window_) {
@@ -1572,11 +1604,12 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (activate_menu && quick_menu_action_) {
         RECT window_rectangle{};
         if (GetWindowRect(window_, &window_rectangle)) {
+          const D2D1_RECT_F menu_bounds = PresentedActionBounds(menu_button_bounds_);
           const POINT anchor{
               window_rectangle.left +
-                  ToPixels(shadow_margin_ + (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F,
+                  ToPixels(shadow_margin_ + (menu_bounds.left + menu_bounds.right) / 2.0F,
                            dpi_scale_),
-              window_rectangle.top + ToPixels(shadow_margin_ + menu_button_bounds_.top, dpi_scale_)};
+              window_rectangle.top + ToPixels(shadow_margin_ + menu_bounds.top, dpi_scale_)};
           quick_menu_action_(anchor);
         }
         return 0;
@@ -2058,12 +2091,10 @@ bool CandidateWindow::PresentLayeredSurface() {
   POINT destination{window_rectangle.left, window_rectangle.top};
   POINT source{};
   SIZE presentation_size = layered_pixel_size_;
-  if (UsesNativeDefaultTheme()) {
-    // The backing bitmap can be wider during a resize. Present only the current
-    // physical width; otherwise UpdateLayeredWindow snaps back to the bitmap size.
-    presentation_size.cx = std::min(presentation_size.cx,
-                                    window_rectangle.right - window_rectangle.left);
-  }
+  // The backing bitmap can be wider during a resize. Present only the current
+  // physical width; otherwise UpdateLayeredWindow snaps back to the bitmap size.
+  presentation_size.cx = std::min(presentation_size.cx,
+                                  window_rectangle.right - window_rectangle.left);
   BLENDFUNCTION blend{AC_SRC_OVER, 0,
                       static_cast<BYTE>(std::lround(std::clamp(surface_opacity_, 0.0F, 1.0F) * 255.0F)),
                       AC_SRC_ALPHA};
@@ -2095,8 +2126,7 @@ void CandidateWindow::DrawSurfaceBackground() {
     if (background_brush_ == nullptr || surface_border_brush_ == nullptr) {
       return;
     }
-    const D2D1_SIZE_F target_size = UsesNativeDefaultTheme()
-        ? D2D1::SizeF(PresentedContentWidth(), window_height_) : render_target_->GetSize();
+    const D2D1_SIZE_F target_size = PresentedThemeSurfaceSize();
     if (target_size.width <= 0.0F || target_size.height <= 0.0F) {
       return;
     }
@@ -2130,7 +2160,7 @@ void CandidateWindow::DrawSurfaceBackground() {
   }
 
   const D2D1_SIZE_F bitmap_size = surface_bitmaps_.background->GetSize();
-  const D2D1_SIZE_F target_size = render_target_->GetSize();
+  const D2D1_SIZE_F target_size = PresentedThemeSurfaceSize();
   if (bitmap_size.width <= 0.0F || bitmap_size.height <= 0.0F ||
       target_size.width <= 0.0F || target_size.height <= 0.0F) {
     draw_palette_surface();
@@ -2259,7 +2289,7 @@ void CandidateWindow::DrawSurfaceOverlays() {
   if (render_target_ == nullptr) {
     return;
   }
-  const D2D1_SIZE_F surface_size = render_target_->GetSize();
+  const D2D1_SIZE_F surface_size = PresentedThemeSurfaceSize();
   for (const auto& overlay : surface_bitmaps_.overlays) {
     if (overlay.bitmap == nullptr) {
       continue;
@@ -2295,10 +2325,11 @@ void CandidateWindow::DrawSurfaceSeparator(float y) {
   }
 
   const float unit_scale = ThemeUnitScale();
+  const float surface_width = width_active_ ? PresentedContentWidth() : window_width_;
   const float left = std::min(static_cast<float>(separator->left) * unit_scale,
-                              window_width_);
+                              surface_width);
   const float right =
-      std::max(left, window_width_ -
+      std::max(left, surface_width -
                          static_cast<float>(separator->right) * unit_scale);
   const float thickness =
       std::max(static_cast<float>(separator->thickness) * unit_scale, 0.5F);
@@ -2510,29 +2541,33 @@ void CandidateWindow::Paint() {
     }
 
     if (horizontal && slice.count != 0) {
+      const D2D1_RECT_F presented_expand_bounds =
+          PresentedActionBounds(expand_button_bounds_);
+      const D2D1_RECT_F presented_menu_bounds =
+          PresentedActionBounds(menu_button_bounds_);
       bool drew_expand_image = false;
       if (can_expand_) {
         const ButtonBitmaps& expand_bitmaps =
             expanded_ ? surface_bitmaps_.collapse : surface_bitmaps_.expand;
         drew_expand_image =
-            DrawThemeButton(expand_bitmaps, expand_button_bounds_,
+            DrawThemeButton(expand_bitmaps, presented_expand_bounds,
                             expand_button_hovered_, expand_button_pressed_);
       }
       const bool drew_menu_image =
-          DrawThemeButton(surface_bitmaps_.menu, menu_button_bounds_,
+          DrawThemeButton(surface_bitmaps_.menu, presented_menu_bounds,
                           menu_button_hovered_, menu_button_pressed_);
 
       if (can_expand_ && !drew_expand_image && !UsesSogouRendering()) {
         render_target_->DrawLine(
-            D2D1::Point2F(expand_button_bounds_.left,
-                          expand_button_bounds_.top + 4.0F * layout_scale_),
-            D2D1::Point2F(expand_button_bounds_.left,
-                          expand_button_bounds_.bottom - 4.0F * layout_scale_),
+            D2D1::Point2F(presented_expand_bounds.left,
+                          presented_expand_bounds.top + 4.0F * layout_scale_),
+            D2D1::Point2F(presented_expand_bounds.left,
+                          presented_expand_bounds.bottom - 4.0F * layout_scale_),
             muted_brush_.Get(), 0.5F);
         const float center_x =
-            (expand_button_bounds_.left + expand_button_bounds_.right) / 2.0F;
+            (presented_expand_bounds.left + presented_expand_bounds.right) / 2.0F;
         const float center_y =
-            (expand_button_bounds_.top + expand_button_bounds_.bottom) / 2.0F;
+            (presented_expand_bounds.top + presented_expand_bounds.bottom) / 2.0F;
         const float direction = expanded_ ? -1.0F : 1.0F;
         render_target_->DrawLine(
             D2D1::Point2F(center_x - 6.0F * layout_scale_,
@@ -2546,9 +2581,12 @@ void CandidateWindow::Paint() {
             text_brush_.Get(), 1.6F * layout_scale_);
       }
 
-      if (!drew_menu_image && ssf_gdi && menu_button_bounds_.right > menu_button_bounds_.left) {
-        const float center_x = (menu_button_bounds_.left + menu_button_bounds_.right) * 0.5F;
-        const float center_y = (menu_button_bounds_.top + menu_button_bounds_.bottom) * 0.5F;
+      if (!drew_menu_image && ssf_gdi &&
+          presented_menu_bounds.right > presented_menu_bounds.left) {
+        const float center_x =
+            (presented_menu_bounds.left + presented_menu_bounds.right) * 0.5F;
+        const float center_y =
+            (presented_menu_bounds.top + presented_menu_bounds.bottom) * 0.5F;
         for (const float offset : {-4.0F, 0.0F, 4.0F}) {
           render_target_->DrawLine(D2D1::Point2F(center_x - 8.0F, center_y + offset),
               D2D1::Point2F(center_x + 8.0F, center_y + offset), text_brush_.Get(), 1.2F);
@@ -2556,15 +2594,15 @@ void CandidateWindow::Paint() {
       }
       if (!drew_menu_image && !UsesSogouRendering()) {
         render_target_->DrawLine(
-            D2D1::Point2F(menu_button_bounds_.left,
-                          menu_button_bounds_.top + 4.0F * layout_scale_),
-            D2D1::Point2F(menu_button_bounds_.left,
-                          menu_button_bounds_.bottom - 4.0F * layout_scale_),
+            D2D1::Point2F(presented_menu_bounds.left,
+                          presented_menu_bounds.top + 4.0F * layout_scale_),
+            D2D1::Point2F(presented_menu_bounds.left,
+                          presented_menu_bounds.bottom - 4.0F * layout_scale_),
             muted_brush_.Get(), 0.5F);
         const float menu_center_x =
-            (menu_button_bounds_.left + menu_button_bounds_.right) / 2.0F;
+            (presented_menu_bounds.left + presented_menu_bounds.right) / 2.0F;
         const float menu_center_y =
-            (menu_button_bounds_.top + menu_button_bounds_.bottom) / 2.0F;
+            (presented_menu_bounds.top + presented_menu_bounds.bottom) / 2.0F;
         for (const float offset : {-6.0F, 0.0F, 6.0F}) {
           render_target_->DrawLine(
               D2D1::Point2F(menu_center_x - (compact ? 7.0F : 10.0F) * layout_scale_,

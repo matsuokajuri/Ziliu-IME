@@ -133,6 +133,8 @@ class CandidateWindow final {
   void AdvanceNativeFade();
   void AdvanceNativeWidth();
   [[nodiscard]] float PresentedContentWidth() const;
+  [[nodiscard]] D2D1_SIZE_F PresentedThemeSurfaceSize() const;
+  [[nodiscard]] D2D1_RECT_F PresentedActionBounds(const D2D1_RECT_F& bounds) const;
   void DrawSurfaceBackground();
   void DrawSurfaceOverlays();
   void DrawSurfaceSeparator(float y);

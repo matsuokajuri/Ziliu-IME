@@ -3,6 +3,7 @@
 
 #include <cstdlib>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string_view>
 #include <thread>
@@ -53,15 +54,20 @@ struct CandidateWindowTestAccess {
       HDC dc;
       RECT bounds;
       float dpi_x{}, dpi_y{};
+      float& window_scale;
+      float original_window_scale;
       ~RestoreTarget() {
+        window_scale = original_window_scale;
         target->SetDpi(dpi_x, dpi_y);
         static_cast<void>(target->BindDC(dc, &bounds));
       }
     } restore{dc_target.Get(), window.layered_memory_dc_,
-              RECT{0, 0, window.layered_pixel_size_.cx, window.layered_pixel_size_.cy}};
+              RECT{0, 0, window.layered_pixel_size_.cx, window.layered_pixel_size_.cy},
+              {}, {}, window.dpi_scale_, window.dpi_scale_};
     restore.target->GetDpi(&restore.dpi_x, &restore.dpi_y);
     const RECT fixture_bounds{0, 0, window.layered_pixel_size_.cx, static_cast<LONG>(height)};
     restore.target->SetDpi(96, 96);
+    window.dpi_scale_ = 1.0F;
     if (FAILED(restore.target->BindDC(restore.dc, &fixture_bounds))) return false;
     std::vector<std::uint32_t> pixels(height * 4);
     for (UINT y = 0; y < height; ++y) {
@@ -82,7 +88,9 @@ struct CandidateWindowTestAccess {
     if (FAILED(window.render_target_->EndDraw())) return false;
     // Inspect every original row in the fixed left/right edges, independently
     // of text. Compression, a missing middle, and palette fallback all fail.
-    const int right = static_cast<int>(window.layered_pixel_size_.cx) - 1;
+    RECT client{};
+    if (!GetClientRect(window.window_, &client) || client.right <= client.left) return false;
+    const int right = client.right - client.left - 1;
     for (UINT y = 0; y < height; ++y) {
       if (GetPixel(window.layered_memory_dc_, 0, static_cast<int>(y)) != RGB(y, 0, 0x55) ||
           GetPixel(window.layered_memory_dc_, right, static_cast<int>(y)) != RGB(y, 3, 0x55)) {
@@ -112,9 +120,76 @@ struct CandidateWindowTestAccess {
         window.menu_button_bounds_.right <= window.window_width_;
   }
   static LPARAM MenuClickPoint(const CandidateWindow& window) {
-    const auto& b = window.menu_button_bounds_;
+    const auto b = window.PresentedActionBounds(window.menu_button_bounds_);
     return MAKELPARAM(static_cast<WORD>((b.left + b.right) * 0.5F * window.dpi_scale_),
                       static_cast<WORD>((b.top + b.bottom) * 0.5F * window.dpi_scale_));
+  }
+  static bool SetMemoryAnimationBitmaps(CandidateWindow& window) {
+    if (!window.EnsureDeviceResources()) return false;
+    auto& appearance = window.theme_manifest_.light;
+    auto& surface = window.settings_.candidate_layout == core::CandidateLayout::kHorizontal
+        ? appearance.horizontal : appearance.vertical;
+    auto& image = surface.background;
+    image = core::ThemeImage{};
+    image->stretch = core::ThemeInsets{1, 1, 1, 1};
+    constexpr std::array<std::uint32_t, 9> background{
+        0x80800000U, 0x80800000U, 0x80800000U,
+        0x80800000U, 0x80800000U, 0x80800000U,
+        0x80800000U, 0x80800000U, 0x80800000U};
+    const auto properties = D2D1::BitmapProperties(
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
+    window.surface_bitmaps_.background.Reset();
+    if (FAILED(window.render_target_->CreateBitmap(
+            D2D1::SizeU(3, 3), background.data(), 12, properties,
+            window.surface_bitmaps_.background.GetAddressOf()))) {
+      return false;
+    }
+    CandidateWindow::SurfaceBitmaps::OverlayBitmap overlay;
+    overlay.overlay.align = {0, 0, 0, 0, 0, 2, 0, 2, 6, 0};
+    constexpr std::array<std::uint32_t, 16> pixels{
+        0xff00ff00U, 0xff00ff00U, 0xff00ff00U, 0xff00ff00U,
+        0xff00ff00U, 0xff00ff00U, 0xff00ff00U, 0xff00ff00U,
+        0xff00ff00U, 0xff00ff00U, 0xff00ff00U, 0xff00ff00U,
+        0xff00ff00U, 0xff00ff00U, 0xff00ff00U, 0xff00ff00U};
+    if (FAILED(window.render_target_->CreateBitmap(
+            D2D1::SizeU(4, 4), pixels.data(), 16, properties,
+            overlay.bitmap.GetAddressOf()))) {
+      return false;
+    }
+    window.surface_bitmaps_.overlays.clear();
+    window.surface_bitmaps_.overlays.push_back(std::move(overlay));
+    return true;
+  }
+  static ID2D1Bitmap* BackgroundIdentity(const CandidateWindow& window) {
+    return window.surface_bitmaps_.background.Get();
+  }
+  static float PresentedWidth(const CandidateWindow& window) {
+    return window.PresentedContentWidth();
+  }
+  static float PresentedMenuRight(const CandidateWindow& window) {
+    return window.PresentedActionBounds(window.menu_button_bounds_).right;
+  }
+  static float SurfaceOpacity(const CandidateWindow& window) {
+    return window.surface_opacity_;
+  }
+  static std::uint32_t LayeredPixel(const CandidateWindow& window, LONG x, LONG y) {
+    DIBSECTION section{};
+    if (GetObjectW(window.layered_bitmap_, sizeof(section), &section) != sizeof(section) ||
+        section.dsBm.bmBits == nullptr || x < 0 || y < 0 ||
+        x >= section.dsBm.bmWidth || y >= std::abs(section.dsBm.bmHeight)) {
+      return 0;
+    }
+    const auto* pixels = static_cast<const std::uint32_t*>(section.dsBm.bmBits);
+    return pixels[static_cast<std::size_t>(y) * section.dsBm.bmWidth + x];
+  }
+  static bool CheckAnimatedSurface(const CandidateWindow& window) {
+    RECT client{};
+    if (!GetClientRect(window.window_, &client) || client.right < 6 || client.bottom < 6) {
+      return false;
+    }
+    const std::uint32_t background = LayeredPixel(window, 1, 1);
+    const std::uint32_t overlay = LayeredPixel(window, client.right - 1, client.bottom - 1);
+    return (background >> 24U) == 0x80U && overlay == 0xff00ff00U;
   }
   static COLORREF SeparatorPixel(const CandidateWindow& window) {
     return GetPixel(window.layered_memory_dc_, static_cast<int>(100.0F * window.dpi_scale_),
@@ -377,6 +452,7 @@ void CheckRealWidthAnimation() {
     theme.light.typography.chinese_font_family = "Arial";
     theme.light.typography.english_font_family = "Consolas";
     theme.light.horizontal.separator = ziliu::core::ThemeSeparator{0xffff0000U, "", 0, 0, 2};
+    theme.light.horizontal.menu_button = ziliu::core::ThemeButtonImages{};
     Access::SetTheme(popup, theme, {});
     popup.Show(narrow, caret, settings, 0);
     PumpFor(80);
@@ -402,6 +478,83 @@ void CheckRealWidthAnimation() {
     }
     Expect(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == gdi_before,
            "repeated SSF mask rendering must release every temporary GDI object");
+    PumpFor(160);
+    const LONG custom_narrow_width = WindowWidth(window);
+    popup.Show(wide, caret, settings, 0);
+    Expect(Access::SetMemoryAnimationBitmaps(popup),
+           "bind synthetic alpha background and right-edge overlay to the animation surface");
+    ID2D1Bitmap* const animation_background = Access::BackgroundIdentity(popup);
+    PumpFor(60);
+    const LONG custom_intermediate_width = WindowWidth(window);
+    if (enabled) {
+      Expect(custom_narrow_width < custom_intermediate_width,
+             "custom SSF width transition must expose an intermediate HWND width");
+      Expect(Access::BackgroundIdentity(popup) == animation_background,
+             "custom width frames must retain decoded theme bitmaps");
+      Expect(std::fabs(Access::PresentedMenuRight(popup) - Access::PresentedWidth(popup)) < 1.1F,
+             "custom right action must track the currently presented width");
+    }
+    InvalidateRect(window, nullptr, FALSE);
+    SendMessageW(window, WM_PAINT, 0, 0);
+    Expect(Access::CheckAnimatedSurface(popup),
+           "custom intermediate frame preserves source alpha and right-edge overlay anchoring");
+    PumpFor(180);
+    const LONG custom_wide_width = WindowWidth(window);
+    Expect(custom_wide_width > custom_narrow_width,
+           "custom animation fixture produces genuinely different endpoint widths");
+    popup.Show(narrow, caret, settings, 0);
+    if (enabled) {
+      PumpFor(60);
+      const LONG custom_shrinking_width = WindowWidth(window);
+      Expect(custom_narrow_width < custom_shrinking_width &&
+                 custom_shrinking_width < custom_wide_width,
+             "custom shrink exposes an intermediate width");
+      popup.Show(wide, caret, settings, 0);
+      Expect(WindowWidth(window) == custom_shrinking_width,
+             "custom shrink reversal continues from the displayed width");
+      PumpFor(220);
+      Expect(WindowWidth(window) == custom_wide_width,
+             "custom reversed width transition reaches its exact endpoint");
+      popup.Show(narrow, caret, settings, 0);
+    }
+    PumpFor(220);
+    InvalidateRect(window, nullptr, FALSE);
+    SendMessageW(window, WM_PAINT, 0, 0);
+    Expect(WindowWidth(window) == custom_narrow_width,
+           "custom shrink reaches the exact narrow endpoint");
+    Expect(Access::BackgroundIdentity(popup) == animation_background &&
+               Access::CheckAnimatedSurface(popup),
+           "custom shrink endpoint retains cached alpha artwork and current right-edge anchoring");
+    popup.Hide();
+    if (enabled) {
+      PumpFor(45);
+      Expect(IsWindowVisible(window) && Access::SurfaceOpacity(popup) > 0.0F &&
+                 Access::SurfaceOpacity(popup) < 1.0F,
+             "custom hide uses the default 80ms fade instead of snapping");
+      const float hiding_opacity = Access::SurfaceOpacity(popup);
+      popup.Show(narrow, caret, settings, 0);
+      Expect(Access::SurfaceOpacity(popup) == hiding_opacity,
+             "custom hide reversal starts at the currently presented opacity");
+      PumpFor(60);
+      Expect(Access::SurfaceOpacity(popup) > hiding_opacity &&
+                 Access::SurfaceOpacity(popup) < 1.0F,
+             "custom input reverses an in-flight hide fade without an opacity jump");
+      PumpFor(150);
+      Expect(Access::SurfaceOpacity(popup) == 1.0F,
+             "custom reversed hide fade reaches the opaque endpoint");
+      popup.Hide();
+    }
+    PumpFor(150);
+    Expect(!IsWindowVisible(window), "custom fade-out reaches the hidden endpoint");
+    popup.Show(narrow, caret, settings, 0);
+    if (enabled) {
+      PumpFor(50);
+      Expect(Access::SurfaceOpacity(popup) > 0.0F && Access::SurfaceOpacity(popup) < 1.0F,
+             "custom first show uses the default 110ms fade");
+    }
+    PumpFor(160);
+    Expect(Access::SurfaceOpacity(popup) == 1.0F,
+           "custom fade-in reaches the exact opaque endpoint");
     auto unicode_preedit = narrow;
     unicode_preedit.preedit = L"你好";
     popup.Show(unicode_preedit, caret, settings, 0);
@@ -430,7 +583,9 @@ void CheckRealWidthAnimation() {
     settings.custom_candidate_font_size = true;
     settings.candidate_font_size = 24;
     popup.Show(narrow, caret, settings, 0);
-    Expect(Access::Scale(popup) > 1, "explicit user font scaling remains effective");
+    PumpFor(80);
+    Expect(Access::Scale(popup) == 1,
+           "stored user font-size overrides must not rescale an active custom skin");
     Expect(Access::SetMemoryBackground(popup, 4096), "create oversized synthetic H1 background");
     popup.Show(narrow, caret, settings, 0);
     Expect(Access::Height(popup) > 0 && Access::Height(popup) < 4096,
@@ -454,7 +609,33 @@ void CheckRealWidthAnimation() {
                  Access::RowHeight(popup) == static_cast<float>(size) + 4.0F,
              "supported V1 uses authored text rows instead of the native minimum");
     }
+    settings.custom_theme_scale_with_windows = false;
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(220);
+    const LONG custom_v1_narrow_width = WindowWidth(window);
+    auto v1_wide = wide;
+    v1_wide.candidates[0].text =
+        L"a much longer vertical candidate that exceeds the authored V1 minimum width";
+    popup.Show(v1_wide, caret, settings, 0);
+    Expect(Access::SetMemoryAnimationBitmaps(popup),
+           "bind synthetic V1 background with Windows theme scaling disabled");
+    ID2D1Bitmap* const v1_background = Access::BackgroundIdentity(popup);
+    PumpFor(60);
+    if (enabled) {
+      Expect(custom_v1_narrow_width < WindowWidth(window),
+             "real custom V1 exposes an intermediate width");
+      Expect(Access::BackgroundIdentity(popup) == v1_background,
+             "custom V1 frames retain decoded theme bitmaps");
+    }
+    InvalidateRect(window, nullptr, FALSE);
+    SendMessageW(window, WM_PAINT, 0, 0);
+    Expect(Access::CheckAnimatedSurface(popup),
+           "custom V1 intermediate frame anchors current-width alpha artwork");
+    PumpFor(180);
+    Expect(WindowWidth(window) > custom_v1_narrow_width,
+           "custom V1 reaches its wider endpoint with theme scaling disabled");
     settings.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
+    settings.custom_theme_scale_with_windows = true;
     popup.Hide();
     PumpFor(150);
     const auto default_theme = ziliu::core::MakeDefaultThemeManifest();
@@ -546,6 +727,7 @@ int CaptureSsfH1(const std::filesystem::path& source, const std::filesystem::pat
 }
 
 int main(int argc, char* argv[]) {
+  using Access = ziliu::ui::CandidateWindowTestAccess;
   if (argc == 4 && std::string_view(argv[1]) == "--capture-ssf-h1") {
     return CaptureSsfH1(argv[2], argv[3]);
   }
@@ -599,6 +781,30 @@ int main(int argc, char* argv[]) {
            "preview must move with Settings without a layout refresh");
     Expect(SendMessageW(child, WM_NCHITTEST, 0, 0) == HTTRANSPARENT,
            "preview must leave pointer input to the XAML page");
+
+    auto preview_theme = ziliu::core::MakeDefaultThemeManifest();
+    preview_theme.id = "test.preview-custom-ssf";
+    preview_theme.source_format = "sogou-ssf";
+    preview_theme.light.horizontal.background = ziliu::core::ThemeImage{};
+    Access::SetTheme(preview, preview_theme, {});
+    settings.active_theme_id = preview_theme.id;
+    auto preview_wide = snapshot;
+    preview_wide.candidates[0].text = L"a much longer preview candidate";
+    preview.ShowPreview(preview_wide, host_bounds, settings, 0);
+    PaintHiddenChild(child, owner);
+    const LONG preview_wide_width = WindowWidth(child);
+    Expect(Access::SetMemoryAnimationBitmaps(preview),
+           "bind custom preview artwork before non-animated shrink");
+    ID2D1Bitmap* const preview_background = Access::BackgroundIdentity(preview);
+    preview.ShowPreview(snapshot, host_bounds, settings, 0);
+    PaintHiddenChild(child, owner);
+    Expect(WindowWidth(child) < preview_wide_width,
+           "custom preview shrink snaps to the narrower endpoint without animation");
+    Expect(Access::BackgroundIdentity(preview) == preview_background &&
+               Access::CheckAnimatedSurface(preview),
+           "non-animated custom preview shrink uses client width and retains cached right-edge artwork");
+    GetWindowRect(child, &relative);
+    MapWindowPoints(nullptr, owner, reinterpret_cast<POINT*>(&relative), 2);
 
     const RECT viewport{relative.left + 13, relative.top + 7,
                         relative.right - 11, relative.bottom - 5};
