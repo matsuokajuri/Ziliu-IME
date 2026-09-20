@@ -316,6 +316,8 @@ Settings ParseSettings(std::string_view text) {
       }
     } else if (key == "candidate_scale_with_text") {
       ParseBoolean(value, &settings.candidate_scale_with_text);
+    } else if (key == "custom_theme_scale_with_windows") {
+      ParseBoolean(value, &settings.custom_theme_scale_with_windows);
     }
   }
   return settings;
@@ -356,7 +358,7 @@ std::string SerializeSettings(const Settings& settings) {
   const std::string active_theme_id =
       IsValidThemeId(settings.active_theme_id) ? settings.active_theme_id : "org.ziliu.default";
 
-  return std::string("version=6\n") + "candidate_layout=" + layout + "\n" +
+  return std::string("version=7\n") + "candidate_layout=" + layout + "\n" +
          "candidate_count=" + std::to_string(candidate_count) + "\n" +
          "input_mode_switch_key=" + switch_key + "\n" +
          "punctuation_style=" + punctuation + "\n" + "auto_pair_punctuation=" +
@@ -404,7 +406,9 @@ std::string SerializeSettings(const Settings& settings) {
          std::to_string(std::clamp(settings.candidate_font_size, kMinimumCandidateFontSize,
                                    kMaximumCandidateFontSize)) +
          "\n" + "candidate_scale_with_text=" +
-         (settings.candidate_scale_with_text ? "true" : "false") + "\n";
+         (settings.candidate_scale_with_text ? "true" : "false") + "\n" +
+         "custom_theme_scale_with_windows=" +
+         (settings.custom_theme_scale_with_windows ? "true" : "false") + "\n";
 }
 
 CandidatePageSlice MakeCandidatePageSlice(std::size_t candidate_total, std::size_t page_size,

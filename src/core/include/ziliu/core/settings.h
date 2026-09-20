@@ -92,6 +92,7 @@ struct Settings {
   bool custom_candidate_font_size = false;
   std::size_t candidate_font_size = 17;
   bool candidate_scale_with_text = true;
+  bool custom_theme_scale_with_windows = true;
 
   bool operator==(const Settings&) const = default;
 };

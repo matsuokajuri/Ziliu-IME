@@ -8,11 +8,11 @@ namespace ziliu::ui::detail {
 inline constexpr float kDefaultDpi = 96.0F;
 
 [[nodiscard]] constexpr float ResolveCandidateCoordinateScale(
-    bool uses_sogou_rendering, float system_dpi_scale) noexcept {
-  if (uses_sogou_rendering) {
-    // Legacy SSF measurements are physical pixels. Sogou keeps the skin,
-    // text, and hit-test coordinates in a 96-DPI space even on a HiDPI
-    // monitor, so applying the system scale a second time changes the skin.
+    bool uses_custom_rendering, bool custom_theme_scale_with_windows,
+    float system_dpi_scale) noexcept {
+  if (uses_custom_rendering && !custom_theme_scale_with_windows) {
+    // A custom theme can opt out of monitor scaling. Its layout, raster target,
+    // window size, and hit-test coordinates then share one 96-DPI space.
     return 1.0F;
   }
   return std::max(system_dpi_scale, 1.0F);

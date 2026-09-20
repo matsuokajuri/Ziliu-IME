@@ -141,6 +141,7 @@ int main() {
   preferences.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
   preferences.candidate_count = 7;
   preferences.candidate_chinese_font_family = "霞鹜文楷";
+  preferences.custom_theme_scale_with_windows = false;
   const std::string configured = ziliu::core::SerializeSettings(preferences);
   std::atomic<int> settings_state = 0;
   std::atomic<int> settings_reads = 0;
@@ -173,7 +174,7 @@ int main() {
   Expect(response.has_value() && response->status == Status::kOk &&
              response->session_id == 0 && response->commit.empty() &&
              ziliu::core::ParseSettings(response->settings_text) == preferences,
-         "authenticated settings should preserve Ctrl, horizontal layout, count and UTF-8 fonts");
+         "authenticated settings should preserve candidate appearance preferences");
   settings_state = 1;
   response = client.Exchange(Request{request_id++, 0, Command::kGetSettings, 0});
   Expect(response.has_value() && response->status == Status::kOk &&

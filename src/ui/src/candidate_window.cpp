@@ -1,4 +1,5 @@
 #include "ziliu/ui/candidate_window.h"
+#include "candidate_coordinate_space.h"
 #include "native_candidate_geometry.h"
 #include "sogou_bitmap_patch.h"
 #include "sogou_gdi_raster_scale.h"
@@ -172,7 +173,7 @@ constexpr float kCornerRadius = 10.0F;
 constexpr float kSurfaceCornerRadius = 8.0F;
 
 int ToPixels(float value, float scale) {
-  return static_cast<int>(std::ceil(value * scale));
+  return detail::CandidateCoordinateToPixels(value, scale);
 }
 
 void FitCandidateWidths(std::vector<float>* widths, float available_width, float minimum_width,
@@ -657,7 +658,9 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
       settings_.candidate_english_font_family != settings.candidate_english_font_family ||
       settings_.custom_candidate_font_size != settings.custom_candidate_font_size ||
       settings_.candidate_font_size != settings.candidate_font_size ||
-      settings_.candidate_scale_with_text != settings.candidate_scale_with_text;
+      settings_.candidate_scale_with_text != settings.candidate_scale_with_text ||
+      settings_.custom_theme_scale_with_windows !=
+          settings.custom_theme_scale_with_windows;
   snapshot_ = snapshot;
   settings_ = settings;
   text_rectangle_ = text_rectangle;
@@ -745,9 +748,12 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
       snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
   const auto slice = page_window.visible;
   const UINT dpi = std::max(GetDpiForWindow(window_), static_cast<UINT>(USER_DEFAULT_SCREEN_DPI));
-  dpi_scale_ = static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+  dpi_scale_ = detail::ResolveCandidateCoordinateScale(
+      !UsesNativeDefaultTheme(), settings_.custom_theme_scale_with_windows,
+      static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));
   if (render_target_ != nullptr) {
-    render_target_->SetDpi(static_cast<float>(dpi), static_cast<float>(dpi));
+    const float render_dpi = detail::CandidateRenderDpi(dpi_scale_);
+    render_target_->SetDpi(render_dpi, render_dpi);
   }
 
   RECT work_area{};
@@ -769,8 +775,10 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   const int work_bottom = static_cast<int>(work_area.bottom);
   const int work_width = work_right - work_left;
   const int work_height = work_bottom - work_top;
-  const float available_width = static_cast<float>(work_width) / dpi_scale_;
-  const float available_height = static_cast<float>(work_height) / dpi_scale_;
+  const float available_width =
+      detail::CandidatePixelsToCoordinate(work_width, dpi_scale_);
+  const float available_height =
+      detail::CandidatePixelsToCoordinate(work_height, dpi_scale_);
   shadow_margin_ = native_default
       ? std::min(12.0F * layout_scale_, std::max(0.0F, (std::min(available_width, available_height) - 1.0F) * 0.5F))
       : 0.0F;
@@ -1435,8 +1443,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       }
       POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       ScreenToClient(window_, &point);
-      const float x = static_cast<float>(point.x) / dpi_scale_ - shadow_margin_;
-      const float y = static_cast<float>(point.y) / dpi_scale_ - shadow_margin_;
+      const float x =
+          detail::CandidatePixelsToCoordinate(point.x, dpi_scale_) - shadow_margin_;
+      const float y =
+          detail::CandidatePixelsToCoordinate(point.y, dpi_scale_) - shadow_margin_;
       if (shadow_margin_ > 0.0F && (x < 0.0F || y < 0.0F || x >= PresentedContentWidth() || y >= window_height_)) {
         return HTTRANSPARENT;
       }
@@ -1469,12 +1479,23 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       width_active_ = false;
       const UINT dpi =
           std::max<UINT>(LOWORD(wparam), USER_DEFAULT_SCREEN_DPI);
-      dpi_scale_ =
-          static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI);
+      const bool follows_system_dpi =
+          UsesNativeDefaultTheme() || settings_.custom_theme_scale_with_windows;
+      dpi_scale_ = detail::ResolveCandidateCoordinateScale(
+          !UsesNativeDefaultTheme(), settings_.custom_theme_scale_with_windows,
+          static_cast<float>(dpi) / static_cast<float>(USER_DEFAULT_SCREEN_DPI));
       DiscardDeviceResources();
       const auto* suggested = reinterpret_cast<RECT*>(lparam);
+      RECT current{};
+      const bool has_current_rectangle = GetWindowRect(window_, &current) != FALSE;
+      const int width = follows_system_dpi || !has_current_rectangle
+                            ? suggested->right - suggested->left
+                            : current.right - current.left;
+      const int height = follows_system_dpi || !has_current_rectangle
+                             ? suggested->bottom - suggested->top
+                             : current.bottom - current.top;
       SetWindowPos(window_, nullptr, suggested->left, suggested->top,
-                   suggested->right - suggested->left, suggested->bottom - suggested->top,
+                   width, height,
                    SWP_NOACTIVATE | SWP_NOZORDER);
       layered_present_retry_attempted_ = false;
       InvalidateRect(window_, nullptr, FALSE);
@@ -1484,8 +1505,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float x = detail::CandidatePixelsToCoordinate(
+                          GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
+      const float y = detail::CandidatePixelsToCoordinate(
+                          GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       const bool expand_hovered = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       const bool menu_hovered = ContainsPoint(menu_button_bounds_, x, y);
       if (expand_button_hovered_ != expand_hovered || menu_button_hovered_ != menu_hovered) {
@@ -1511,8 +1534,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float x = detail::CandidatePixelsToCoordinate(
+                          GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
+      const float y = detail::CandidatePixelsToCoordinate(
+                          GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       expand_button_pressed_ = can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       menu_button_pressed_ = ContainsPoint(menu_button_bounds_, x, y);
       if (expand_button_pressed_ || menu_button_pressed_) {
@@ -1526,8 +1551,10 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
       if (preview_mode_) {
         return 0;
       }
-      const float x = static_cast<float>(GET_X_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
-      const float y = static_cast<float>(GET_Y_LPARAM(lparam)) / dpi_scale_ - shadow_margin_;
+      const float x = detail::CandidatePixelsToCoordinate(
+                          GET_X_LPARAM(lparam), dpi_scale_) - shadow_margin_;
+      const float y = detail::CandidatePixelsToCoordinate(
+                          GET_Y_LPARAM(lparam), dpi_scale_) - shadow_margin_;
       const bool activate_expand =
           expand_button_pressed_ && can_expand_ && ContainsPoint(expand_button_bounds_, x, y);
       const bool activate_menu =

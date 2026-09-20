@@ -261,7 +261,7 @@
                                 <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="模式选择" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="ThemeCombo" Grid.Column="1" MinWidth="180"><ComboBoxItem Content="跟随系统"/><ComboBoxItem Content="浅色"/><ComboBoxItem Content="深色"/></ComboBox></Grid></Border>
                             </StackPanel></Border>
                             <TextBlock Text="主题" Style="{StaticResource SectionLabelStyle}"/>
-                            <Border Style="{StaticResource SettingsCardStyle}">
+                            <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
                                 <Button x:Name="ThemeSettingsButton" Padding="20,14" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0">
                                     <Grid>
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -269,7 +269,9 @@
                                         <FontIcon Grid.Column="1" Glyph="&#xE76C;"/>
                                     </Grid>
                                 </Button>
-                            </Border>
+                                <Border Height="1" Margin="20,0" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                                <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="自定义皮肤大小跟随 Windows 缩放" Style="{StaticResource ZiliuBodyStyle}"/><TextBlock Text="关闭后自定义皮肤始终以 100% 物理尺寸显示" Style="{StaticResource RowHintStyle}"/></StackPanel><ToggleSwitch x:Name="CustomThemeScaleToggle" Grid.Column="1" OnContent="开" OffContent="关" VerticalAlignment="Center"/></Grid></Border>
+                            </StackPanel></Border>
                             <TextBlock Text="候选显示" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}"><StackPanel>
                                 <Border Padding="20,13"><Grid ColumnSpacing="24"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="横排 / 竖排" Style="{StaticResource ZiliuBodyStyle}" VerticalAlignment="Center"/><ComboBox x:Name="LayoutCombo" Grid.Column="1" MinWidth="180"><ComboBoxItem Content="横排"/><ComboBoxItem Content="竖排"/></ComboBox></Grid></Border>

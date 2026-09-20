@@ -1683,6 +1683,7 @@ void MainWindow::InitializeSettingsControls() {
   CustomFontSizeToggle().IsOn(settings_.custom_candidate_font_size);
   CandidateFontSizeCombo().SelectedIndex(static_cast<int>(settings_.candidate_font_size) - 14);
   CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
+  CustomThemeScaleToggle().IsOn(settings_.custom_theme_scale_with_windows);
   SwitchKeyCombo().SelectedIndex(
       settings_.input_mode_switch_key == ziliu::core::InputModeSwitchKey::kControl ? 1 : 0);
   int page_key_index = 0;
@@ -1784,6 +1785,7 @@ void MainWindow::InitializeNavigation() {
   CandidateEnglishFontCombo().SelectionChanged(update_preview);
   CandidateFontSizeCombo().SelectionChanged(update_preview);
   CandidateScaleToggle().Toggled(update_preview);
+  CustomThemeScaleToggle().Toggled(update_preview);
   const auto update_color = [this, save_appearance](auto const&, auto const&) {
     if (suppress_appearance_events_) {
       return;
@@ -1818,6 +1820,7 @@ void MainWindow::InitializeNavigation() {
     CustomFontSizeToggle().IsOn(false);
     CandidateFontSizeCombo().SelectedIndex(3);
     CandidateScaleToggle().IsOn(true);
+    CustomThemeScaleToggle().IsOn(true);
     suppress_appearance_events_ = false;
     UpdateAppearanceControlStates();
     UpdateColorSwatches();
@@ -1865,6 +1868,7 @@ void MainWindow::InitializeNavigation() {
                    ziliu::core::kMaximumCandidateFontSize) -
         ziliu::core::kMinimumCandidateFontSize));
     CandidateScaleToggle().IsOn(settings_.candidate_scale_with_text);
+    CustomThemeScaleToggle().IsOn(settings_.custom_theme_scale_with_windows);
     suppress_appearance_events_ = false;
     ApplyThemeFromControls();
     UpdateAppearanceControlStates();
@@ -1948,6 +1952,7 @@ void MainWindow::UpdateAppearanceControlStates() {
   CustomFontSizeToggle().IsEnabled(candidate_style_enabled);
   CandidateFontSizeCombo().IsEnabled(candidate_style_enabled && CustomFontSizeToggle().IsOn());
   CandidateScaleToggle().IsEnabled(candidate_style_enabled);
+  CustomThemeScaleToggle().IsEnabled(!candidate_style_enabled);
 }
 
 void MainWindow::UpdateColorSwatches() {
@@ -2224,6 +2229,7 @@ void MainWindow::UpdateCandidatePreview() {
         ziliu::core::kMaximumCandidateFontSize);
   }
   preview_settings.candidate_scale_with_text = CandidateScaleToggle().IsOn();
+  preview_settings.custom_theme_scale_with_windows = CustomThemeScaleToggle().IsOn();
 
   EnsureCandidatePreview();
   RECT viewport_bounds{};
@@ -2823,6 +2829,7 @@ bool MainWindow::SaveFromControls() {
   settings_.candidate_font_size =
       static_cast<std::size_t>(CandidateFontSizeCombo().SelectedIndex() + 14);
   settings_.candidate_scale_with_text = CandidateScaleToggle().IsOn();
+  settings_.custom_theme_scale_with_windows = CustomThemeScaleToggle().IsOn();
   settings_.input_mode_switch_key =
       SwitchKeyCombo().SelectedIndex() == 1 ? ziliu::core::InputModeSwitchKey::kControl
                                             : ziliu::core::InputModeSwitchKey::kShift;

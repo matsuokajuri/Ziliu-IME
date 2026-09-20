@@ -216,7 +216,8 @@ int main() {
       "candidate_english_font_family=arial\n"
       "custom_candidate_font_size=true\n"
       "candidate_font_size=20\n"
-      "candidate_scale_with_text=false\n");
+      "candidate_scale_with_text=false\n"
+      "custom_theme_scale_with_windows=false\n");
   Expect(parsed_settings.candidate_layout == ziliu::core::CandidateLayout::kHorizontal &&
              parsed_settings.candidate_count == 7 &&
              parsed_settings.input_mode_switch_key ==
@@ -242,11 +243,15 @@ int main() {
              parsed_settings.candidate_english_font_family == "Arial" &&
              parsed_settings.custom_candidate_font_size &&
              parsed_settings.candidate_font_size == 20 &&
-             !parsed_settings.candidate_scale_with_text,
+             !parsed_settings.candidate_scale_with_text &&
+             !parsed_settings.custom_theme_scale_with_windows,
          "settings parser should preserve all supported choices");
   Expect(ziliu::core::ParseSettings(ziliu::core::SerializeSettings(parsed_settings)) ==
              parsed_settings,
          "settings should survive a deterministic serialization round trip");
+  Expect(ziliu::core::ParseSettings("candidate_layout=horizontal\n")
+             .custom_theme_scale_with_windows,
+         "older settings files must default custom-theme scaling to on");
 
   auto appearance_overrides = parsed_settings;
   appearance_overrides.active_theme_id = "org.ziliu.default";
