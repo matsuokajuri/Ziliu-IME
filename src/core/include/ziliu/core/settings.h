@@ -130,6 +130,8 @@ inline constexpr std::size_t kMaximumCandidateFontSize = 24;
 
 [[nodiscard]] Settings ParseSettings(std::string_view text);
 [[nodiscard]] std::string SerializeSettings(const Settings& settings);
+[[nodiscard]] Settings ResolveEffectiveCandidateAppearanceSettings(
+    const Settings& settings);
 [[nodiscard]] CandidatePalette ResolveCandidatePalette(const Settings& settings,
                                                         bool dark_theme);
 [[nodiscard]] CandidatePageSlice MakeCandidatePageSlice(std::size_t candidate_total,

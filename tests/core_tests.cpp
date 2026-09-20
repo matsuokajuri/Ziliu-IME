@@ -247,6 +247,43 @@ int main() {
   Expect(ziliu::core::ParseSettings(ziliu::core::SerializeSettings(parsed_settings)) ==
              parsed_settings,
          "settings should survive a deterministic serialization round trip");
+
+  auto appearance_overrides = parsed_settings;
+  appearance_overrides.active_theme_id = "org.ziliu.default";
+  appearance_overrides.candidate_scale_with_text = true;
+  const auto default_theme_effective =
+      ziliu::core::ResolveEffectiveCandidateAppearanceSettings(appearance_overrides);
+  Expect(default_theme_effective == appearance_overrides,
+         "the default theme should preserve every candidate appearance override");
+
+  appearance_overrides.active_theme_id = "sogou.missing-v1";
+  const auto persisted_custom_theme = appearance_overrides;
+  const auto custom_theme_effective =
+      ziliu::core::ResolveEffectiveCandidateAppearanceSettings(appearance_overrides);
+  Expect(!custom_theme_effective.custom_candidate_colors &&
+             !custom_theme_effective.custom_candidate_fonts &&
+             !custom_theme_effective.custom_candidate_font_size &&
+             !custom_theme_effective.candidate_scale_with_text,
+         "a custom theme identity should disable candidate appearance overrides");
+  auto expected_custom_theme = appearance_overrides;
+  expected_custom_theme.custom_candidate_colors = false;
+  expected_custom_theme.custom_candidate_fonts = false;
+  expected_custom_theme.custom_candidate_font_size = false;
+  expected_custom_theme.candidate_scale_with_text = false;
+  Expect(custom_theme_effective == expected_custom_theme &&
+             appearance_overrides == persisted_custom_theme,
+         "effective custom-theme settings should preserve values and raw settings");
+
+  appearance_overrides.active_theme_id = "org.ziliu.default";
+  const auto restored_default_theme =
+      ziliu::core::ResolveEffectiveCandidateAppearanceSettings(appearance_overrides);
+  Expect(restored_default_theme == appearance_overrides &&
+             restored_default_theme.custom_candidate_colors &&
+             restored_default_theme.custom_candidate_fonts &&
+             restored_default_theme.custom_candidate_font_size &&
+             restored_default_theme.candidate_scale_with_text,
+         "returning to the default theme should restore persisted overrides");
+
   const auto custom_font_settings =
       ziliu::core::ParseSettings("candidate_chinese_font_family=霞鹜文楷\n"
                                  "candidate_english_font_family=IBM Plex Sans\n");

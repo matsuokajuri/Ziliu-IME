@@ -598,22 +598,35 @@ void MapMetadata(const IniDocument& document, std::string_view input,
   ThemeManifest& manifest = conversion->manifest;
   const IniValue* name =
       FindFirstValue(document, "General", {"skin_name", "name"});
-  manifest.name = name == nullptr ? DisplayNameFromSourceHint(source_hint)
-                                  : name->value;
-  manifest.id =
-      MakeThemeId(document, input, source_hint, manifest.name);
-
   const IniValue* author =
       FindFirstValue(document, "General", {"skin_author", "author"});
-  manifest.author = author == nullptr ? "Unknown" : author->value;
   const IniValue* version =
       FindFirstValue(document, "General", {"skin_version", "version"});
-  manifest.version = version == nullptr ? "1.0" : version->value;
-  manifest.license = "LicenseRef-Unknown";
   const IniValue* description =
       FindFirstValue(document, "General", {"skin_info", "info"});
-  manifest.description =
-      description == nullptr ? std::string() : description->value;
+
+  // Real packages retain this complete authoring-template quartet even when the
+  // distributed package has a different name. It is not package identity.
+  // Require the whole quartet so a legitimate individual value such as "new"
+  // is never discarded on its own.
+  const bool has_authoring_template_metadata =
+      name != nullptr && name->value == "new" && author != nullptr &&
+      author->value == "匿名" && version != nullptr && version->value == "0.9" &&
+      description != nullptr && description->value == "欢迎大家使用";
+  manifest.name = name == nullptr || has_authoring_template_metadata
+                      ? DisplayNameFromSourceHint(source_hint)
+                      : name->value;
+  manifest.id = MakeThemeId(document, input, source_hint, manifest.name);
+  manifest.author = author == nullptr || has_authoring_template_metadata
+                        ? "未提供"
+                        : author->value;
+  manifest.version = version == nullptr || has_authoring_template_metadata
+                         ? "未提供"
+                         : version->value;
+  manifest.license = "LicenseRef-Unknown";
+  manifest.description = description == nullptr || has_authoring_template_metadata
+                             ? std::string()
+                             : description->value;
   manifest.source_format = "sogou-ssf";
   manifest.base_dpi = 96;
 
@@ -633,6 +646,15 @@ void MapDisplay(const IniDocument& document,
   // Sogou same-window skins distinguish the first candidate through its text
   // color. Keeping Ziliu's default blue selection fill would obscure the skin.
   appearance.palette.highlighted_background = 0x00000000U;
+  if (const IniValue* flag = FindValue(document, "Display", "use_gdip"); flag != nullptr) {
+    std::uint32_t parsed = 0;
+    if (!ParseUnsigned(flag->value, 1, &parsed)) {
+      AddIssue(conversion, SogouThemeIssueCode::kInvalidValue, flag->line,
+               "Display.use_gdip", "use_gdip must be 0 or 1");
+    } else {
+      appearance.typography.sogou_use_gdip = parsed;
+    }
+  }
   if (const IniValue* font =
           FindValue(document, "Display", "font_ch");
       font != nullptr && !font->value.empty()) {
@@ -848,7 +870,8 @@ void MapSurface(const IniDocument& document, std::string_view section_name,
     return;
   }
   const IniValue* picture = FindValue(document, section_name, "pic");
-  if (picture == nullptr || picture->value.empty()) {
+  const bool missing_picture = picture == nullptr || picture->value.empty();
+  if (missing_picture && section_name != "Scheme_V1") {
     AddIssue(conversion, SogouThemeIssueCode::kMissingProperty,
              picture == nullptr ? 0 : picture->line,
              std::string(section_name) + ".pic",
@@ -963,6 +986,11 @@ void MapSurface(const IniDocument& document, std::string_view section_name,
       MapButton(document, section_name, "pageup", assets, conversion);
   surface->next_button =
       MapButton(document, section_name, "pagedown", assets, conversion);
+  if (missing_picture && section_name == "Scheme_V1") {
+    // A partial V1 is not a custom vertical surface. Keep validating its declared
+    // fields and assets above, but leave no geometry for the native fallback.
+    *surface = ThemeSurface{};
+  }
 }
 
 void AppendManifestIssues(SogouThemeConversion* conversion) {
@@ -1001,6 +1029,12 @@ SogouThemeConversion ConvertSogouThemeIni(std::string_view utf8_ini,
              &conversion.manifest.light.horizontal, &assets, &conversion);
   MapSurface(*document, "Scheme_V1",
              &conversion.manifest.light.vertical, &assets, &conversion);
+  if (conversion.ok() &&
+      !conversion.manifest.light.horizontal.background.has_value() &&
+      !conversion.manifest.light.vertical.background.has_value()) {
+    AddIssue(&conversion, SogouThemeIssueCode::kMissingProperty, 0, "$",
+             "skin.ini must provide an H1 or V1 background picture");
+  }
   AppendManifestIssues(&conversion);
   return conversion;
 }

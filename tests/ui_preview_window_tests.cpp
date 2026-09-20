@@ -41,8 +41,85 @@ struct CandidateWindowTestAccess {
     return window.layout_scale_ == 1.0F && window.preedit_insets_.left == 11.0F &&
            window.preedit_insets_.top == 31.0F && window.candidate_insets_.left == 13.0F;
   }
+  static bool CheckBackgroundRows(CandidateWindow& window, UINT top, UINT bottom) {
+    constexpr UINT height = 220;
+    if (!window.EnsureDeviceResources()) return false;
+    // The host may be 144 DPI. Bind a 96-DPI pixel fixture explicitly instead
+    // of comparing physical pixels against unscaled logical source rows.
+    Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> dc_target;
+    if (FAILED(window.render_target_.As(&dc_target))) return false;
+    struct RestoreTarget {
+      ID2D1DCRenderTarget* target;
+      HDC dc;
+      RECT bounds;
+      float dpi_x{}, dpi_y{};
+      ~RestoreTarget() {
+        target->SetDpi(dpi_x, dpi_y);
+        static_cast<void>(target->BindDC(dc, &bounds));
+      }
+    } restore{dc_target.Get(), window.layered_memory_dc_,
+              RECT{0, 0, window.layered_pixel_size_.cx, window.layered_pixel_size_.cy}};
+    restore.target->GetDpi(&restore.dpi_x, &restore.dpi_y);
+    const RECT fixture_bounds{0, 0, window.layered_pixel_size_.cx, static_cast<LONG>(height)};
+    restore.target->SetDpi(96, 96);
+    if (FAILED(restore.target->BindDC(restore.dc, &fixture_bounds))) return false;
+    std::vector<std::uint32_t> pixels(height * 4);
+    for (UINT y = 0; y < height; ++y) {
+      for (UINT x = 0; x < 4; ++x) {
+        pixels[y * 4 + x] = 0xff000000U | (y << 16) | (x << 8) | 0x55U;
+      }
+    }
+    auto& image = window.theme_manifest_.light.horizontal.background;
+    image = core::ThemeImage{};
+    image->stretch = core::ThemeInsets{1, top, 1, bottom};
+    const auto properties = D2D1::BitmapProperties(
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), 96, 96);
+    window.surface_bitmaps_.background.Reset();
+    if (FAILED(window.render_target_->CreateBitmap(D2D1::SizeU(4, height), pixels.data(), 16,
+        properties, window.surface_bitmaps_.background.GetAddressOf()))) return false;
+    window.render_target_->BeginDraw();
+    window.DrawSurfaceBackground();
+    if (FAILED(window.render_target_->EndDraw())) return false;
+    // Inspect every original row in the fixed left/right edges, independently
+    // of text. Compression, a missing middle, and palette fallback all fail.
+    const int right = static_cast<int>(window.layered_pixel_size_.cx) - 1;
+    for (UINT y = 0; y < height; ++y) {
+      if (GetPixel(window.layered_memory_dc_, 0, static_cast<int>(y)) != RGB(y, 0, 0x55) ||
+          GetPixel(window.layered_memory_dc_, right, static_cast<int>(y)) != RGB(y, 3, 0x55)) {
+        std::cerr << "BACKGROUND_ROW y=" << y << " left="
+                  << GetPixel(window.layered_memory_dc_, 0, static_cast<int>(y))
+                  << " right=" << GetPixel(window.layered_memory_dc_, right, static_cast<int>(y))
+                  << " dpi=" << window.dpi_scale_ << " pixels=" << right + 1
+                  << "x" << window.layered_pixel_size_.cy << '\n';
+        return false;
+      }
+    }
+    return true;
+  }
   static float Height(const CandidateWindow& window) { return window.window_height_; }
+  static float RowHeight(const CandidateWindow& window) { return window.candidate_row_height_; }
+  static bool NativeFallback(const CandidateWindow& window) {
+    return window.UsesNativeDefaultTheme() && !window.UsesSogouRendering() &&
+        window.ActiveThemeAppearance() == core::MakeDefaultThemeManifest().light;
+  }
   static float Scale(const CandidateWindow& window) { return window.layout_scale_; }
+  static float SecondCandidateLeft(const CandidateWindow& window) {
+    return window.candidate_lefts_.at(1);
+  }
+  static bool MenuFollowsLastCandidate(const CandidateWindow& window) {
+    return !window.candidate_lefts_.empty() &&
+        window.menu_button_bounds_.left >= window.candidate_lefts_.back() + window.candidate_widths_.back() &&
+        window.menu_button_bounds_.right <= window.window_width_;
+  }
+  static LPARAM MenuClickPoint(const CandidateWindow& window) {
+    const auto& b = window.menu_button_bounds_;
+    return MAKELPARAM(static_cast<WORD>((b.left + b.right) * 0.5F * window.dpi_scale_),
+                      static_cast<WORD>((b.top + b.bottom) * 0.5F * window.dpi_scale_));
+  }
+  static COLORREF SeparatorPixel(const CandidateWindow& window) {
+    return GetPixel(window.layered_memory_dc_, static_cast<int>(100.0F * window.dpi_scale_),
+                    static_cast<int>(window.preedit_height_ * window.dpi_scale_));
+  }
   static bool SavePng(CandidateWindow& window, const std::filesystem::path& path) {
     using Microsoft::WRL::ComPtr;
     ComPtr<IWICImagingFactory> factory;
@@ -285,6 +362,7 @@ void CheckRealWidthAnimation() {
     auto theme = ziliu::core::MakeDefaultThemeManifest();
     theme.id = "test.custom-ssf";
     theme.source_format = "sogou-ssf";
+    theme.light.horizontal.background = ziliu::core::ThemeImage{};
     theme.light.typography.font_size = 20;
     theme.light.horizontal.preedit_insets = ziliu::core::ThemeInsets{11, 31, 17, 7};
     theme.light.horizontal.candidate_insets = ziliu::core::ThemeInsets{13, 4, 19, 3};
@@ -295,9 +373,60 @@ void CheckRealWidthAnimation() {
     popup.Show(narrow, caret, settings, 0);
     PumpFor(80);
     Expect(Access::HasAuthoredInsets(popup), "SSF declared font size must not magnify authored insets");
+    theme.light.typography.sogou_use_gdip = 1U;
+    theme.light.typography.chinese_font_family = "Arial";
+    theme.light.typography.english_font_family = "Consolas";
+    theme.light.horizontal.separator = ziliu::core::ThemeSeparator{0xffff0000U, "", 0, 0, 2};
+    Access::SetTheme(popup, theme, {});
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
+    const float short_second_left = Access::SecondCandidateLeft(popup);
+    popup.Show(wide, caret, settings, 0);
+    PumpFor(80);
+    Expect(Access::SecondCandidateLeft(popup) > short_second_left,
+           "SSF native measurement must advance the following candidate with content width");
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
+    const DWORD gdi_before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    Expect(Access::MenuFollowsLastCandidate(popup), "SSF menu uses reserved space after the last candidate");
+    int menu_calls = 0;
+    popup.SetQuickMenuAction([&menu_calls](POINT) { ++menu_calls; });
+    const LPARAM menu_point = Access::MenuClickPoint(popup);
+    SendMessageW(window, WM_LBUTTONDOWN, MK_LBUTTON, menu_point);
+    SendMessageW(window, WM_LBUTTONUP, 0, menu_point);
+    Expect(menu_calls == 1, "SSF menu click invokes the existing quick-menu callback once");
+    popup.SetQuickMenuAction({});
+    for (int repaint = 0; repaint < 32; ++repaint) {
+      InvalidateRect(window, nullptr, FALSE);
+      SendMessageW(window, WM_PAINT, 0, 0);
+    }
+    Expect(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == gdi_before,
+           "repeated SSF mask rendering must release every temporary GDI object");
+    auto unicode_preedit = narrow;
+    unicode_preedit.preedit = L"你好";
+    popup.Show(unicode_preedit, caret, settings, 0);
+    PumpFor(80);
+    Expect(Access::Height(popup) > 0, "non-ASCII preedit retains the fallback renderer");
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
     Expect(Access::SetMemoryBackground(popup, 220), "create synthetic H1 background");
     popup.Show(narrow, caret, settings, 0);
     Expect(Access::Height(popup) == 220, "short H1 text must preserve natural background height");
+    // Resizing recreates the D2D target. This fixture has no on-disk asset,
+    // so rebind its memory bitmap after the layout resize before pixel checks.
+    Expect(Access::SetMemoryBackground(popup, 220), "rebind resized synthetic H1 background");
+    InvalidateRect(window, nullptr, FALSE);
+    SendMessageW(window, WM_PAINT, 0, 0);
+    std::cout << "SSF_SEPARATOR_PIXEL actual=" << Access::SeparatorPixel(popup)
+              << " expected=" << RGB(255, 255, 255) << '\n';
+    Expect(Access::SeparatorPixel(popup) == RGB(255, 255, 255),
+           "native H1 must not inject a legacy color-only separator over its background");
+    Expect(Access::CheckBackgroundRows(popup, 80, 40),
+           "normal H1 slices retain all source rows at natural height");
+    Expect(Access::CheckBackgroundRows(popup, 140, 80),
+           "zero-center H1 retains all rows instead of discarding its background");
+    Expect(Access::CheckBackgroundRows(popup, 160, 100),
+           "overlapping H1 cuts retain original rows without compression or duplication");
     settings.custom_candidate_font_size = true;
     settings.candidate_font_size = 24;
     popup.Show(narrow, caret, settings, 0);
@@ -306,6 +435,26 @@ void CheckRealWidthAnimation() {
     popup.Show(narrow, caret, settings, 0);
     Expect(Access::Height(popup) > 0 && Access::Height(popup) < 4096,
            "natural image height must not bypass work-area limits");
+    settings.candidate_layout = ziliu::core::CandidateLayout::kVertical;
+    settings.custom_candidate_font_size = false;
+    popup.Show(narrow, caret, settings, 0);
+    Expect(Access::NativeFallback(popup),
+           "unsupported custom V1 uses the complete native appearance, not SSF fonts or colors");
+    settings.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
+    popup.Show(narrow, caret, settings, 0);
+    Expect(!Access::NativeFallback(popup), "return to H1 retains the selected SSF theme");
+    auto vertical_theme = theme;
+    vertical_theme.light.vertical = theme.light.horizontal;
+    for (const std::uint32_t size : {20U, 24U}) {
+      vertical_theme.light.typography.font_size = size;
+      Access::SetTheme(popup, vertical_theme, {});
+      settings.candidate_layout = ziliu::core::CandidateLayout::kVertical;
+      popup.Show(narrow, caret, settings, 0);
+      Expect(!Access::NativeFallback(popup) &&
+                 Access::RowHeight(popup) == static_cast<float>(size) + 4.0F,
+             "supported V1 uses authored text rows instead of the native minimum");
+    }
+    settings.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
     popup.Hide();
     PumpFor(150);
     const auto default_theme = ziliu::core::MakeDefaultThemeManifest();

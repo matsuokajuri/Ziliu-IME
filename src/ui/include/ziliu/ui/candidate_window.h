@@ -111,6 +111,7 @@ class CandidateWindow final {
   void RefreshTheme(std::string_view theme_id);
   [[nodiscard]] bool UsesSogouRendering() const noexcept;
   [[nodiscard]] bool UsesNativeDefaultTheme() const noexcept;
+  [[nodiscard]] bool UsesMissingSsfLayoutFallback() const noexcept;
   void ApplyWindowRenderingMode();
   [[nodiscard]] const core::ThemeAppearance& ActiveThemeAppearance() const;
   [[nodiscard]] const core::ThemeSurface& ActiveThemeSurface() const;

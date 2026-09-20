@@ -114,6 +114,27 @@ int main() {
   const auto conversion =
       ziliu::core::ConvertSogouThemeIni(kValidIni, "纸舟.ssf");
   Expect(conversion.ok(), "a complete same-window SSF mapping should convert");
+  Expect(!conversion.manifest.light.typography.sogou_use_gdip.has_value(),
+         "missing use_gdip must remain unspecified");
+  for (const std::uint32_t flag : {0U, 1U}) {
+    const auto flagged = ziliu::core::ConvertSogouThemeIni(
+        "[Display]\nuse_gdip=" + std::to_string(flag) +
+        "\n[Scheme_H1]\npic=skin.png\n", "flag.ssf");
+    Expect(flagged.ok() && flagged.manifest.light.typography.sogou_use_gdip == flag,
+           "explicit SSF text flag survives conversion");
+    const auto round_trip = ziliu::core::ParseThemeManifest(
+        ziliu::core::SerializeThemeManifest(flagged.manifest));
+    Expect(round_trip.ok() && round_trip.manifest == flagged.manifest,
+           "SSF text flag survives the converter-to-manifest pipeline");
+  }
+  for (const std::string_view flag : {"2", "-1", "true", "1.5", ""}) {
+    const auto bad_flag = ziliu::core::ConvertSogouThemeIni(
+        "[Display]\nuse_gdip=" + std::string(flag) +
+        "\n[Scheme_H1]\npic=skin.png\n", "invalid-flag.ssf");
+    Expect(!bad_flag.ok() && HasIssueAt(bad_flag, SogouThemeIssueCode::kInvalidValue,
+                                      "Display.use_gdip"),
+           "invalid SSF text flags must identify the source field");
+  }
   Expect(conversion.manifest.id == "sogou.my-theme" &&
              conversion.manifest.name == "纸舟" &&
              conversion.manifest.author == "Ziliu Tests" &&
@@ -214,6 +235,50 @@ pic=skin.png
              fallback_a.manifest.id.starts_with("sogou.no-stable-id-"),
          "missing skin_id should receive a stable content-derived fallback id");
 
+  for (const std::string_view picture : {"", "pic=\n", "pic= \t\n"}) {
+    const auto partial_vertical = ziliu::core::ConvertSogouThemeIni(
+        std::string(fallback_ini) + "\n[Scheme_V1]\n" +
+            std::string(picture) +
+            "layout_horizontal=0,4,5\npinyin_marge=8,9,10,11\n"
+            "zhongwen_marge=12,13,14,15\nseparator=0x123456,2,3\n"
+            "custom_cnt=1\ncustom0_display=1\ncustom0=overlay.png\n"
+            "custom0_align=0,0,0,0,0,0,0,0,0,0\n"
+            "pageup_display=1\npageup=up.png\n",
+        "partial-vertical.ssf");
+    Expect(partial_vertical.ok() &&
+               partial_vertical.manifest.light.horizontal ==
+                   fallback_a.manifest.light.horizontal &&
+               partial_vertical.manifest.light.vertical ==
+                   ziliu::core::ThemeSurface{},
+           "missing or empty V1 pic preserves H1 without partial vertical styling");
+    Expect(HasSourceAsset(partial_vertical, "overlay.png") &&
+               HasSourceAsset(partial_vertical, "up.png"),
+           "explicit partial V1 assets remain subject to package validation");
+    const auto round_trip = ziliu::core::ParseThemeManifest(
+        ziliu::core::SerializeThemeManifest(partial_vertical.manifest));
+    Expect(round_trip.ok() &&
+               round_trip.manifest == partial_vertical.manifest,
+           "unsupported V1 marker survives manifest serialization");
+  }
+  for (const std::string_view invalid_fields : {
+           "pic=../escape.png\n", "layout_horizontal=0,1,nope\n",
+           "pinyin_marge=1,2,3,nope\n",
+           "custom_cnt=1\ncustom0_display=1\ncustom0=../escape.png\n"
+           "custom0_align=0,0,0,0,0,0,0,0,0,0\n",
+           "pageup_display=1\n"}) {
+    const auto invalid_vertical = ziliu::core::ConvertSogouThemeIni(
+        std::string(fallback_ini) + "\n[Scheme_V1]\n" +
+            std::string(invalid_fields),
+        "invalid-vertical.ssf");
+    Expect(!invalid_vertical.ok(),
+           "optional V1 picture must not bypass malformed or unsafe field checks");
+  }
+  const auto empty_vertical = ziliu::core::ConvertSogouThemeIni(
+      "[Scheme_V1]\npic=\n", "empty-vertical.ssf");
+  Expect(!empty_vertical.ok() &&
+             HasIssue(empty_vertical, SogouThemeIssueCode::kMissingProperty),
+         "a package with no usable H1 or V1 background remains invalid");
+
   const auto aliases = ziliu::core::ConvertSogouThemeIni(
       "[General]\nname=Alias Name\nauthor=Alias Author\nversion=3\n"
       "info=Alias Info\n[Scheme_V1]\npic=skin.png\n",
@@ -223,6 +288,35 @@ pic=skin.png
              aliases.manifest.version == "3" &&
              aliases.manifest.description == "Alias Info",
          "common legacy General aliases should remain compatible");
+
+  const auto authoring_template = ziliu::core::ConvertSogouThemeIni(
+      "[General]\nskin_name=new\nskin_version=0.9\nskin_author=匿名\n"
+      "skin_info=欢迎大家使用\n[Scheme_H1]\npic=skin.png\n",
+      "真实主题.ssf");
+  Expect(authoring_template.ok() &&
+             authoring_template.manifest.name == "真实主题" &&
+             authoring_template.manifest.author == "未提供" &&
+             authoring_template.manifest.version == "未提供" &&
+             authoring_template.manifest.description.empty(),
+         "the complete Sogou authoring template quartet should use honest package fallbacks");
+
+  const auto partial_template = ziliu::core::ConvertSogouThemeIni(
+      "[General]\nskin_name=new\nskin_version=2.0\nskin_author=真实作者\n"
+      "skin_info=真实说明\n[Scheme_H1]\npic=skin.png\n",
+      "filename.ssf");
+  Expect(partial_template.ok() && partial_template.manifest.name == "new" &&
+             partial_template.manifest.author == "真实作者" &&
+             partial_template.manifest.version == "2.0" &&
+             partial_template.manifest.description == "真实说明",
+         "individual template-like values must not suppress explicit metadata");
+
+  const auto missing_metadata = ziliu::core::ConvertSogouThemeIni(
+      "[Scheme_H1]\npic=skin.png\n", "缺少元数据.ssf");
+  Expect(missing_metadata.ok() &&
+             missing_metadata.manifest.name == "缺少元数据" &&
+             missing_metadata.manifest.author == "未提供" &&
+             missing_metadata.manifest.version == "未提供",
+         "missing package metadata should not be invented");
 
   const auto duplicate = ziliu::core::ConvertSogouThemeIni(
       "[General]\nskin_name=A\nSKIN_NAME=B\n"

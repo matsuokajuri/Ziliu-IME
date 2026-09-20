@@ -1,5 +1,7 @@
 #include "ziliu/ui/candidate_window.h"
 #include "native_candidate_geometry.h"
+#include "sogou_bitmap_patch.h"
+#include "sogou_gdi_raster_scale.h"
 #include "sogou_horizontal_layout.h"
 
 #include "sogou_overlay_layout.h"
@@ -278,60 +280,6 @@ bool ContainsPoint(const D2D1_RECT_F& bounds, float x, float y) {
   return x >= bounds.left && x < bounds.right && y >= bounds.top && y < bounds.bottom;
 }
 
-void DrawBitmapPatch(ID2D1RenderTarget* render_target, ID2D1Bitmap* bitmap,
-                     const D2D1_RECT_F& source, const D2D1_RECT_F& destination,
-                     core::ThemeImageLayout horizontal_layout,
-                     core::ThemeImageLayout vertical_layout, float destination_scale) {
-  if (render_target == nullptr || bitmap == nullptr || source.right <= source.left ||
-      source.bottom <= source.top || destination.right <= destination.left ||
-      destination.bottom <= destination.top) {
-    return;
-  }
-
-  const float source_width = source.right - source.left;
-  const float source_height = source.bottom - source.top;
-  const float natural_width = std::max(source_width * destination_scale, 0.5F);
-  const float natural_height = std::max(source_height * destination_scale, 0.5F);
-  const bool tile_horizontal = horizontal_layout == core::ThemeImageLayout::kTile;
-  const bool tile_vertical = vertical_layout == core::ThemeImageLayout::kTile;
-  const bool fixed_horizontal = horizontal_layout == core::ThemeImageLayout::kFixed;
-  const bool fixed_vertical = vertical_layout == core::ThemeImageLayout::kFixed;
-  const float horizontal_step =
-      tile_horizontal || fixed_horizontal ? natural_width
-                                          : destination.right - destination.left;
-  const float vertical_step =
-      tile_vertical || fixed_vertical ? natural_height
-                                      : destination.bottom - destination.top;
-
-  for (float top = destination.top; top < destination.bottom; top += vertical_step) {
-    const float drawn_height = std::min(vertical_step, destination.bottom - top);
-    const float source_drawn_height =
-        tile_vertical || fixed_vertical
-            ? source_height * drawn_height / natural_height
-            : source_height;
-    for (float left = destination.left; left < destination.right; left += horizontal_step) {
-      const float drawn_width = std::min(horizontal_step, destination.right - left);
-      const float source_drawn_width =
-          tile_horizontal || fixed_horizontal
-              ? source_width * drawn_width / natural_width
-              : source_width;
-      const D2D1_RECT_F source_tile =
-          D2D1::RectF(source.left, source.top, source.left + source_drawn_width,
-                      source.top + source_drawn_height);
-      const D2D1_RECT_F destination_tile =
-          D2D1::RectF(left, top, left + drawn_width, top + drawn_height);
-      render_target->DrawBitmap(bitmap, destination_tile, 1.0F,
-                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, source_tile);
-      if (fixed_horizontal) {
-        break;
-      }
-    }
-    if (fixed_vertical) {
-      break;
-    }
-  }
-}
-
 D2D1_RECT_F DecodeSogouOverlayBounds(const core::ThemeOverlay& overlay,
                                      const D2D1_SIZE_F& bitmap_size,
                                      const D2D1_SIZE_F& surface_size,
@@ -359,6 +307,153 @@ std::wstring Utf8ToWide(std::string_view value) {
     return {};
   }
   return result;
+}
+
+// Bounded GDI mask path for explicit custom-SSF text rendering. All DCs and
+// bitmaps are memory-only; nothing is drawn on the user's desktop.
+bool DrawSsfGdiText(ID2D1RenderTarget* target, IDWriteTextFormat* format,
+                    std::wstring_view text, float font_size,
+                    const D2D1_RECT_F& clip, const D2D1_COLOR_F& color,
+                    std::wstring_view prefix = {}, float* measured_width = nullptr,
+                    bool ink_advance = false, float* measured_height = nullptr,
+                    float measure_dpi = detail::kSogouGdiBaseDpi) {
+  if (text.empty()) return true;
+  if ((!target && !measured_width) || !format || text.size() > 4096 || !std::isfinite(font_size) ||
+      font_size < 8 || font_size > 96) return false;
+  struct Resources {
+    HDC dc = CreateCompatibleDC(nullptr);
+    HFONT font = nullptr;
+    HBITMAP bitmap = nullptr;
+    HGDIOBJ old_font = nullptr;
+    HGDIOBJ old_bitmap = nullptr;
+    ~Resources() {
+      if (old_bitmap) SelectObject(dc, old_bitmap);
+      if (old_font) SelectObject(dc, old_font);
+      if (bitmap) DeleteObject(bitmap);
+      if (font) DeleteObject(font);
+      if (dc) DeleteDC(dc);
+    }
+  } resources;
+  if (!resources.dc) return false;
+  float render_dpi_x = measure_dpi;
+  float render_dpi_y = measure_dpi;
+  if (target) target->GetDpi(&render_dpi_x, &render_dpi_y);
+  const auto raster = detail::ResolveSogouGdiRasterScale(render_dpi_y);
+  std::wstring family(format->GetFontFamilyNameLength() + 1, L'\0');
+  if (FAILED(format->GetFontFamilyName(family.data(), static_cast<UINT32>(family.size()))))
+    return false;
+  resources.font = CreateFontW(-raster.ToPhysicalPixels(font_size), 0, 0, 0,
+      FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+      CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, family.c_str());
+  if (!resources.font) return false;
+  resources.old_font = SelectObject(resources.dc, resources.font);
+  if (!resources.old_font || resources.old_font == HGDI_ERROR) {
+    resources.old_font = nullptr;
+    return false;
+  }
+  TEXTMETRICW metrics{};
+  SIZE extent{};
+  if (!GetTextMetricsW(resources.dc, &metrics) ||
+      !GetTextExtentPoint32W(resources.dc, text.data(), static_cast<int>(text.size()), &extent))
+    return false;
+  std::vector<int> advances;
+  if (ink_advance) {
+    // The distinct Latin preedit path advances to the raster's right edge,
+    // excluding the glyph's unused right side bearing. Keep this separate
+    // from the native candidate runs, which use ordinary GDI advances.
+    MAT2 identity{};
+    identity.eM11.value = 1;
+    identity.eM22.value = 1;
+    extent.cx = 0;
+    for (const wchar_t character : text) {
+      if (character < 0x20 || character > 0x7e) return false;
+      GLYPHMETRICS glyph{};
+      if (GetGlyphOutlineW(resources.dc, character, GGO_GRAY8_BITMAP, &glyph,
+                           0, nullptr, &identity) == GDI_ERROR) return false;
+      const LONG advance = glyph.gmBlackBoxX == 0
+          ? static_cast<LONG>(glyph.gmCellIncX)
+          : glyph.gmptGlyphOrigin.x + static_cast<LONG>(glyph.gmBlackBoxX);
+      advances.push_back(static_cast<int>(std::max(advance, 1L)));
+      extent.cx += advances.back();
+      if (extent.cx > 16384) return false;
+    }
+  }
+  LONG prefix_slot = 0;
+  if (!prefix.empty()) {
+    SIZE first_label{};
+    if (!GetTextExtentPoint32W(resources.dc, L"1.", 2, &first_label)) return false;
+    // The independent H1 number column uses the first label's advance plus
+    // its two-pixel separation, observed in both A and B native compositions.
+    prefix_slot = first_label.cx + raster.ToPhysicalPixels(2.0F);
+  }
+  const LONG width = std::max(extent.cx + prefix_slot, 1L);
+  const LONG height = metrics.tmHeight;
+  if (raster.ToLogicalPixels(width) > 16384.0F || height <= 0 ||
+      raster.ToLogicalPixels(height) > 512.0F)
+    return false;
+  if (measured_width) *measured_width = raster.ToLogicalPixels(width);
+  if (measured_height)
+    *measured_height = std::min(raster.ToLogicalPixels(height), font_size);
+  if (!target) return true;
+  BITMAPINFO info{};
+  info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  info.bmiHeader.biWidth = width;
+  info.bmiHeader.biHeight = -height;
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+  void* bits = nullptr;
+  resources.bitmap = CreateDIBSection(resources.dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+  if (!resources.bitmap || !bits) return false;
+  resources.old_bitmap = SelectObject(resources.dc, resources.bitmap);
+  if (!resources.old_bitmap || resources.old_bitmap == HGDI_ERROR) {
+    resources.old_bitmap = nullptr;
+    return false;
+  }
+  auto* pixels = static_cast<std::uint32_t*>(bits);
+  const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+  std::fill_n(pixels, count, 0U);
+  SetBkMode(resources.dc, TRANSPARENT);
+  SetTextColor(resources.dc, RGB(255, 255, 255));
+  if (!prefix.empty() && !ExtTextOutW(resources.dc, 0, 0, ETO_IGNORELANGUAGE,
+      nullptr, prefix.data(), static_cast<UINT>(prefix.size()), nullptr)) return false;
+  if (!ExtTextOutW(resources.dc, prefix_slot, 0, ETO_IGNORELANGUAGE, nullptr, text.data(),
+                   static_cast<UINT>(text.size()),
+                   advances.empty() ? nullptr : advances.data())) return false;
+  GdiFlush();
+  const auto channel = [](float v) {
+    return static_cast<std::uint32_t>(std::lround(std::clamp(v, 0.0F, 1.0F) * 255.0F));
+  };
+  const auto red = channel(color.r), green = channel(color.g), blue = channel(color.b);
+  const auto opacity = channel(color.a);
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto pixel = pixels[i];
+    const auto coverage = ((pixel & 255U) + ((pixel >> 8) & 255U) + ((pixel >> 16) & 255U)) / 3U;
+    const auto alpha = (coverage * opacity + 127U) / 255U;
+    pixels[i] = (alpha << 24) | (((red * alpha + 127U) / 255U) << 16) |
+                (((green * alpha + 127U) / 255U) << 8) | ((blue * alpha + 127U) / 255U);
+  }
+  Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
+  const auto properties = D2D1::BitmapProperties(
+      D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+      render_dpi_x, raster.dpi);
+  if (FAILED(target->CreateBitmap(D2D1::SizeU(static_cast<UINT32>(width), static_cast<UINT32>(height)),
+      pixels, static_cast<UINT32>(width) * 4U, properties, &bitmap))) return false;
+  // The SSF cell ends at font_size-1, not at the full GDI line-cell bottom.
+  // Preserve ascenders above the nominal origin instead of clipping them.
+  const auto horizontal_raster = detail::ResolveSogouGdiRasterScale(render_dpi_x);
+  const float logical_raster_width = horizontal_raster.ToLogicalPixels(width);
+  const float logical_raster_height = raster.ToLogicalPixels(height);
+  const float draw_top = clip.top +
+      (ink_advance ? font_size - logical_raster_height - 1.0F : 0.0F);
+  auto ink_clip = clip;
+  ink_clip.top = std::min(clip.top, draw_top);
+  target->PushAxisAlignedClip(ink_clip, D2D1_ANTIALIAS_MODE_ALIASED);
+  target->DrawBitmap(bitmap.Get(), D2D1::RectF(clip.left, draw_top,
+      clip.left + logical_raster_width, draw_top + logical_raster_height),
+      1.0F, D2D1_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR);
+  target->PopAxisAlignedClip();
+  return true;
 }
 
 bool RegisterCandidateWindowClass(bool preview) {
@@ -517,11 +612,14 @@ void CandidateWindow::ShowPreview(const core::CompositionSnapshot& snapshot,
 
 void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                                    const RECT& text_rectangle, const RECT* preview_bounds,
-                                   const core::Settings& settings, std::size_t page_offset) {
+                                   const core::Settings& persisted_settings,
+                                   std::size_t page_offset) {
   if (window_ == nullptr || snapshot.empty()) {
     Hide();
     return;
   }
+  const core::Settings settings =
+      core::ResolveEffectiveCandidateAppearanceSettings(persisted_settings);
   const bool was_visible = IsWindowVisible(window_) != FALSE;
   candidate_requested_visible_ = true;
   const bool was_hiding = hide_after_fade_;
@@ -592,6 +690,12 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   const auto& surface = ActiveThemeSurface();
   const bool native_default = UsesNativeDefaultTheme();
   const bool compact = native_default && horizontal;
+  const bool ssf_native_text = horizontal && UsesSogouRendering() &&
+      theme_typography.sogou_use_gdip == 1U &&
+      !settings_.custom_candidate_fonts && !settings_.custom_candidate_font_size;
+  const bool ssf_vertical_text = !horizontal && UsesSogouRendering() &&
+      theme_typography.sogou_use_gdip == 1U &&
+      !settings_.custom_candidate_fonts && !settings_.custom_candidate_font_size;
   const bool animate = NativeAnimationsEnabled();
   if (!animate) {
     KillTimer(window_, kNativeFadeTimer);
@@ -713,13 +817,17 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
        surface.collapse_button.has_value());
   const float menu_width = compact ? 32.0F : kHorizontalMenuButtonWidth;
   const float expand_width = compact ? 28.0F : kHorizontalExpandButtonWidth;
-  const float minimum_candidate_width = compact ? 48.0F : kMinimumHorizontalCandidateWidth;
+  const float minimum_candidate_width = ssf_native_text ? 1.0F :
+      (compact ? 48.0F : kMinimumHorizontalCandidateWidth);
   const std::wstring_view label_gap = horizontal && UsesSogouRendering()
       ? L"." : (compact ? L" " : L"  ");
+  // Custom H1 still reserves its reference action strip when no button
+  // images are supplied. Omitting that area lets the final word enter the
+  // fixed right-hand artwork; this does not draw a standalone default skin.
   const float reserved_action_width =
       ((show_menu_action ? menu_width : 0.0F) +
        (show_expand_action ? expand_width : 0.0F)) *
-      layout_scale_;
+      layout_scale_ + (ssf_native_text && !show_menu_action ? 63.0F : 0.0F);
   const std::size_t visible_columns =
       horizontal ? std::max<std::size_t>(
                        1, std::min(slice.count, settings_.candidate_count))
@@ -730,6 +838,18 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
           minimum_candidate_width * layout_scale_ *
               static_cast<float>(visible_columns));
   const bool has_device_resources = EnsureDeviceResources();
+  if (ssf_vertical_text) {
+    // The retained 20px/24px custom V1 cells have 24px/28px row advances.
+    // Do not impose Ziliu's native 38px minimum on authored SSF text.
+    preedit_height_ = preedit_insets_.top + effective_font_size + preedit_insets_.bottom;
+    float preedit_width = 0.0F;
+    float preedit_cell_height = effective_font_size;
+    static_cast<void>(DrawSsfGdiText(nullptr, preedit_format_.Get(), snapshot_.preedit,
+        effective_font_size, {}, {}, {}, &preedit_width, false, &preedit_cell_height,
+        dpi_scale_ * detail::kSogouGdiBaseDpi));
+    preedit_height_ = preedit_insets_.top + preedit_cell_height + preedit_insets_.bottom;
+    candidate_row_height_ = effective_font_size + 4.0F;
+  }
   float native_preedit_width = 0.0F;
   native_preedit_layout_.Reset();
   if (native_default && has_device_resources) {
@@ -761,13 +881,20 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
         D2D1::SizeF(bitmap_size.width * layout_scale_,
                     bitmap_size.height * layout_scale_);
   }
-  const float measured_preedit_width =
+  float measured_preedit_width =
       native_default && native_preedit_layout_ != nullptr
           ? native_preedit_width
           : has_device_resources
           ? MeasureTextWidth(dwrite_factory_.Get(), preedit_format_.Get(), snapshot_.preedit,
                              maximum_window_width, preedit_height_)
           : 0.0F;
+  if (ssf_vertical_text && has_device_resources) {
+    static_cast<void>(DrawSsfGdiText(nullptr, preedit_format_.Get(), snapshot_.preedit,
+        effective_font_size, {}, {}, {}, &measured_preedit_width,
+        theme_typography.english_font_family != theme_typography.chinese_font_family, nullptr,
+        dpi_scale_ * detail::kSogouGdiBaseDpi));
+    measured_preedit_width += 1.0F;  // Reserve the drawn caret as well as glyph advances.
+  }
   const float desired_preedit_window_width =
       measured_preedit_width + preedit_insets_.left + preedit_insets_.right;
 
@@ -796,8 +923,20 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
         const float measured_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
                              maximum_window_width, candidate_row_height_);
+        float desired_width = measured_width + (compact ? 16.0F : 24.0F) * layout_scale_;
+        if (ssf_native_text) {
+          // Native H1 runs include a trailing space and a ten-pixel cell gap.
+          // Use the same font and independent number slot as the paint path.
+          const std::wstring body = snapshot_.candidates[candidate_index].text + L" ";
+          float native_width = 0.0F;
+          if (DrawSsfGdiText(nullptr, candidate_format_.Get(), body, effective_font_size,
+                            {}, {}, active ? L"1." : L"", &native_width, false, nullptr,
+                            dpi_scale_ * detail::kSogouGdiBaseDpi)) {
+            desired_width = native_width + 10.0F;
+          }
+        }
         const float width =
-            std::clamp(measured_width + (compact ? 16.0F : 24.0F) * layout_scale_,
+            std::clamp(desired_width,
                        minimum_candidate_width * layout_scale_, maximum_window_width);
         candidate_widths_.push_back(width);
       }
@@ -858,11 +997,17 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
     if (has_device_resources) {
       for (std::size_t visible_index = 0; visible_index < slice.count; ++visible_index) {
         const std::size_t candidate_index = slice.offset + visible_index;
-        const std::wstring label = std::to_wstring(visible_index + 1) + L"  " +
+        const std::wstring label = std::to_wstring(visible_index + 1) +
+                                   (ssf_vertical_text ? L"." : L"  ") +
                                    snapshot_.candidates[candidate_index].text;
-        const float candidate_width =
+        float candidate_width =
             MeasureTextWidth(dwrite_factory_.Get(), candidate_format_.Get(), label,
                              maximum_window_width, candidate_row_height_);
+        if (ssf_vertical_text) {
+          static_cast<void>(DrawSsfGdiText(nullptr, candidate_format_.Get(), label,
+              effective_font_size, {}, {}, {}, &candidate_width, false, nullptr,
+              dpi_scale_ * detail::kSogouGdiBaseDpi));
+        }
         desired_vertical_width =
             std::max(desired_vertical_width,
                      candidate_width + candidate_insets_.left +
@@ -882,6 +1027,15 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                 candidate_row_height_ *
                     static_cast<float>(horizontal ? horizontal_rows : slice.count) +
                 candidate_insets_.bottom;
+  if (ssf_vertical_text && slice.count != 0) {
+    // Two retained custom V1 references reserve the same 52px pager/menu footer.
+    // The text rows remain font-sized; this footer is not candidate leading.
+    height_dip += 52.0F;
+    const float rows_bottom = preedit_height_ + candidate_insets_.top +
+        candidate_row_height_ * static_cast<float>(slice.count);
+    menu_button_bounds_ = D2D1::RectF(candidate_insets_.left, rows_bottom + 28.0F,
+        candidate_insets_.left + 28.0F, rows_bottom + 56.0F);
+  }
   if (UsesSogouRendering() && surface.background.has_value()) {
     if (natural_background_size.width > 0.0F) {
       window_width_ =
@@ -915,6 +1069,14 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
                           expand_width * layout_scale_,
                       button_top, right, button_bottom);
     }
+  }
+  if (ssf_native_text && !show_menu_action && !candidate_lefts_.empty()) {
+    // Use the already reserved action strip without resizing or moving any
+    // accepted text/artwork. Reuse the existing quick-menu hit-test callback.
+    const float left = candidate_lefts_.back() + candidate_widths_.back();
+    const float top = candidate_tops_.back();
+    menu_button_bounds_ = D2D1::RectF(left, top - 2.0F,
+        std::min(left + 28.0F, window_width_), top + effective_font_size + 2.0F);
   }
   window_height_ = std::min(height_dip, maximum_window_height);
   int width = ToPixels(window_width_ + 2.0F * shadow_margin_, dpi_scale_);
@@ -1434,11 +1596,20 @@ void CandidateWindow::RefreshTheme(std::string_view theme_id) {
 }
 
 bool CandidateWindow::UsesNativeDefaultTheme() const noexcept {
-  return theme_manifest_.id == core::kDefaultThemeId;
+  return theme_manifest_.id == core::kDefaultThemeId || UsesMissingSsfLayoutFallback();
+}
+
+bool CandidateWindow::UsesMissingSsfLayoutFallback() const noexcept {
+  if (theme_manifest_.source_format != "sogou-ssf") return false;
+  const auto& appearance = dark_theme_ && theme_manifest_.dark.has_value()
+      ? *theme_manifest_.dark : theme_manifest_.light;
+  const auto& surface = settings_.candidate_layout == core::CandidateLayout::kHorizontal
+      ? appearance.horizontal : appearance.vertical;
+  return !surface.background.has_value();
 }
 
 bool CandidateWindow::UsesSogouRendering() const noexcept {
-  return theme_manifest_.source_format == "sogou-ssf";
+  return theme_manifest_.source_format == "sogou-ssf" && !UsesMissingSsfLayoutFallback();
 }
 
 void CandidateWindow::ApplyWindowRenderingMode() {
@@ -1466,6 +1637,10 @@ void CandidateWindow::ApplyWindowRenderingMode() {
 }
 
 const core::ThemeAppearance& CandidateWindow::ActiveThemeAppearance() const {
+  if (UsesMissingSsfLayoutFallback()) {
+    static const core::ThemeManifest native = core::MakeDefaultThemeManifest();
+    return dark_theme_ && native.dark.has_value() ? *native.dark : native.light;
+  }
   if (dark_theme_ && theme_manifest_.dark.has_value()) {
     return *theme_manifest_.dark;
   }
@@ -1566,6 +1741,11 @@ Microsoft::WRL::ComPtr<ID2D1Bitmap> CandidateWindow::LoadThemeBitmap(
                                    WICBitmapPaletteTypeCustom))) {
     return bitmap;
   }
+  Microsoft::WRL::ComPtr<IWICBitmap> detached;
+  if (FAILED(imaging_factory_->CreateBitmapFromSource(
+          converter.Get(), WICBitmapCacheOnLoad, detached.GetAddressOf()))) {
+    return bitmap;
+  }
 
   const float bitmap_dpi =
       static_cast<float>(std::max(theme_manifest_.base_dpi, 1U));
@@ -1574,7 +1754,7 @@ Microsoft::WRL::ComPtr<ID2D1Bitmap> CandidateWindow::LoadThemeBitmap(
                         D2D1_ALPHA_MODE_PREMULTIPLIED),
       bitmap_dpi, bitmap_dpi);
   if (FAILED(render_target_->CreateBitmapFromWicBitmap(
-          converter.Get(), &properties, bitmap.GetAddressOf()))) {
+          detached.Get(), &properties, bitmap.GetAddressOf()))) {
     bitmap.Reset();
   }
   return bitmap;
@@ -1945,7 +2125,44 @@ void CandidateWindow::DrawSurfaceBackground() {
   float source_bottom =
       std::min(static_cast<float>(surface.background->stretch.bottom) * source_unit,
                bitmap_size.height);
-  // A nine-slice needs a non-empty center source region. Malformed or
+  if (UsesSogouRendering() &&
+      settings_.candidate_layout == core::CandidateLayout::kVertical &&
+      source_left + source_right >= bitmap_size.width && source_left >= 1.0F &&
+      source_left < bitmap_size.width) {
+    // Overlapping horizontal V1 cuts retain the right-hand artwork unchanged.
+    // Collapse the overlap to a one-source-pixel seam rather than rejecting
+    // the entire asset or scaling its fixed edges.
+    source_right = bitmap_size.width - source_left;
+    source_left -= 1.0F;
+  }
+  // Custom H1 references with exhausted/overlapping vertical slices retain
+  // every source row at the authored height. Those vertical cuts must not
+  // discard the horizontally expandable image. Keep this path limited to
+  // native SSF typography; override/vertical-layout behavior is not inferred.
+  if (UsesSogouRendering() &&
+      settings_.candidate_layout == core::CandidateLayout::kHorizontal &&
+      !settings_.custom_candidate_font_size && !settings_.custom_candidate_fonts &&
+      source_left + source_right < bitmap_size.width &&
+      source_top + source_bottom >= bitmap_size.height &&
+      target_size.height >= bitmap_size.height * layout_scale_ &&
+      target_size.width >= (source_left + source_right) * layout_scale_) {
+    const std::array<float, 4> source_x{
+        0.0F, source_left, bitmap_size.width - source_right, bitmap_size.width};
+    const std::array<float, 4> destination_x{
+        0.0F, source_left * layout_scale_,
+        target_size.width - source_right * layout_scale_, target_size.width};
+    for (std::size_t column = 0; column < 3; ++column) {
+      detail::DrawSogouBitmapPatch(render_target_.Get(), surface_bitmaps_.background.Get(),
+          D2D1::RectF(source_x[column], 0.0F, source_x[column + 1], bitmap_size.height),
+          D2D1::RectF(destination_x[column], 0.0F, destination_x[column + 1],
+                      bitmap_size.height * layout_scale_),
+          column == 1 ? surface.background->horizontal_layout
+                      : core::ThemeImageLayout::kStretch,
+          core::ThemeImageLayout::kStretch, layout_scale_);
+    }
+    return;
+  }
+  // A general nine-slice needs a non-empty center source region. Malformed or
   // incompatible margins otherwise leave a transparent hole in a wider
   // candidate window, so retain the palette background as the documented
   // native fallback.
@@ -2000,7 +2217,7 @@ void CandidateWindow::DrawSurfaceBackground() {
       const core::ThemeImageLayout vertical_layout =
           row == 1 ? surface.background->vertical_layout
                    : core::ThemeImageLayout::kStretch;
-      DrawBitmapPatch(render_target_.Get(), surface_bitmaps_.background.Get(), source,
+      detail::DrawSogouBitmapPatch(render_target_.Get(), surface_bitmaps_.background.Get(), source,
                       destination,
                       tile_horizontal ? core::ThemeImageLayout::kTile
                                       : horizontal_layout,
@@ -2064,9 +2281,15 @@ void CandidateWindow::DrawSurfaceSeparator(float y) {
         D2D1::RectF(0.0F, 0.0F, bitmap_size.width, bitmap_size.height);
     const D2D1_RECT_F destination =
         D2D1::RectF(left, y - thickness / 2.0F, right, y + thickness / 2.0F);
-    DrawBitmapPatch(render_target_.Get(), surface_bitmaps_.separator.Get(), source,
+    detail::DrawSogouBitmapPatch(render_target_.Get(), surface_bitmaps_.separator.Get(), source,
                     destination, core::ThemeImageLayout::kTile,
                     core::ThemeImageLayout::kStretch, layout_scale_);
+    return;
+  }
+  // The active H1 use_gdip path does not paint the legacy color-only
+  // separator field. Keep explicit separator images and other paths intact.
+  if (UsesSogouRendering() &&
+      ActiveThemeAppearance().typography.sogou_use_gdip == 1U && separator->asset.empty()) {
     return;
   }
   render_target_->DrawLine(D2D1::Point2F(left, y), D2D1::Point2F(right, y),
@@ -2133,10 +2356,16 @@ void CandidateWindow::Paint() {
     const bool horizontal = settings_.candidate_layout == core::CandidateLayout::kHorizontal;
     const bool native_default = UsesNativeDefaultTheme();
     const bool compact = native_default && horizontal;
+    const bool ssf_gdi = UsesSogouRendering() &&
+        ActiveThemeAppearance().typography.sogou_use_gdip == 1U &&
+        !settings_.custom_candidate_fonts && !settings_.custom_candidate_font_size;
     const auto page_window = core::MakeCandidatePageWindow(
         snapshot_.candidates.size(), settings_.candidate_count, page_offset_, expanded_);
     const auto slice = page_window.visible;
     const float preedit_bottom = preedit_height_;
+    float ssf_preedit_width = 0.0F;
+    float ssf_preedit_height = 0.0F;
+    bool drew_ssf_preedit = false;
     if (native_default && native_preedit_layout_ != nullptr) {
       // Clip the enclosing ink box, not the font em box. The layout origin is
       // offset so ascenders, descenders and antialias coverage stay inside it.
@@ -2150,6 +2379,15 @@ void CandidateWindow::Paint() {
                         preedit_insets_.top + native_preedit_origin_offset_.y),
           native_preedit_layout_.Get(), preedit_brush_.Get());
       render_target_->PopAxisAlignedClip();
+    } else if (ssf_gdi && (drew_ssf_preedit = DrawSsfGdiText(render_target_.Get(), preedit_format_.Get(),
+        snapshot_.preedit, candidate_format_->GetFontSize(),
+        D2D1::RectF(preedit_insets_.left, preedit_insets_.top,
+                    window_width_ - preedit_insets_.right,
+                    std::max(preedit_insets_.top, preedit_bottom - preedit_insets_.bottom)),
+        preedit_brush_->GetColor(), {}, &ssf_preedit_width,
+        ActiveThemeAppearance().typography.english_font_family !=
+            ActiveThemeAppearance().typography.chinese_font_family, &ssf_preedit_height))) {
+      // The source mask is already premultiplied before layered composition.
     } else {
       render_target_->DrawTextW(
         snapshot_.preedit.c_str(), static_cast<UINT32>(snapshot_.preedit.size()),
@@ -2159,6 +2397,12 @@ void CandidateWindow::Paint() {
                     std::max(preedit_insets_.top,
                              preedit_bottom - preedit_insets_.bottom)),
         preedit_brush_.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+    }
+    if (drew_ssf_preedit) {
+      const float caret_x = std::round(preedit_insets_.left + ssf_preedit_width);
+      render_target_->FillRectangle(D2D1::RectF(caret_x, preedit_insets_.top,
+          caret_x + 1.0F, preedit_insets_.top + ssf_preedit_height),
+          highlighted_text_brush_.Get());
     }
     if (slice.count != 0) {
       DrawSurfaceSeparator(preedit_bottom);
@@ -2193,7 +2437,7 @@ void CandidateWindow::Paint() {
       const std::wstring label =
           active
               ? std::to_wstring(candidate_index - page_window.active.offset + 1) +
-                    (horizontal && UsesSogouRendering() ? L"." : (compact ? L" " : L"  ")) +
+                    (UsesSogouRendering() ? L"." : (compact ? L" " : L"  ")) +
                     snapshot_.candidates[candidate_index].text
               : snapshot_.candidates[candidate_index].text;
       const auto& annotation = snapshot_.candidates[candidate_index].annotation;
@@ -2203,6 +2447,14 @@ void CandidateWindow::Paint() {
               : std::max(candidate_insets_.left + 180.0F * layout_scale_,
                          window_width_ - candidate_insets_.right -
                              120.0F * layout_scale_);
+      const std::wstring ssf_prefix = active
+          ? std::to_wstring(candidate_index - page_window.active.offset + 1) + L"." : L"";
+      if (!(ssf_gdi && DrawSsfGdiText(render_target_.Get(), candidate_format_.Get(),
+          horizontal ? snapshot_.candidates[candidate_index].text : label,
+          candidate_format_->GetFontSize(), D2D1::RectF(left, top, right, top + row_height),
+          candidate_index == snapshot_.highlighted_index
+              ? highlighted_text_brush_->GetColor() : text_brush_->GetColor(),
+          horizontal ? ssf_prefix : std::wstring{}))) {
       render_target_->DrawTextW(label.c_str(), static_cast<UINT32>(label.size()),
                                 candidate_format_.Get(),
                                 D2D1::RectF(horizontal ? left +
@@ -2217,6 +2469,8 @@ void CandidateWindow::Paint() {
                                     ? highlighted_text_brush_.Get()
                                     : text_brush_.Get(),
                                 D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+      }
 
       if (!horizontal && !annotation.empty()) {
         render_target_->DrawTextW(
@@ -2265,6 +2519,14 @@ void CandidateWindow::Paint() {
             text_brush_.Get(), 1.6F * layout_scale_);
       }
 
+      if (!drew_menu_image && ssf_gdi && menu_button_bounds_.right > menu_button_bounds_.left) {
+        const float center_x = (menu_button_bounds_.left + menu_button_bounds_.right) * 0.5F;
+        const float center_y = (menu_button_bounds_.top + menu_button_bounds_.bottom) * 0.5F;
+        for (const float offset : {-4.0F, 0.0F, 4.0F}) {
+          render_target_->DrawLine(D2D1::Point2F(center_x - 8.0F, center_y + offset),
+              D2D1::Point2F(center_x + 8.0F, center_y + offset), text_brush_.Get(), 1.2F);
+        }
+      }
       if (!drew_menu_image && !UsesSogouRendering()) {
         render_target_->DrawLine(
             D2D1::Point2F(menu_button_bounds_.left,
@@ -2284,6 +2546,33 @@ void CandidateWindow::Paint() {
                             menu_center_y + offset * layout_scale_),
               text_brush_.Get(), 1.4F * layout_scale_);
         }
+      }
+    }
+
+    if (!horizontal && ssf_gdi && slice.count != 0) {
+      const float rows_bottom = preedit_height_ + candidate_insets_.top +
+          candidate_row_height_ * static_cast<float>(slice.count);
+      const auto pager = detail::ResolveSogouVerticalPagerLayout(
+          candidate_insets_.left, rows_bottom, 1.0F);
+      const auto arrow = [&](const detail::SogouHorizontalBounds& b, bool next, bool enabled) {
+        const float old_opacity = text_brush_->GetOpacity();
+        text_brush_->SetOpacity(enabled ? 1.0F : detail::kSogouVerticalPagerDisabledOpacity);
+        const float mid = (b.top + b.bottom) * 0.5F;
+        for (int column = 0; column < 6; ++column) {
+          const float extent = static_cast<float>(next ? 5 - column : column);
+          const float x = b.left + static_cast<float>(column);
+          render_target_->DrawLine(D2D1::Point2F(x, mid - extent),
+              D2D1::Point2F(x, mid + extent), text_brush_.Get(), 1.0F);
+        }
+        text_brush_->SetOpacity(old_opacity);
+      };
+      arrow(pager.previous_icon, false, snapshot_.has_previous_page);
+      arrow(pager.next_icon, true, snapshot_.has_next_page);
+      const float cx = (menu_button_bounds_.left + menu_button_bounds_.right) * 0.5F;
+      const float cy = (menu_button_bounds_.top + menu_button_bounds_.bottom) * 0.5F;
+      for (const float offset : {-5.0F, 0.0F, 5.0F}) {
+        render_target_->DrawLine(D2D1::Point2F(cx - 7.0F, cy + offset),
+            D2D1::Point2F(cx + 7.0F, cy + offset), text_brush_.Get(), 1.0F);
       }
     }
 

@@ -117,6 +117,8 @@ struct ThemeTypography {
   std::string chinese_font_family = "Source Han Sans SC";
   std::string english_font_family = "Segoe UI Variable Text";
   std::uint32_t font_size = 17;
+  // Raw SSF Display.use_gdip flag. Absence is not an implicit renderer choice.
+  std::optional<std::uint32_t> sogou_use_gdip;
 
   bool operator==(const ThemeTypography&) const = default;
 };

@@ -1,5 +1,7 @@
 #include "ziliu/core/settings.h"
 
+#include "ziliu/core/theme_manifest.h"
+
 #include <algorithm>
 #include <charconv>
 #include <string>
@@ -111,6 +113,19 @@ bool IsDarkColor(std::uint32_t color) {
 }
 
 }  // namespace
+
+Settings ResolveEffectiveCandidateAppearanceSettings(const Settings& settings) {
+  Settings effective = settings;
+  // Theme identity owns candidate styling even when a custom skin falls back
+  // to native visuals because one of its authored surfaces is unavailable.
+  if (effective.active_theme_id != kDefaultThemeId) {
+    effective.custom_candidate_colors = false;
+    effective.custom_candidate_fonts = false;
+    effective.custom_candidate_font_size = false;
+    effective.candidate_scale_with_text = false;
+  }
+  return effective;
+}
 
 CandidatePalette ResolveCandidatePalette(const Settings& settings, bool dark_theme) {
   CandidatePalette palette;

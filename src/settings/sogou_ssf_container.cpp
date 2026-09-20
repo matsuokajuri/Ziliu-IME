@@ -1092,8 +1092,125 @@ class HuffmanTree {
 
 }  // namespace
 
-SogouSsfDecodeResult DecodeSogouSsfV3(
-    const std::filesystem::path& source_path) {
+static std::uint16_t ZipU16(std::span<const std::uint8_t> b, std::size_t p) {
+  return static_cast<std::uint16_t>(b[p] | (static_cast<unsigned>(b[p + 1]) << 8U));
+}
+
+static std::uint32_t ZipCrc(std::span<const std::uint8_t> bytes) {
+  static const auto table = [] {
+    std::array<std::uint32_t, 256> t{};
+    for (std::uint32_t i = 0; i < 256; ++i) {
+      auto c = i;
+      for (int bit = 0; bit < 8; ++bit) c = (c >> 1U) ^ ((c & 1U) ? 0xedb88320U : 0U);
+      t[i] = c;
+    }
+    return t;
+  }();
+  std::uint32_t crc = 0xffffffffU;
+  for (const auto b : bytes) crc = table[(crc ^ b) & 255U] ^ (crc >> 8U);
+  return crc ^ 0xffffffffU;
+}
+
+static bool DecodeZip(std::span<const std::uint8_t> b,
+                      std::vector<SogouSsfEntry>& entries, std::string& error) {
+  const auto fail = [&error](const char* message) { error = message; return false; };
+  if (b.size() < 22) return fail("SSF ZIP header is truncated.");
+  std::size_t end = b.size() - 22;
+  const std::size_t first = b.size() > 65557 ? b.size() - 65557 : 0;
+  for (;;) {
+    if (ReadLe32(b, end) == 0x06054b50U && end + 22U + ZipU16(b, end + 20) == b.size()) break;
+    if (end == first) return fail("SSF ZIP central directory is missing.");
+    --end;
+  }
+  const auto count = ZipU16(b, end + 10);
+  const std::size_t central = ReadLe32(b, end + 16);
+  if (ZipU16(b, end + 4) || ZipU16(b, end + 6) || ZipU16(b, end + 8) != count ||
+      count == 0 || count > kMaximumEntries || central > end ||
+      ReadLe32(b, end + 12) != end - central) return fail("Unsupported SSF ZIP directory.");
+  std::size_t cursor = central, total = 0;
+  std::vector<std::pair<std::wstring, bool>> paths;
+  std::vector<std::pair<std::size_t, std::size_t>> ranges;
+  for (unsigned i = 0; i < count; ++i) {
+    if (cursor > end || end - cursor < 46 || ReadLe32(b, cursor) != 0x02014b50U)
+      return fail("Truncated SSF ZIP entry.");
+    const auto flags = ZipU16(b, cursor + 8), method = ZipU16(b, cursor + 10);
+    const auto crc = ReadLe32(b, cursor + 16);
+    const std::size_t compressed = ReadLe32(b, cursor + 20), size = ReadLe32(b, cursor + 24);
+    const std::size_t name_size = ZipU16(b, cursor + 28), extra = ZipU16(b, cursor + 30), comment = ZipU16(b, cursor + 32);
+    const std::size_t local = ReadLe32(b, cursor + 42);
+    const auto attributes = ReadLe32(b, cursor + 38);
+    if (ZipU16(b, cursor + 6) > 20 || ZipU16(b, cursor + 34) ||
+        (flags & ~0x080eU) || (method != 0 && method != 8) ||
+        (method == 0 && ((flags & 6U) || compressed != size)) || !name_size ||
+        name_size + extra + comment > end - cursor - 46 ||
+        size > kMaximumEntryContentBytes || total > kMaximumTotalContentBytes - size)
+      return fail("Unsupported or oversized SSF ZIP entry.");
+    total += size;
+    std::string raw(reinterpret_cast<const char*>(b.data() + cursor + 46), name_size);
+    if (!(flags & 0x0800U) && std::any_of(raw.begin(), raw.end(), [](unsigned char c) { return c >= 128; }))
+      return fail("SSF ZIP non-ASCII names must declare UTF-8.");
+    const bool directory = raw.back() == '/';
+    const std::string name = directory ? raw.substr(0, raw.size() - 1) : raw;
+    const int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name.data(), static_cast<int>(name.size()), nullptr, 0);
+    if (n <= 0) return fail("Invalid SSF ZIP UTF-8 name.");
+    std::wstring wide(static_cast<std::size_t>(n), L'\0');
+    if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name.data(), static_cast<int>(name.size()), wide.data(), n) != n)
+      return fail("Invalid SSF ZIP UTF-8 name.");
+    if (!ValidateWindowsRelativePath(wide, error)) return false;
+    for (const auto& previous : paths) {
+      if (PathsCollide(previous.first, wide) ||
+          (!previous.second && PathPrefixes(previous.first, wide)) ||
+          (!directory && PathPrefixes(wide, previous.first))) return fail("Conflicting SSF ZIP paths.");
+    }
+    paths.emplace_back(wide, directory);
+    const auto type = (attributes >> 16U) & 0170000U;
+    if ((type && type != (directory ? 0040000U : 0100000U)) ||
+        (attributes & FILE_ATTRIBUTE_REPARSE_POINT) || (directory && size != 0))
+      return fail("SSF ZIP links and special files are forbidden.");
+    if (local > central || central - local < 30 || ReadLe32(b, local) != 0x04034b50U ||
+        ZipU16(b, local + 6) != flags || ZipU16(b, local + 8) != method || ZipU16(b, local + 26) != name_size)
+      return fail("SSF ZIP local header mismatch.");
+    const std::size_t local_extra = ZipU16(b, local + 28);
+    if (name_size + local_extra > central - local - 30) return fail("SSF ZIP local name overrun.");
+    if (!std::equal(raw.begin(), raw.end(), b.begin() + static_cast<std::ptrdiff_t>(local + 30),
+        [](char a, std::uint8_t c) { return static_cast<std::uint8_t>(a) == c; }))
+      return fail("SSF ZIP local name mismatch.");
+    const std::size_t data = local + 30 + name_size + local_extra;
+    if (compressed > central - data) return fail("SSF ZIP data overrun.");
+    const bool descriptor = (flags & 8U) != 0;
+    const auto local_crc = ReadLe32(b, local + 14), local_compressed = ReadLe32(b, local + 18), local_size = ReadLe32(b, local + 22);
+    if ((!descriptor && (local_crc != crc || local_compressed != compressed || local_size != size)) ||
+        (descriptor && ((local_crc && local_crc != crc) || (local_compressed && local_compressed != compressed) || (local_size && local_size != size))))
+      return fail("SSF ZIP local sizes mismatch.");
+    std::size_t stop = data + compressed;
+    if (descriptor) {
+      if (central - stop >= 4 && ReadLe32(b, stop) == 0x08074b50U) stop += 4;
+      if (central - stop < 12 || ReadLe32(b, stop) != crc ||
+          ReadLe32(b, stop + 4) != compressed || ReadLe32(b, stop + 8) != size)
+        return fail("SSF ZIP descriptor mismatch.");
+      stop += 12;
+    }
+    ranges.emplace_back(local, stop);
+    std::vector<std::uint8_t> decoded;
+    decoded.reserve(size);
+    if (method == 0) decoded.assign(b.begin() + static_cast<std::ptrdiff_t>(data), b.begin() + static_cast<std::ptrdiff_t>(data + compressed));
+    else if (!InflateDeflate(b.subspan(data, compressed), size, decoded, error)) return false;
+    if (ZipCrc(decoded) != crc) return fail("SSF ZIP CRC mismatch.");
+    if (!directory) entries.push_back({name, std::move(decoded)});
+    cursor += 46 + name_size + extra + comment;
+  }
+  if (cursor != end) return fail("SSF ZIP trailing directory data.");
+  std::sort(ranges.begin(), ranges.end());
+  std::size_t next = 0;
+  for (const auto& r : ranges) {
+    if (r.first != next) return fail("SSF ZIP overlapping or undeclared local data.");
+    next = r.second;
+  }
+  return next == central || fail("SSF ZIP local data does not end at its directory.");
+}
+
+static SogouSsfDecodeResult DecodeArchiveImpl(
+    const std::filesystem::path& source_path, bool allow_zip) {
   SogouSsfDecodeResult result;
   try {
     std::vector<std::uint8_t> archive;
@@ -1101,6 +1218,18 @@ SogouSsfDecodeResult DecodeSogouSsfV3(
       return result;
     }
     const std::span<const std::uint8_t> archive_view(archive);
+    std::array<unsigned char, 32> hash{};
+    if (BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, archive.data(),
+                   static_cast<ULONG>(archive.size()), hash.data(), static_cast<ULONG>(hash.size())) < 0) {
+      result.error = "SSF SHA-256 failed.";
+      return result;
+    }
+    constexpr char digits[] = "0123456789abcdef";
+    for (const auto b : hash) { result.package_sha256 += digits[b >> 4U]; result.package_sha256 += digits[b & 15U]; }
+    if (allow_zip && ReadLe32(archive_view, 0) == 0x04034b50U) {
+      if (!DecodeZip(archive_view, result.entries, result.error)) result.entries.clear();
+      return result;
+    }
     if (archive_view[0] != static_cast<std::uint8_t>('S') ||
         archive_view[1] != static_cast<std::uint8_t>('k') ||
         archive_view[2] != static_cast<std::uint8_t>('i') ||
@@ -1155,6 +1284,14 @@ SogouSsfDecodeResult DecodeSogouSsfV3(
     result.error = "SSF 解码发生未知异常。";
     return result;
   }
+}
+
+SogouSsfDecodeResult DecodeSogouSsfV3(const std::filesystem::path& source_path) {
+  return DecodeArchiveImpl(source_path, false);
+}
+
+SogouSsfDecodeResult DecodeSogouSsfArchive(const std::filesystem::path& source_path) {
+  return DecodeArchiveImpl(source_path, true);
 }
 
 }  // namespace ziliu::settings

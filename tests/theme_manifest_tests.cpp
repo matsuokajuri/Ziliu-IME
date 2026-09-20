@@ -74,6 +74,20 @@ int main() {
   Expect(validation.empty(), "a complete first-party manifest should validate");
 
   const std::string serialized = ziliu::core::SerializeThemeManifest(manifest);
+  Expect(serialized.find("sogou_use_gdip") == std::string::npos,
+         "legacy manifests must not acquire an implicit SSF flag");
+  auto invalid_text_flag = manifest;
+  invalid_text_flag.light.typography.sogou_use_gdip = 2;
+  Expect(!ziliu::core::ValidateThemeManifest(invalid_text_flag).empty(),
+         "in-memory SSF flag values must be bounded");
+  for (const std::string_view value : {"2", "-1", "true", "null", "\"1\"", "1.5"}) {
+    auto bad_flag = serialized;
+    const auto property = bad_flag.find("\"font_size\"");
+    Expect(property != std::string::npos, "locate existing typography property");
+    bad_flag.insert(property, "\"sogou_use_gdip\": " + std::string(value) + ", ");
+    Expect(!ziliu::core::ParseThemeManifest(bad_flag).ok(),
+           "invalid JSON SSF flag values must not become a renderer choice");
+  }
   Expect(serialized.find("\"format_version\": 1") != std::string::npos &&
              serialized.find("\"highlighted_background\": \"#123A5980\"") !=
                  std::string::npos &&

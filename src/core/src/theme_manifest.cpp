@@ -867,6 +867,11 @@ class ManifestReader {
     ReadString(*object, "english_font_family", path + ".english_font_family", true,
                &output->english_font_family);
     ReadUnsigned(*object, "font_size", path + ".font_size", true, &output->font_size);
+    if (Find(*object, "sogou_use_gdip") != nullptr) {
+      std::uint32_t flag = 0;
+      ReadUnsigned(*object, "sogou_use_gdip", path + ".sogou_use_gdip", true, &flag);
+      output->sogou_use_gdip = flag;
+    }
   }
 
   void ReadAppearance(const JsonValue& value, std::string path, ThemeAppearance* output) {
@@ -1087,6 +1092,11 @@ void ValidateAppearance(std::vector<ThemeManifestIssue>* issues,
                        path + ".typography.font_size", "font size must be between 8 and 96");
   }
   ValidateSurface(issues, appearance.horizontal, path + ".surfaces.horizontal");
+  if (appearance.typography.sogou_use_gdip.has_value() &&
+      *appearance.typography.sogou_use_gdip > 1) {
+    AddValidationIssue(issues, ThemeManifestIssueCode::kInvalidProperty,
+                       path + ".typography.sogou_use_gdip", "SSF use_gdip must be 0 or 1");
+  }
   ValidateSurface(issues, appearance.vertical, path + ".surfaces.vertical");
 }
 
@@ -1386,6 +1396,9 @@ void WriteAppearance(JsonWriter* writer, std::string_view key,
   writer->StringProperty("chinese_font_family", appearance.typography.chinese_font_family);
   writer->StringProperty("english_font_family", appearance.typography.english_font_family);
   writer->UnsignedProperty("font_size", appearance.typography.font_size);
+  if (appearance.typography.sogou_use_gdip.has_value()) {
+    writer->UnsignedProperty("sogou_use_gdip", *appearance.typography.sogou_use_gdip);
+  }
   writer->EndObject();
 
   const ThemeSurface empty_surface;

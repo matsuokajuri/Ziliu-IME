@@ -1,6 +1,7 @@
 #include "pch.h"
 
 #include "MainWindow.xaml.h"
+#include "sogou_theme_import.h"
 
 #if __has_include("MainWindow.g.cpp")
 #include "MainWindow.g.cpp"
@@ -908,6 +909,10 @@ struct ThemeImportResult {
 
 ThemeImportResult InstallThemePackage(const std::filesystem::path& source_archive,
                                       const std::filesystem::path& themes_directory) {
+  if (_wcsicmp(source_archive.extension().c_str(), L".ssf") == 0) {
+    auto imported = ziliu::settings::InstallSogouSsfPackage(source_archive, themes_directory);
+    return {std::move(imported.manifest), std::move(imported.error)};
+  }
   const auto fail = [](std::wstring message) {
     ThemeImportResult result;
     result.error = std::move(message);
@@ -1077,18 +1082,25 @@ ScopedHandle OpenThemeDirectoryForRename(
 }
 
 bool RenameDirectoryHandle(HANDLE directory_handle,
-                           const std::filesystem::path& destination) {
+                           const std::filesystem::path& destination,
+                           DWORD* rename_error = nullptr) {
   const std::wstring destination_name = destination.native();
   if (directory_handle == nullptr || directory_handle == INVALID_HANDLE_VALUE ||
       destination_name.empty() ||
       destination_name.size() >
           (std::numeric_limits<DWORD>::max() / sizeof(wchar_t))) {
+    if (rename_error != nullptr) {
+      *rename_error = ERROR_INVALID_PARAMETER;
+    }
     return false;
   }
   const std::size_t information_size =
       offsetof(FILE_RENAME_INFO, FileName) +
-      destination_name.size() * sizeof(wchar_t);
+      (destination_name.size() + 1) * sizeof(wchar_t);
   if (information_size > std::numeric_limits<DWORD>::max()) {
+    if (rename_error != nullptr) {
+      *rename_error = ERROR_INVALID_PARAMETER;
+    }
     return false;
   }
   std::vector<std::uint8_t> storage(information_size);
@@ -1099,13 +1111,23 @@ bool RenameDirectoryHandle(HANDLE directory_handle,
       static_cast<DWORD>(destination_name.size() * sizeof(wchar_t));
   std::copy(destination_name.begin(), destination_name.end(),
             information->FileName);
-  return SetFileInformationByHandle(
-             directory_handle, FileRenameInfo, information,
-             static_cast<DWORD>(storage.size())) != FALSE;
+  information->FileName[destination_name.size()] = L'\0';
+  const BOOL renamed = SetFileInformationByHandle(
+      directory_handle, FileRenameInfo, information,
+      static_cast<DWORD>(storage.size()));
+  const DWORD error = renamed != FALSE ? ERROR_SUCCESS : GetLastError();
+  if (rename_error != nullptr) {
+    *rename_error = error;
+  }
+  return renamed != FALSE;
 }
 
 std::optional<std::filesystem::path> QuarantineThemeDirectory(
-    HANDLE directory_handle, const std::filesystem::path& themes_directory) {
+    HANDLE directory_handle, const std::filesystem::path& themes_directory,
+    DWORD* rename_error) {
+  if (rename_error != nullptr) {
+    *rename_error = ERROR_SUCCESS;
+  }
   GUID identifier{};
   if (FAILED(CoCreateGuid(&identifier))) {
     return std::nullopt;
@@ -1121,7 +1143,7 @@ std::optional<std::filesystem::path> QuarantineThemeDirectory(
   std::replace(directory_name.begin(), directory_name.end(), L'}', L'_');
   const std::filesystem::path quarantine =
       themes_directory / directory_name;
-  if (!RenameDirectoryHandle(directory_handle, quarantine)) {
+  if (!RenameDirectoryHandle(directory_handle, quarantine, rename_error)) {
     return std::nullopt;
   }
   return quarantine;
@@ -1905,12 +1927,27 @@ void MainWindow::ApplyThemeFromControls() {
 }
 
 void MainWindow::UpdateAppearanceControlStates() {
-  const bool colors_enabled = CustomColorsToggle().IsOn();
+  const bool candidate_style_enabled =
+      settings_.active_theme_id == ziliu::core::kDefaultThemeId;
+  CandidateWindowStyleCard().Opacity(candidate_style_enabled ? 1.0 : 0.45);
+  CandidateWindowStyleCustomThemeHint().Visibility(
+      candidate_style_enabled ? Microsoft::UI::Xaml::Visibility::Collapsed
+                              : Microsoft::UI::Xaml::Visibility::Visible);
+
+  const bool colors_enabled = candidate_style_enabled && CustomColorsToggle().IsOn();
   CandidateColorControls().IsHitTestVisible(colors_enabled);
-  CandidateColorControls().Opacity(colors_enabled ? 1.0 : 0.45);
-  CandidateChineseFontCombo().IsEnabled(CustomFontsToggle().IsOn());
-  CandidateEnglishFontCombo().IsEnabled(CustomFontsToggle().IsOn());
-  CandidateFontSizeCombo().IsEnabled(CustomFontSizeToggle().IsOn());
+  CandidateColorControls().Opacity(CustomColorsToggle().IsOn() ? 1.0 : 0.45);
+  CustomColorsToggle().IsEnabled(candidate_style_enabled);
+  PreeditColorButton().IsEnabled(colors_enabled);
+  HighlightedColorButton().IsEnabled(colors_enabled);
+  CandidateTextColorButton().IsEnabled(colors_enabled);
+  BackgroundColorButton().IsEnabled(colors_enabled);
+  CustomFontsToggle().IsEnabled(candidate_style_enabled);
+  CandidateChineseFontCombo().IsEnabled(candidate_style_enabled && CustomFontsToggle().IsOn());
+  CandidateEnglishFontCombo().IsEnabled(candidate_style_enabled && CustomFontsToggle().IsOn());
+  CustomFontSizeToggle().IsEnabled(candidate_style_enabled);
+  CandidateFontSizeCombo().IsEnabled(candidate_style_enabled && CustomFontSizeToggle().IsOn());
+  CandidateScaleToggle().IsEnabled(candidate_style_enabled);
 }
 
 void MainWindow::UpdateColorSwatches() {
@@ -2101,6 +2138,7 @@ void MainWindow::RebuildThemeList() {
     row.Child(layout);
     ThemeList().Children().Append(row);
   }
+  UpdateAppearanceControlStates();
 }
 
 bool MainWindow::SelectTheme(std::string_view theme_id) {
@@ -2392,7 +2430,7 @@ winrt::fire_and_forget MainWindow::ImportTheme() {
       co_return;
     }
     static constexpr COMDLG_FILTERSPEC filters[] = {
-        {L"字流主题包 (*.zlt)", L"*.zlt"},
+        {L"字流 / 搜狗主题包 (*.zlt;*.ssf)", L"*.zlt;*.ssf"},
         {L"所有文件 (*.*)", L"*.*"},
     };
     static_cast<void>(
@@ -2430,8 +2468,9 @@ winrt::fire_and_forget MainWindow::ImportTheme() {
     archive_path = std::filesystem::path(selected_path_text);
     CoTaskMemFree(selected_path_text);
   }
-  if (_wcsicmp(archive_path.extension().c_str(), L".zlt") != 0) {
-    show_error(L"请选择扩展名为 .zlt 的主题包。");
+  if (_wcsicmp(archive_path.extension().c_str(), L".zlt") != 0 &&
+      _wcsicmp(archive_path.extension().c_str(), L".ssf") != 0) {
+    show_error(L"请选择扩展名为 .zlt 或 .ssf 的主题包。");
     co_return;
   }
 
@@ -2581,10 +2620,17 @@ winrt::fire_and_forget MainWindow::DeleteTheme(std::string theme_id) {
       co_return;
     }
 
-    const auto quarantined =
-        QuarantineThemeDirectory(directory_handle.Get(), *themes_directory);
+    DWORD quarantine_error = ERROR_SUCCESS;
+    const auto quarantined = QuarantineThemeDirectory(
+        directory_handle.Get(), *themes_directory, &quarantine_error);
     if (!quarantined.has_value()) {
-      show_error(L"无法安全隔离主题目录，未删除任何文件。");
+      std::wstring message = L"无法安全隔离主题目录，未删除任何文件。";
+      if (quarantine_error != ERROR_SUCCESS) {
+        message += L"（Win32 错误 ";
+        message += std::to_wstring(quarantine_error);
+        message += L"）";
+      }
+      show_error(message);
       co_return;
     }
     quarantine_directory = *quarantined;

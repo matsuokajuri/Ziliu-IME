@@ -37,6 +37,22 @@ add_test(
   NAME ziliu_ui_coordinate_space_tests
   COMMAND ziliu_ui_coordinate_space_tests)
 
+add_executable(ziliu_ui_sogou_gdi_raster_scale_tests ui_sogou_gdi_raster_scale_tests.cpp)
+target_link_libraries(ziliu_ui_sogou_gdi_raster_scale_tests PRIVATE gdi32)
+ziliu_configure_target(ziliu_ui_sogou_gdi_raster_scale_tests)
+
+add_test(
+  NAME ziliu_ui_sogou_gdi_raster_scale_tests
+  COMMAND ziliu_ui_sogou_gdi_raster_scale_tests)
+
+add_executable(ziliu_ui_sogou_bitmap_patch_tests ui_sogou_bitmap_patch_tests.cpp)
+target_link_libraries(ziliu_ui_sogou_bitmap_patch_tests PRIVATE ziliu_core d2d1 gdi32)
+ziliu_configure_target(ziliu_ui_sogou_bitmap_patch_tests)
+
+add_test(
+  NAME ziliu_ui_sogou_bitmap_patch_tests
+  COMMAND ziliu_ui_sogou_bitmap_patch_tests)
+
 add_executable(ziliu_theme_manifest_tests theme_manifest_tests.cpp)
 target_link_libraries(ziliu_theme_manifest_tests PRIVATE ziliu_core)
 ziliu_configure_target(ziliu_theme_manifest_tests)
@@ -50,6 +66,12 @@ ziliu_configure_target(ziliu_sogou_theme_tests)
 add_test(NAME ziliu_sogou_theme_tests COMMAND ziliu_sogou_theme_tests)
 
 if(WIN32)
+  add_executable(ziliu_sogou_ssf_import_tests sogou_ssf_import_tests.cpp
+    ../src/settings/sogou_theme_import.cpp ../src/settings/sogou_ssf_container.cpp)
+  target_link_libraries(ziliu_sogou_ssf_import_tests PRIVATE ziliu_core bcrypt ole32 windowscodecs)
+  ziliu_configure_target(ziliu_sogou_ssf_import_tests)
+  add_test(NAME ziliu_sogou_ssf_import_tests COMMAND ziliu_sogou_ssf_import_tests)
+  set_tests_properties(ziliu_sogou_ssf_import_tests PROPERTIES TIMEOUT 30)
   add_executable(ziliu_sogou_ssf_container_tests
     sogou_ssf_container_tests.cpp
     ../src/settings/sogou_ssf_container.cpp)
