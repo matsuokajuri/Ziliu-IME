@@ -54,7 +54,9 @@ reparse、额外文件、hash 不一致或注册指向未能确认时一律失�
 
 安装还为执行安装的当前用户写入精确的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
 值 `ZiliuBroker`，以便登录后先启动同一版本的 Broker。SearchHost 等受限制的输入宿主不能
-可靠地在首次按键时拉起独立 Broker；已有同名启动值一律不覆盖。卸载只移除仍指向本版本
+可靠地在首次按键时拉起独立 Broker。升级时，只有旧启动值是普通字符串、且精确指向当前已注册
+TIP 同目录的 `ZiliuBroker.exe`，才将其认定为本产品的旧值并替换；未知同名值仍拒绝覆盖。
+注册切换前再次核对旧 TIP 和启动值，失败回滚时恢复可信旧值。卸载只移除仍指向本版本
 Broker 的同名值，不改动其他用户的启动项。此 alpha 的自动启动仅覆盖执行安装的用户，
 不能据此宣称多用户会话已验收。
 
@@ -151,3 +153,38 @@ guest 证据保留在 `C:\ZiliuCompat\alpha-recheck-20260923\r6\`（含
 正常显示。这两次无效焦点前提不能证明定位回归；真实快速切换行为仍需另设可重复的聚焦门禁，
 不可据此修改渲染器，也不可将其计入本轮通过项。当前结论仅为**冻结 r6 的本地未签名候选包验收
 在上述范围内通过**，不是公开发布批准，也不是自定义 SSF 逐像素认证。
+
+## 2026-09-23 r7 代码审计与完整本地功能验收
+
+本轮审计了发布脚本、TSF 隐私/启动边界、IPC/Broker 与主题加载的关键路径。唯一在发布路径
+复现的阻断是旧版字流已拥有 `ZiliuBroker` 启动值时，安装器将自身的可信旧值当作冲突拒绝；
+已在 `625139822b2838b2018a8b8e04a67b13967708ae` 中做定向修复。此审计不是对每个源码分支
+的形式化证明；下方结果仍以冻结包的实际构建和 guest 行为为准。
+
+被测 ZIP：`build/release/alpha-audit-20260923-r7/Ziliu-0.1.0-alpha.1-win11-x64-unsigned-test-only.zip`，
+SHA-256 `EC4F22358403794F00A0760487B093E7B232F2C543B0C419D6EFE03E5C10625B`。
+`release.json` 记录上述 commit、`sourceTrackedClean=true`；`VerifyOnly` 通过。相同输入另行
+打包一次，ZIP SHA-256 完全相同。Release x64 构建和 CTest `17/17` 通过。本轮未在主机安装
+候选包，未创建 tag、GitHub Release 或公开下载。
+
+测试 VM 为 `ziliu-compat-20260913`（ID `C35593B3-6EFD-4652-8C35-50C1D2DE6355`，guest
+`USERCUA-NQG4SL2`）。主机侧截图保存在 `build/test-artifacts/alpha-r7-20260923/`；原生
+InputScope 与 TSF 注册枚举的 JSON 保存在 guest 的 `C:\ZiliuCompat\alpha-r7-20260923\`。
+
+| 验收单元 | r7 结果 | 证据和边界 |
+|---|---|---|
+| 旧版升级与登录收敛 | PASS | 安装前旧 TIP 为 `settings-fix-1`、旧 Broker 启动值与它同目录；升级 exit 0。重启后 COM、HKCU Run、Broker 进程和 Notepad 加载的 TIP 均指向本包版本目录，TIP/ Broker 文件 hash 与包内一致 |
+| 陌生同名启动值防护 | PASS | guest 内以不匹配旧 TIP 的临时 `ZiliuBroker` Run 值调用同一安装器，明确拒绝、exit 1；旧 TIP 未变、候选包版本目录未创建、临时 Run 值未被覆盖。随后只移除本轮临时值，恢复测试前 Run 不存在的状态 |
+| 无现存注册时安装 | PASS | 首轮完整卸载后确认版本目录、COM、CTF TIP、Run 消失，TSF service/profile 不再枚举且类别为空；随后本包重新安装 exit 0，重启后 Broker 自动启动、Notepad 加载本包 TIP，逐键 `n i h a o Space` 提交精确 `你好` |
+| 普通输入与 Windows 搜索 | PASS | Notepad、任务栏搜索、开始菜单搜索均用单个虚拟键输入 `n i h a o` 并用 Space 提交；机器读取均为 `U+4F60 U+597D`，两处搜索显示候选框 |
+| 输入法指示器菜单 | PASS | 普通输入、任务栏搜索及开始菜单打开时，右键指示器均出现字流快捷菜单；稳定截图分别为 `64-notepad-right-menu.png`、`66-taskbar-right-menu.png`、`67-start-right-menu.png` |
+| 原生隐私字段及不学习 | PASS（限定） | 原生 TSF fixture 导出的 `native-field-evidence.json`：`IS_PRIVATE=61`，普通和私有字段提交 `你好`；password 为原始 `nihao`、numeric PIN 为原始 `1234`。私有字段连续四次输入及失焦后，10 个 `rime_ice.userdb` 文件的路径、大小、UTC 时间戳和 SHA-256 均未变化；仅证明本轮固定输入未观察到学习写入 |
+| Edge 字段 | PASS（限定） | 离线合成页面导出 Unicode 与事件：普通及返回普通字段为 `你好` 且有 composition 事件；密码为原始 `nihao`、合成 PIN-like 为原始 `1234` 且仅有 input 事件。HTML PIN-like 不代替上方原生 PIN 验收 |
+| Settings 与自定义 SSF | PASS（功能限定） | Settings 进程实际加载版本目录内的 `Microsoft.WindowsAppRuntime.dll` 和 `Microsoft.UI.Xaml.dll`；最大化外观页可用。新导入的 `Win7风格` SSF SHA-256 为 `45D2C6391FF51F806249374E96550C5B37BA2484BB760C1729A663AC409F9764`，manifest 名称/作者/版本为 `Win7风格`、`actualist88`、`4.2`，启用时样式控件禁用；Notepad 与两处 Windows 搜索均显示自定义皮肤候选框并提交 `你好` |
+| H1/V1 与缺字体验证 | PASS（功能限定） | 已安装的 custom SSF `sogou.4105ee8f…` 声明“荆南麦圆体”，guest 字体注册表无此字体；横排、竖排预览和实际竖排候选文字可读，无方框字。实际竖排截图 `86-skin-c-v1-actual.png`。这不是与搜狗逐像素一致的认证 |
+| 卸载、用户数据与 VM 终态 | PASS | 两轮均验证“文件被加载→保留 cleanup receipt→正常重启→再次卸载 exit 0”；版本目录、COM、CTF TIP、Run 清除，TSF service/profile 不再枚举且类别为空。原有 `settings-fix-1` TIP 路径与 SHA-256 `B64FEEB2…` 恢复，原 66 个用户文件逐文件 SHA-256 与测试前备份相同；本轮产生的 68 文件状态单独保存在 guest 测试目录。仅测试 VM 最终为 Off |
+| 公开发行条件 | BLOCKED | 包仍未签名，第三方声明仍待正式发行前复核；本轮只批准本地未签名候选包测试，不代表公开发布批准 |
+
+结论：冻结 r7 包在上述 **0.1.0-alpha.1 本地功能验收范围**内通过。不同应用/设置组合、
+全部 SSF 及逐像素 parity 均不由这一轮证明；不能把测试数量或这些功能通过项计为自定义
+SSF 渲染最终目标的完成度。
