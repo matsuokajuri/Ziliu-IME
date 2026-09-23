@@ -1,4 +1,28 @@
-# Ziliu 任务交接：自定义 SSF 三皮肤几何对比
+# Ziliu 交接：当前工作目录（2026-09-23）
+
+本节优先于下方历史记录。下方出现的旧 worktree 路径、当时的 HEAD、失败状态与下一步，
+仅用于追溯，不再代表当前工作环境或最新验收结论。阅读本文不构成继续工作的授权。
+
+- 唯一项目目录及 Git worktree：`D:\Projects\Ziliu-IME`，分支 `main`。本次目录整合前的
+  `main` 为 `cfca8527327d2247d8d4296fa90a24965c61924c`；后续请用 `git rev-parse HEAD`
+  核对当前提交。`Ziliu-IME-host-recovery-20260913` 与 `Ziliu-IME-clean-base-001` 已移除，
+  不要按下方历史路径运行命令。旧恢复备份已迁入 `.local-recovery/`（仅本地、Git 排除）。
+- 两份旧工作树的未提交源码未丢弃：主旧树快照
+  `refs/archive/worktree/pre-recovery-20260923`（原 216 项），clean-base 快照
+  `refs/archive/worktree/clean-base-20260923`（原 12 项）。对应历史提交仍在
+  `archive/pre-recovery-20260913` 与 `archive/salvage-20260814` 分支。不要把这些旧实验
+  自动合并到 `main`。
+- 最新本地未签名 Alpha 包位于
+  `build/release/alpha-audit-20260923-r7/Ziliu-0.1.0-alpha.1-win11-x64-unsigned-test-only.zip`，
+  SHA-256 为 `EC4F22358403794F00A0760487B093E7B232F2C543B0C419D6EFE03E5C10625B`。
+  最新 guest 截图在 `build/test-artifacts/alpha-r7-20260923/`；旧截图在
+  `build/legacy-test-artifacts/`，旧研究证据在 `build/research/`，回滚备份及恢复资料在
+  `.local-recovery/`。这些是本地证据，不是产品源文件或公开发行物。
+- r7 的本地功能验收范围与限制以 `docs/ALPHA-RELEASE.md` 最后一节为准：功能检查通过，
+  但未签名、未公开发布，也没有完成所有自定义 SSF 的逐像素认证。目录整合没有更改产品
+  源码或重新运行构建/VM 验收；Git 连通性和工作树清洁度已核对。
+
+# 历史交接：自定义 SSF 三皮肤几何对比
 
 更新：2026-09-14（Asia/Tokyo）。当前状态核对时间：2026-09-13 21:03:42 UTC。
 本文用于接手工作，不是继续执行授权。阅读本文不代表用户授权启动任务。
