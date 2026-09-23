@@ -8,8 +8,8 @@ namespace ziliu::core {
 SessionHost::SessionHost(EngineFactory engine_factory)
     : engine_factory_(std::move(engine_factory)) {}
 
-std::uint64_t SessionHost::CreateSession() {
-  auto engine = engine_factory_ ? engine_factory_() : nullptr;
+std::uint64_t SessionHost::CreateSession(bool restricted) {
+  auto engine = engine_factory_ ? engine_factory_(restricted) : nullptr;
   if (engine == nullptr) {
     return 0;
   }
@@ -30,7 +30,11 @@ ipc::Response SessionHost::Handle(const ipc::Request& request) {
     return response;
   }
   if (request.command == ipc::Command::kCreateSession) {
-    response.session_id = CreateSession();
+    if (request.session_id != 0 || request.value > 1) {
+      response.status = ipc::Status::kInvalidRequest;
+      return response;
+    }
+    response.session_id = CreateSession(request.value != 0);
     if (response.session_id == 0) {
       response.status = ipc::Status::kInternalError;
     }

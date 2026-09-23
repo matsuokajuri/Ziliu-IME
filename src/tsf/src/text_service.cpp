@@ -1,5 +1,7 @@
 #include "ziliu/tsf/text_service.h"
 #include "commit_caret.h"
+#include "input_privacy.h"
+#include "startup_key_queue.h"
 
 #include "ziliu/core/ipc_protocol.h"
 #include "ziliu/core/settings.h"
@@ -27,8 +29,13 @@
 
 namespace ziliu::tsf {
 
+// A newly created SearchHost composition can take longer than the default
+// 100 ms IPC budget on its first Rime key. Keep a finite bound without
+// dropping that first key into the search box as raw Latin text.
+constexpr std::uint32_t kInputBrokerTimeoutMilliseconds = 500;
+
 struct TextServiceState {
-  ipc::PipeClient client;
+  ipc::PipeClient client{ipc::kBrokerPipeName, kInputBrokerTimeoutMilliseconds};
   std::uint64_t request_id = 1;
   std::uint64_t session_id = 0;
   core::ipc::Response pending_response;
@@ -45,10 +52,19 @@ struct TextServiceState {
   std::size_t pending_caret_back = 0;
   Microsoft::WRL::ComPtr<ITfRange> committed_pair_range;
   Microsoft::WRL::ComPtr<ITfContext> committed_pair_context;
+  Microsoft::WRL::ComPtr<ITfContext> key_context;
+  detail::InputPrivacy key_privacy = detail::InputPrivacy::kBlocked;
+  Microsoft::WRL::ComPtr<ITfContext> startup_context;
+  Microsoft::WRL::ComPtr<ITfRange> startup_selection;
+  detail::StartupKeyQueue startup_keys;
   std::wstring committed_pair;
   HWND committed_pair_focus = nullptr;
   HWND committed_pair_foreground = nullptr;
   ULONGLONG committed_pair_time = 0;
+  ULONGLONG startup_started_time = 0;
+  HWND startup_window = nullptr;
+  HWND startup_focus = nullptr;
+  HWND startup_foreground = nullptr;
   bool committed_pair_needs_left = false;
   bool broker_started = false;
   bool settings_file_known = false;
@@ -57,15 +73,35 @@ struct TextServiceState {
   bool switch_key_used = false;
   bool opening_quote = true;
   bool publishing_input_mode = false;
+  bool startup_timer_active = false;
+  bool startup_replay_scheduled = false;
 };
 
 class CompositionEditSession final : public ITfEditSession {
  public:
+  enum class StartupMode { kReplay, kFallback };
+
   CompositionEditSession(TextService* service, ITfContext* context, bool verify_caret = false)
       : service_(service), context_(context), verify_caret_(verify_caret) {
     service_->AddRef();
     context_->AddRef();
   }
+
+  CompositionEditSession(TextService* service, ITfContext* context, WPARAM key, bool key_up)
+      : CompositionEditSession(service, context) {
+    process_key_ = true;
+    key_ = key;
+    key_up_ = key_up;
+  }
+
+  CompositionEditSession(TextService* service, ITfContext* context,
+                         std::uint64_t startup_generation, StartupMode startup_mode)
+      : CompositionEditSession(service, context) {
+    startup_generation_ = startup_generation;
+    startup_fallback_ = startup_mode == StartupMode::kFallback;
+  }
+
+  [[nodiscard]] BOOL eaten() const { return eaten_; }
 
   STDMETHODIMP QueryInterface(REFIID interface_id, void** object) override {
     if (object == nullptr) {
@@ -92,6 +128,15 @@ class CompositionEditSession final : public ITfEditSession {
   }
 
   STDMETHODIMP DoEditSession(TfEditCookie edit_cookie) override {
+    if (startup_generation_ != 0) {
+      return startup_fallback_
+                 ? service_->FallbackStartupKeys(edit_cookie, context_, startup_generation_)
+                 : service_->ReplayStartupKeys(edit_cookie, context_, startup_generation_);
+    }
+    if (process_key_) {
+      return key_up_ ? service_->HandleKeyUp(edit_cookie, context_, key_, &eaten_)
+                     : service_->HandleKeyDown(edit_cookie, context_, key_, &eaten_);
+    }
     if (verify_caret_) {
       return service_->VerifyCommittedPairCaret(edit_cookie, context_);
     }
@@ -108,9 +153,21 @@ class CompositionEditSession final : public ITfEditSession {
   TextService* service_;
   ITfContext* context_;
   bool verify_caret_;
+  bool process_key_ = false;
+  bool key_up_ = false;
+  WPARAM key_ = 0;
+  BOOL eaten_ = FALSE;
+  std::uint64_t startup_generation_ = 0;
+  bool startup_fallback_ = false;
 };
 
 namespace {
+
+constexpr wchar_t kStartupWindowClass[] = L"Ziliu.StartupReplayWindow.v1";
+constexpr UINT_PTR kStartupTimer = 1;
+constexpr UINT kStartupPollMilliseconds = 15;
+constexpr ULONGLONG kStartupMaximumMilliseconds = 30000;
+constexpr std::size_t kStartupReplayBatchSize = 8;
 
 bool HasAltModifier() { return (GetKeyState(VK_MENU) & 0x8000) != 0; }
 
@@ -373,6 +430,32 @@ std::wstring PairedPunctuation(WPARAM key, bool shifted, core::PunctuationStyle 
   }
 }
 
+void AppendStartupFallbackKey(const detail::StartupKey& key,
+                              core::PunctuationStyle punctuation_style,
+                              bool* opening_quote, std::wstring* text) {
+  const WPARAM value = static_cast<WPARAM>(key.key);
+  if (IsLetterKey(value)) {
+    const wchar_t letter = static_cast<wchar_t>(value);
+    text->push_back(key.shifted ? letter : static_cast<wchar_t>(letter - L'A' + L'a'));
+  } else if (value == VK_OEM_7 && !key.shifted) {
+    text->push_back(L'\'');
+  } else if (value == VK_BACK) {
+    if (!text->empty()) {
+      text->pop_back();
+    }
+  } else if (value == VK_ESCAPE) {
+    text->clear();
+  } else if (value == VK_SPACE) {
+    text->push_back(L' ');
+  } else if (value == VK_RETURN) {
+    text->push_back(L'\n');
+  } else if (value >= L'0' && value <= L'9') {
+    text->push_back(static_cast<wchar_t>(value));
+  } else {
+    text->append(Punctuation(value, key.shifted, punctuation_style, opening_quote));
+  }
+}
+
 std::optional<std::filesystem::path> BrokerPath() {
   std::wstring module_path(32768, L'\0');
   const DWORD length = GetModuleFileNameW(ModuleInstance(), module_path.data(),
@@ -457,6 +540,12 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
   client_id_ = client_id;
   activation_flags_ = flags;
 
+  // Secure activation must not start the broker, load user settings, or expose
+  // settings UI. This alpha deliberately leaves secure input to the application.
+  if ((flags & TF_TMAE_SECUREMODE) != 0) {
+    return S_OK;
+  }
+
   ITfKeystrokeMgr* keystroke_manager = nullptr;
   const HRESULT query_result =
       thread_manager_->QueryInterface(IID_PPV_ARGS(&keystroke_manager));
@@ -478,6 +567,35 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
     return input_mode_sink_result;
   }
 
+  state_->candidate_window.SetThemeResourceLoader(
+      [this](std::string_view theme_id,
+             std::string_view resource) -> std::optional<std::vector<std::byte>> {
+        const std::size_t limit = resource.empty() ? core::kMaximumThemeManifestBytes
+                                                    : core::kMaximumThemeAssetBytes;
+        if (theme_id.empty() ||
+            (!resource.empty() && !core::IsSafeThemeAssetPath(resource))) {
+          return std::nullopt;
+        }
+        std::vector<std::byte> contents;
+        for (;;) {
+          core::ipc::Request request{state_->request_id++, 0,
+                                     core::ipc::Command::kGetThemeResource,
+                                     static_cast<std::uint32_t>(contents.size())};
+          request.theme_id = theme_id;
+          request.resource = resource;
+          const auto response = state_->client.Exchange(request);
+          if (!response.has_value() || response->status != core::ipc::Status::kOk ||
+              response->theme_chunk.size() > limit - contents.size()) {
+            return std::nullopt;
+          }
+          contents.insert(contents.end(), response->theme_chunk.begin(),
+                          response->theme_chunk.end());
+          if (response->theme_chunk.size() < core::ipc::kMaximumThemeChunkBytes) {
+            return contents;
+          }
+        }
+      });
+
   ITfLangBarItemMgr* language_bar_manager = nullptr;
   if (SUCCEEDED(thread_manager_->QueryInterface(IID_PPV_ARGS(&language_bar_manager)))) {
     const auto settings_path = SettingsExecutablePath();
@@ -485,6 +603,22 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
         settings_path.has_value() ? settings_path->native() : std::wstring{}, [this]() {
           BOOL eaten = FALSE;
           return ToggleInputMode(nullptr, &eaten, false);
+        }, [this](LONG x, LONG y) {
+          StartBroker();
+          core::ipc::Request request{state_->request_id++, 0,
+                                     core::ipc::Command::kOpenQuickMenu, 0};
+          request.point_x = x;
+          request.point_y = y;
+          const auto response = state_->client.Exchange(request);
+          return response.has_value() && response->status == core::ipc::Status::kOk
+                     ? S_OK : E_FAIL;
+        }, [this](std::uint32_t action) {
+          StartBroker();
+          const core::ipc::Request request{state_->request_id++, 0,
+                                           core::ipc::Command::kRunMenuAction, action};
+          const auto response = state_->client.Exchange(request);
+          return response.has_value() && response->status == core::ipc::Status::kOk
+                     ? S_OK : E_FAIL;
         });
     if (language_bar_button != nullptr &&
         SUCCEEDED(language_bar_manager->AddItem(language_bar_button))) {
@@ -523,7 +657,6 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* thread_manager, TfClientId cl
       state_->settings.default_input_mode == core::DefaultInputMode::kChinese;
   PublishInputMode();
   StartBroker();
-  static_cast<void>(EnsureSession());
   return S_OK;
 }
 
@@ -565,7 +698,6 @@ void TextService::StartBroker() {
   if (state_->broker_started) {
     return;
   }
-  state_->broker_started = true;
   const auto broker_path = BrokerPath();
   std::error_code file_error;
   if (!broker_path.has_value() ||
@@ -582,18 +714,30 @@ void TextService::StartBroker() {
   if (CreateProcessW(broker_path->c_str(), mutable_command.data(), nullptr, nullptr, FALSE,
                      CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, broker_path->parent_path().c_str(),
                      &startup_info, &process_info)) {
+    state_->broker_started = true;
     CloseHandle(process_info.hThread);
     CloseHandle(process_info.hProcess);
   }
 }
 
 bool TextService::EnsureSession() {
+  if ((activation_flags_ & TF_TMAE_SECUREMODE) != 0) {
+    return false;
+  }
   if (state_->session_id != 0) {
     return true;
   }
   StartBroker();
+  // Broker startup performs Rime deployment before publishing the pipe. A key
+  // callback must never wait for that work; readiness is polled by the startup
+  // timer and a normal bounded exchange is used only after the pipe exists.
+  if (!state_->client.IsServerAvailable()) {
+    return false;
+  }
+  const std::uint32_t restricted =
+      state_->key_privacy == detail::InputPrivacy::kRestricted ? 1U : 0U;
   const core::ipc::Request request{state_->request_id++, 0,
-                                   core::ipc::Command::kCreateSession, 0};
+                                   core::ipc::Command::kCreateSession, restricted};
   const auto response = state_->client.Exchange(request);
   if (!response.has_value() || response->status != core::ipc::Status::kOk ||
       response->session_id == 0) {
@@ -624,6 +768,185 @@ bool TextService::EnsureSession() {
   return true;
 }
 
+bool TextService::EnsureStartupWindow() {
+  if (state_->startup_window != nullptr) {
+    return true;
+  }
+  WNDCLASSW window_class{};
+  window_class.lpfnWndProc = StartupWindowProcedure;
+  window_class.hInstance = ModuleInstance();
+  window_class.lpszClassName = kStartupWindowClass;
+  if (RegisterClassW(&window_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    return false;
+  }
+  state_->startup_window =
+      CreateWindowExW(0, kStartupWindowClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE,
+                      nullptr, ModuleInstance(), this);
+  return state_->startup_window != nullptr;
+}
+
+bool TextService::IsFocusedContext(ITfContext* context) const {
+  if (thread_manager_ == nullptr || context == nullptr) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<ITfDocumentMgr> document;
+  if (FAILED(thread_manager_->GetFocus(document.GetAddressOf())) || document == nullptr) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<ITfContext> focused_context;
+  return SUCCEEDED(document->GetTop(focused_context.GetAddressOf())) &&
+         focused_context.Get() == context;
+}
+
+bool TextService::CaptureStartupTarget(TfEditCookie cookie, ITfContext* context,
+                                       bool capture_windows) {
+  TF_SELECTION selection{};
+  ULONG fetched = 0;
+  if (context == nullptr || FAILED(context->GetSelection(
+                                cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) ||
+      fetched != 1 || selection.range == nullptr) {
+    return false;
+  }
+  state_->startup_selection.Attach(selection.range);
+  if (capture_windows) {
+    state_->startup_focus = GetFocus();
+    state_->startup_foreground = GetForegroundWindow();
+  }
+  return true;
+}
+
+bool TextService::ValidateStartupTarget(TfEditCookie cookie, ITfContext* context) const {
+  if (context == nullptr || state_->startup_selection == nullptr ||
+      GetFocus() != state_->startup_focus ||
+      GetForegroundWindow() != state_->startup_foreground) {
+    return false;
+  }
+  TF_SELECTION selection{};
+  ULONG fetched = 0;
+  if (FAILED(context->GetSelection(cookie, TF_DEFAULT_SELECTION, 1, &selection, &fetched)) ||
+      fetched != 1 || selection.range == nullptr) {
+    return false;
+  }
+  Microsoft::WRL::ComPtr<ITfRange> current;
+  current.Attach(selection.range);
+  BOOL same_start = FALSE;
+  BOOL same_end = FALSE;
+  return SUCCEEDED(state_->startup_selection->IsEqualStart(
+             cookie, current.Get(), TF_ANCHOR_START, &same_start)) &&
+         SUCCEEDED(state_->startup_selection->IsEqualEnd(
+             cookie, current.Get(), TF_ANCHOR_END, &same_end)) &&
+         same_start != FALSE && same_end != FALSE;
+}
+
+LRESULT CALLBACK TextService::StartupWindowProcedure(HWND window, UINT message,
+                                                     WPARAM wparam, LPARAM lparam) {
+  TextService* service = nullptr;
+  if (message == WM_NCCREATE) {
+    const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lparam);
+    service = static_cast<TextService*>(create->lpCreateParams);
+    SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(service));
+  } else {
+    service = reinterpret_cast<TextService*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+  }
+  if (service != nullptr && message == WM_TIMER && wparam == kStartupTimer) {
+    service->OnStartupTimer();
+    return 0;
+  }
+  if (message == WM_NCDESTROY) {
+    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+bool TextService::ScheduleStartupReplay() {
+  if (state_->startup_timer_active || state_->startup_replay_scheduled ||
+      state_->startup_keys.empty()) {
+    return true;
+  }
+  if (!EnsureStartupWindow() ||
+      SetTimer(state_->startup_window, kStartupTimer, kStartupPollMilliseconds, nullptr) == 0) {
+    return false;
+  }
+  state_->startup_timer_active = true;
+  if (state_->startup_started_time == 0) {
+    state_->startup_started_time = GetTickCount64();
+  }
+  return true;
+}
+
+void TextService::CancelStartupReplay(bool destroy_window) {
+  if (state_->startup_timer_active && state_->startup_window != nullptr) {
+    KillTimer(state_->startup_window, kStartupTimer);
+  }
+  state_->startup_timer_active = false;
+  state_->startup_replay_scheduled = false;
+  state_->startup_started_time = 0;
+  state_->startup_context.Reset();
+  state_->startup_selection.Reset();
+  state_->startup_focus = nullptr;
+  state_->startup_foreground = nullptr;
+  state_->startup_keys.Cancel();
+  if (destroy_window && state_->startup_window != nullptr) {
+    DestroyWindow(state_->startup_window);
+    state_->startup_window = nullptr;
+    // The class owns a DLL window procedure. Remove it when the final window in
+    // this process is gone so the module can never unload with a stale callback.
+    static_cast<void>(UnregisterClassW(kStartupWindowClass, ModuleInstance()));
+  }
+}
+
+void TextService::OnStartupTimer() {
+  if (state_->startup_keys.empty() || state_->startup_context == nullptr ||
+      state_->startup_context.Get() != state_->key_context.Get() ||
+      state_->key_privacy == detail::InputPrivacy::kBlocked ||
+      !IsFocusedContext(state_->startup_context.Get()) ||
+      GetFocus() != state_->startup_focus ||
+      GetForegroundWindow() != state_->startup_foreground) {
+    CancelStartupReplay(false);
+    return;
+  }
+  const ULONGLONG now = GetTickCount64();
+  if (state_->startup_started_time != 0 &&
+      now - state_->startup_started_time >= kStartupMaximumMilliseconds) {
+    // Preserve accepted typing without waiting indefinitely for the broker. The
+    // fallback is a fresh, generation-checked TSF edit in the same context; it
+    // never synthesizes keys or crosses a privacy/focus transition.
+    state_->broker_started = false;
+    RequestStartupEdit(true);
+    return;
+  }
+  if (!state_->client.IsServerAvailable()) {
+    return;
+  }
+
+  RequestStartupEdit(false);
+}
+
+void TextService::RequestStartupEdit(bool fallback) {
+  if (state_->startup_window != nullptr && state_->startup_timer_active) {
+    KillTimer(state_->startup_window, kStartupTimer);
+  }
+  state_->startup_timer_active = false;
+  const std::uint64_t generation = state_->startup_keys.generation();
+  auto* edit = new (std::nothrow) CompositionEditSession(
+      this, state_->startup_context.Get(), generation,
+      fallback ? CompositionEditSession::StartupMode::kFallback
+               : CompositionEditSession::StartupMode::kReplay);
+  if (edit == nullptr) {
+    CancelStartupReplay(false);
+    return;
+  }
+  HRESULT edit_result = E_FAIL;
+  const HRESULT requested = state_->startup_context->RequestEditSession(
+      client_id_, edit, TF_ES_ASYNC | TF_ES_READWRITE, &edit_result);
+  edit->Release();
+  if (FAILED(requested)) {
+    CancelStartupReplay(false);
+    return;
+  }
+  state_->startup_replay_scheduled = true;
+}
+
 void TextService::RefreshSettings(bool force) {
   const auto path = SettingsPath();
   std::optional<std::string> contents;
@@ -648,6 +971,9 @@ void TextService::RefreshSettings(bool force) {
     }
     state_->remote_settings_probe_time = now;
     StartBroker();
+    if (!state_->client.IsServerAvailable()) {
+      return;
+    }
     const core::ipc::Request request{state_->request_id++, 0, core::ipc::Command::kGetSettings, 0};
     const auto response = state_->client.Exchange(request);
     if (!response.has_value() || response->status != core::ipc::Status::kOk) {
@@ -813,6 +1139,7 @@ void TextService::SynchronizeInputMode() {
   if (!ReadPublishedInputMode(&chinese_mode) || chinese_mode == state_->chinese_mode) {
     return;
   }
+  CancelStartupReplay(false);
   state_->chinese_mode = chinese_mode;
   state_->snapshot = {};
   state_->pending_response = {};
@@ -863,6 +1190,9 @@ void TextService::PublishInputMode() {
 
 void TextService::ResetRuntimeState() {
   ClearCommittedPairCaret();
+  CancelStartupReplay(true);
+  state_->key_context.Reset();
+  state_->key_privacy = detail::InputPrivacy::kBlocked;
   state_->session_id = 0;
   state_->snapshot = {};
   state_->pending_response = {};
@@ -876,12 +1206,15 @@ void TextService::ResetRuntimeState() {
 
 void TextService::AbandonSession(ITfContext* context) {
   static_cast<void>(context);
+  CancelStartupReplay(false);
   if (state_->session_id != 0) {
     const core::ipc::Request close_request{state_->request_id++, state_->session_id,
                                            core::ipc::Command::kCloseSession, 0};
     static_cast<void>(state_->client.Exchange(close_request));
   }
   state_->session_id = 0;
+  state_->key_context.Reset();
+  state_->key_privacy = detail::InputPrivacy::kBlocked;
   state_->snapshot = {};
   state_->pending_response = {};
   state_->candidate_page_offset = 0;
@@ -897,6 +1230,34 @@ bool TextService::IsInputModeSwitchKey(WPARAM wparam) const {
   return wparam == VK_SHIFT || wparam == VK_LSHIFT || wparam == VK_RSHIFT;
 }
 
+bool TextService::AllowKeyInContext(ITfContext* context, const TfEditCookie* cookie) {
+  const detail::InputPrivacy privacy = cookie == nullptr
+      ? detail::ClassifyInputContext(context, client_id_, activation_flags_)
+      : detail::ContextBlocksInput(context, activation_flags_)
+            ? detail::InputPrivacy::kBlocked
+            : detail::ClassifyScope(context, *cookie);
+  if (privacy != detail::InputPrivacy::kBlocked) {
+    if (detail::ShouldResetInputSession(
+            state_->key_privacy, privacy,
+            state_->key_context != nullptr && state_->key_context.Get() != context)) {
+      ClearCommittedPairCaret();
+      state_->switch_key_down = false;
+      state_->switch_key_used = false;
+      AbandonSession(context);
+    }
+    state_->key_context = context;
+    state_->key_privacy = privacy;
+    return true;
+  }
+  // Drop old preedit without committing it. No new key or sensitive field text
+  // is included in the close-session request, and the next safe field starts fresh.
+  ClearCommittedPairCaret();
+  state_->switch_key_down = false;
+  state_->switch_key_used = false;
+  AbandonSession(context);
+  return false;
+}
+
 bool TextService::ShouldHandleKey(WPARAM wparam) const {
   if (IsInputModeSwitchKey(wparam)) {
     return true;
@@ -907,19 +1268,23 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
   if (IsLetterKey(wparam)) {
     return true;
   }
+  const bool startup_composition = state_->startup_keys.HasCompositionIntent();
   if (wparam == VK_BACK || wparam == VK_ESCAPE) {
-    return !state_->snapshot.preedit.empty();
+    return !state_->snapshot.preedit.empty() || !state_->startup_keys.empty();
   }
   if (wparam == VK_SPACE) {
-    return !state_->snapshot.candidates.empty();
+    return !state_->snapshot.candidates.empty() || !state_->startup_keys.empty();
   }
   if (wparam == VK_RETURN) {
-    return !state_->snapshot.preedit.empty();
+    return !state_->snapshot.preedit.empty() || !state_->startup_keys.empty();
   }
   const bool shifted = HasShiftModifier() ||
                        (state_->settings.input_mode_switch_key ==
                             core::InputModeSwitchKey::kShift &&
                         state_->switch_key_down);
+  if (!shifted && !state_->startup_keys.empty() && wparam >= L'1' && wparam <= L'9') {
+    return true;
+  }
   if (!shifted && wparam >= L'1' && wparam <= L'9') {
     const auto slice = core::MakeCandidatePageSlice(
         state_->snapshot.candidates.size(), state_->settings.candidate_count,
@@ -927,7 +1292,7 @@ bool TextService::ShouldHandleKey(WPARAM wparam) const {
     const auto index = static_cast<std::size_t>(wparam - L'1');
     return index < slice.count;
   }
-  if (!shifted && !state_->snapshot.preedit.empty() &&
+  if (!shifted && (!state_->snapshot.preedit.empty() || startup_composition) &&
       (IsPageKey(wparam, state_->settings.page_key_set, false) ||
        IsPageKey(wparam, state_->settings.page_key_set, true))) {
     return true;
@@ -955,12 +1320,11 @@ void TextService::ShowCandidateWindow() {
 STDMETHODIMP TextService::OnSetFocus(BOOL foreground) {
   if (foreground) {
     RefreshSettings(true);
-    if (!state_->snapshot.empty()) {
-      ShowCandidateWindow();
-    }
+    // Do not restore a candidate surface before the new context's privacy gate.
+    state_->candidate_window.Hide();
     PublishInputMode();
   } else {
-    state_->candidate_window.Hide();
+    AbandonSession(nullptr);
   }
   return S_OK;
 }
@@ -978,25 +1342,32 @@ STDMETHODIMP TextService::OnChange(REFGUID guid) {
 
 STDMETHODIMP TextService::OnSetThreadFocus() {
   RefreshSettings(true);
-  if (!state_->snapshot.empty()) {
-    ShowCandidateWindow();
-  }
+  state_->candidate_window.Hide();
   PublishInputMode();
   return S_OK;
 }
 
 STDMETHODIMP TextService::OnKillThreadFocus() {
   ClearCommittedPairCaret();
-  state_->candidate_window.Hide();
+  AbandonSession(nullptr);
   return S_OK;
 }
 
 STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam,
-                                        BOOL* eaten) {
-  static_cast<void>(context);
+                                      BOOL* eaten) {
   static_cast<void>(lparam);
   if (eaten == nullptr) {
     return E_INVALIDARG;
+  }
+  *eaten = FALSE;
+  if (context == nullptr || (activation_flags_ & TF_TMAE_SECUREMODE) != 0) {
+    return S_OK;
+  }
+  // A host can deny a synchronous read lock while asking whether we would
+  // handle a key. Recheck the input scope under the actual key edit lock;
+  // OnKeyDown returns FALSE for blocked contexts so the host receives the key.
+  if (detail::ContextBlocksInput(context, activation_flags_)) {
+    return S_OK;
   }
   RefreshSettings(false);
   // Never move the caret after another key has begun a new edit.
@@ -1008,17 +1379,47 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext* context, WPARAM wparam, LPAR
     *eaten = FALSE;
     return S_OK;
   }
-  *eaten = IsInputModeSwitchKey(wparam) || EnsureSession() ? TRUE : FALSE;
+  // Only the actual key edit is allowed to create/use an engine session.
+  *eaten = TRUE;
   return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM lparam,
                                     BOOL* eaten) {
   static_cast<void>(lparam);
+  return RequestKeyEdit(context, wparam, false, eaten);
+}
+
+HRESULT TextService::RequestKeyEdit(ITfContext* context, WPARAM key, bool key_up, BOOL* eaten) {
   if (context == nullptr || eaten == nullptr) {
     return E_INVALIDARG;
   }
   *eaten = FALSE;
+  auto* edit = new (std::nothrow) CompositionEditSession(this, context, key, key_up);
+  if (edit == nullptr) return S_OK;
+  HRESULT result = E_FAIL;
+  // Hold the same TSF write lock from privacy authorization through broker
+  // processing and insertion. No key is forwarded before this callback runs.
+  const HRESULT requested = context->RequestEditSession(
+      client_id_, edit, TF_ES_SYNC | TF_ES_READWRITE, &result);
+  if (requested == S_OK && result == S_OK) {
+    *eaten = edit->eaten();
+  } else {
+    ClearCommittedPairCaret();
+    state_->switch_key_down = false;
+    state_->switch_key_used = false;
+    AbandonSession(context);
+  }
+  edit->Release();
+  // Policy refusal/lock failure is a key bypass, not a TSF callback failure.
+  return S_OK;
+}
+
+HRESULT TextService::HandleKeyDown(TfEditCookie cookie, ITfContext* context,
+                                  WPARAM wparam, BOOL* eaten) {
+  if (!AllowKeyInContext(context, &cookie)) {
+    return S_OK;
+  }
   if (IsInputModeSwitchKey(wparam)) {
     state_->switch_key_down = true;
     state_->switch_key_used = false;
@@ -1028,13 +1429,36 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
   if (state_->switch_key_down) {
     state_->switch_key_used = true;
   }
-  if (!EnsureSession() || !ShouldHandleKey(wparam)) {
+  if (!ShouldHandleKey(wparam)) {
     return S_OK;
   }
   const bool shifted = HasShiftModifier() ||
                        (state_->settings.input_mode_switch_key ==
                             core::InputModeSwitchKey::kShift &&
                         state_->switch_key_down);
+  if (wparam == VK_ESCAPE && !state_->startup_keys.empty()) {
+    CancelStartupReplay(false);
+    *eaten = TRUE;
+    return S_OK;
+  }
+
+  const bool punctuation_without_preedit =
+      state_->startup_keys.empty() && state_->snapshot.preedit.empty() &&
+      (!PairedPunctuation(wparam, shifted, state_->settings.punctuation_style).empty() ||
+       !Punctuation(wparam, shifted, state_->settings.punctuation_style, nullptr).empty());
+  if (!state_->startup_keys.empty()) {
+    QueueStartupKey(cookie, context, wparam, shifted, eaten);
+    return S_OK;
+  }
+  if (state_->session_id == 0 && !punctuation_without_preedit && !EnsureSession()) {
+    QueueStartupKey(cookie, context, wparam, shifted, eaten);
+    return S_OK;
+  }
+  return ProcessKeyDown(context, wparam, shifted, eaten);
+}
+
+HRESULT TextService::ProcessKeyDown(ITfContext* context, WPARAM wparam, bool shifted,
+                                    BOOL* eaten) {
   if (!shifted && !state_->snapshot.preedit.empty()) {
     if (IsPageKey(wparam, state_->settings.page_key_set, false)) {
       return HandleCandidatePage(context, false, eaten);
@@ -1071,8 +1495,192 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* context, WPARAM wparam, LPARAM l
   return ApplyKeyResponse(context, wparam, eaten);
 }
 
+void TextService::QueueStartupKey(TfEditCookie cookie, ITfContext* context, WPARAM key,
+                                  bool shifted, BOOL* eaten) {
+  if (state_->startup_keys.empty()) {
+    state_->startup_context = context;
+    state_->startup_started_time = GetTickCount64();
+    if (!CaptureStartupTarget(cookie, context, true)) {
+      CancelStartupReplay(false);
+      *eaten = FALSE;
+      return;
+    }
+  }
+  if (state_->startup_context.Get() != context) {
+    CancelStartupReplay(false);
+    *eaten = TRUE;
+    return;
+  }
+  detail::StartupKeyEffect effect = detail::StartupKeyEffect::kNeutral;
+  if (IsLetterKey(key) || (!shifted && key == VK_OEM_7)) {
+    effect = detail::StartupKeyEffect::kCompose;
+  } else if (key == VK_BACK) {
+    effect = detail::StartupKeyEffect::kBackspace;
+  } else if (key == VK_ESCAPE) {
+    effect = detail::StartupKeyEffect::kCancel;
+  } else if (key == VK_SPACE || key == VK_RETURN ||
+             (!shifted && key >= L'1' && key <= L'9') ||
+             (!IsPageKey(key, state_->settings.page_key_set, false) &&
+              !IsPageKey(key, state_->settings.page_key_set, true) &&
+              (!PairedPunctuation(key, shifted, state_->settings.punctuation_style).empty() ||
+               !Punctuation(key, shifted, state_->settings.punctuation_style, nullptr).empty()))) {
+    effect = detail::StartupKeyEffect::kCommit;
+  }
+  if (!state_->startup_keys.Push(static_cast<std::uint32_t>(key), shifted, effect)) {
+    // Preserve every already-accepted key through the same-context fallback.
+    // The overflow-triggering key is then forwarded only after that synchronous
+    // insertion; the 2048-key bound is unreachable during normal startup input.
+    OutputDebugStringW(L"Ziliu: startup key queue overflow; using text fallback\n");
+    const std::uint64_t generation = state_->startup_keys.generation();
+    const HRESULT fallback = FallbackStartupKeys(cookie, context, generation);
+    // The existing queue has been inserted synchronously. Let the overflow key
+    // reach the host only after that insertion, preserving document order.
+    *eaten = FAILED(fallback) ? TRUE : FALSE;
+    return;
+  }
+  *eaten = TRUE;
+  if (!ScheduleStartupReplay()) {
+    const std::uint64_t generation = state_->startup_keys.generation();
+    static_cast<void>(FallbackStartupKeys(cookie, context, generation));
+  }
+}
+
+HRESULT TextService::ReplayStartupKeys(TfEditCookie cookie, ITfContext* context,
+                                       std::uint64_t generation) {
+  if (generation != state_->startup_keys.generation()) {
+    return S_OK;
+  }
+  state_->startup_replay_scheduled = false;
+  if (state_->startup_context.Get() != context || !IsFocusedContext(context) ||
+      !ValidateStartupTarget(cookie, context)) {
+    CancelStartupReplay(false);
+    return S_OK;
+  }
+  if (!AllowKeyInContext(context, &cookie)) {
+    return S_OK;
+  }
+  // Privacy authorization can abandon the old session and advance the queue
+  // generation. Never let that callback operate on replacement state.
+  if (generation != state_->startup_keys.generation() ||
+      state_->startup_context.Get() != context) {
+    return S_OK;
+  }
+  if (!EnsureSession()) {
+    if (!ScheduleStartupReplay()) {
+      return FallbackStartupKeys(cookie, context, generation);
+    }
+    return S_OK;
+  }
+
+  const auto pending = state_->startup_keys.Take(generation);
+  const std::size_t batch_size =
+      std::min(kStartupReplayBatchSize, pending.size());
+  for (std::size_t index = 0; index < batch_size; ++index) {
+    const detail::StartupKey& key = pending[index];
+    if (generation != state_->startup_keys.generation() ||
+        state_->key_context.Get() != context) {
+      return S_OK;
+    }
+    BOOL replay_eaten = FALSE;
+    const HRESULT result = ProcessKeyDown(context, static_cast<WPARAM>(key.key),
+                                          key.shifted, &replay_eaten);
+    if (FAILED(result)) {
+      if (!IsFocusedContext(context) || !AllowKeyInContext(context, &cookie)) {
+        return S_OK;
+      }
+      std::wstring fallback;
+      bool opening_quote = state_->opening_quote;
+      for (std::size_t tail = index; tail < pending.size(); ++tail) {
+        AppendStartupFallbackKey(pending[tail], state_->settings.punctuation_style,
+                                 &opening_quote, &fallback);
+      }
+      state_->opening_quote = opening_quote;
+      if (fallback.empty()) {
+        return S_OK;
+      }
+      BOOL ignored = FALSE;
+      return CommitText(context, std::move(fallback), &ignored);
+    }
+    if (replay_eaten == FALSE) {
+      std::wstring fallback;
+      bool opening_quote = state_->opening_quote;
+      AppendStartupFallbackKey(key, state_->settings.punctuation_style,
+                               &opening_quote, &fallback);
+      state_->opening_quote = opening_quote;
+      if (!fallback.empty()) {
+        BOOL ignored = FALSE;
+        const HRESULT fallback_result = CommitText(context, std::move(fallback), &ignored);
+        if (FAILED(fallback_result)) {
+          return fallback_result;
+        }
+      }
+    }
+  }
+  for (std::size_t index = batch_size; index < pending.size(); ++index) {
+    const detail::StartupKey& key = pending[index];
+    if (!state_->startup_keys.Push(key.key, key.shifted, key.effect)) {
+      OutputDebugStringW(L"Ziliu: startup replay requeue overflow\n");
+      break;
+    }
+  }
+  if (state_->startup_keys.empty()) {
+    state_->startup_context.Reset();
+    state_->startup_selection.Reset();
+    state_->startup_focus = nullptr;
+    state_->startup_foreground = nullptr;
+    state_->startup_started_time = 0;
+  } else {
+    if (!CaptureStartupTarget(cookie, context, false)) {
+      CancelStartupReplay(false);
+      return S_OK;
+    }
+    if (!ScheduleStartupReplay()) {
+      return FallbackStartupKeys(cookie, context, generation);
+    }
+  }
+  return S_OK;
+}
+
+HRESULT TextService::FallbackStartupKeys(TfEditCookie cookie, ITfContext* context,
+                                         std::uint64_t generation) {
+  if (generation != state_->startup_keys.generation()) {
+    return S_OK;
+  }
+  state_->startup_replay_scheduled = false;
+  if (state_->startup_context.Get() != context || !IsFocusedContext(context) ||
+      !ValidateStartupTarget(cookie, context)) {
+    CancelStartupReplay(false);
+    return S_OK;
+  }
+  if (!AllowKeyInContext(context, &cookie)) {
+    return S_OK;
+  }
+  if (generation != state_->startup_keys.generation() ||
+      state_->startup_context.Get() != context) {
+    return S_OK;
+  }
+
+  const auto pending = state_->startup_keys.Take(generation);
+  std::wstring text;
+  bool opening_quote = state_->opening_quote;
+  for (const detail::StartupKey& key : pending) {
+    AppendStartupFallbackKey(key, state_->settings.punctuation_style,
+                             &opening_quote, &text);
+  }
+  state_->opening_quote = opening_quote;
+  CancelStartupReplay(false);
+  if (text.empty()) {
+    return S_OK;
+  }
+  BOOL ignored = FALSE;
+  return CommitText(context, std::move(text), &ignored);
+}
+
 HRESULT TextService::ToggleInputMode(ITfContext* context, BOOL* eaten,
                                      bool commit_pending_input) {
+  // A queued Chinese composition belongs to the old mode and must not be
+  // replayed after the user switches to direct input.
+  CancelStartupReplay(false);
   if (commit_pending_input && state_->chinese_mode && !state_->snapshot.empty()) {
     const HRESULT commit_result = CommitPendingInput(context, eaten);
     if (FAILED(commit_result)) {
@@ -1221,6 +1829,15 @@ HRESULT TextService::ApplyKeyResponse(ITfContext* context, WPARAM wparam, BOOL* 
 
 HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* context) {
   using Microsoft::WRL::ComPtr;
+  // The host can change scope after the key callback or while an edit is queued.
+  const detail::InputPrivacy privacy = detail::ContextBlocksInput(context, activation_flags_)
+      ? detail::InputPrivacy::kBlocked : detail::ClassifyScope(context, edit_cookie);
+  if (privacy == detail::InputPrivacy::kBlocked || state_->key_context.Get() != context ||
+      privacy != state_->key_privacy) {
+    ClearCommittedPairCaret();
+    AbandonSession(context);
+    return E_ACCESSDENIED;
+  }
   // A text-store call can reenter TSF. Freeze this edit's payload and consume its
   // caret request before calling the host, rather than rereading mutable state.
   const std::wstring commit = state_->pending_response.commit;
@@ -1405,10 +2022,17 @@ void TextService::FinishCommittedPairCaret(ITfContext* context) {
 
 STDMETHODIMP TextService::OnTestKeyUp(ITfContext* context, WPARAM wparam, LPARAM lparam,
                                       BOOL* eaten) {
-  static_cast<void>(context);
   static_cast<void>(lparam);
   if (eaten == nullptr) {
     return E_INVALIDARG;
+  }
+  *eaten = FALSE;
+  if (!(IsInputModeSwitchKey(wparam) && state_->switch_key_down) &&
+      state_->committed_pair_range == nullptr) {
+    return S_OK;
+  }
+  if (!AllowKeyInContext(context)) {
+    return S_OK;
   }
   *eaten = (IsInputModeSwitchKey(wparam) && state_->switch_key_down) ||
                    state_->committed_pair_range != nullptr ? TRUE : FALSE;
@@ -1422,6 +2046,18 @@ STDMETHODIMP TextService::OnKeyUp(ITfContext* context, WPARAM wparam, LPARAM lpa
     return E_INVALIDARG;
   }
   *eaten = FALSE;
+  if (!(IsInputModeSwitchKey(wparam) && state_->switch_key_down) &&
+      state_->committed_pair_range == nullptr) {
+    return S_OK;
+  }
+  return RequestKeyEdit(context, wparam, true, eaten);
+}
+
+HRESULT TextService::HandleKeyUp(TfEditCookie cookie, ITfContext* context,
+                                WPARAM wparam, BOOL* eaten) {
+  if (!AllowKeyInContext(context, &cookie)) {
+    return S_OK;
+  }
   FinishCommittedPairCaret(context);
   if (!IsInputModeSwitchKey(wparam) || !state_->switch_key_down) {
     return S_OK;

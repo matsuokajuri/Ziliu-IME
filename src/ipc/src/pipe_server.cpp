@@ -149,9 +149,15 @@ bool SameUserAndSession(HANDLE pipe) {
 }  // namespace
 
 PipeServer::PipeServer(std::wstring pipe_name, core::SessionHost::EngineFactory engine_factory,
-                       SettingsProvider settings_provider)
+                       SettingsProvider settings_provider,
+                       ThemeResourceProvider theme_resource_provider,
+                       QuickMenuProvider quick_menu_provider,
+                       MenuActionProvider menu_action_provider)
     : pipe_name_(std::move(pipe_name)), session_host_(std::move(engine_factory)),
-      settings_provider_(std::move(settings_provider)) {}
+      settings_provider_(std::move(settings_provider)),
+      theme_resource_provider_(std::move(theme_resource_provider)),
+      quick_menu_provider_(std::move(quick_menu_provider)),
+      menu_action_provider_(std::move(menu_action_provider)) {}
 
 int PipeServer::Run() {
   PipeSecurity security;
@@ -209,7 +215,43 @@ bool PipeServer::ServeClient(void* pipe_handle) {
     if (!SameUserAndSession(pipe)) {
       return false;
     }
-    if (request.command == core::ipc::Command::kGetSettings) {
+    if ((request.command != core::ipc::Command::kGetThemeResource &&
+         (!request.theme_id.empty() || !request.resource.empty())) ||
+        (request.command != core::ipc::Command::kOpenQuickMenu &&
+         (request.point_x != 0 || request.point_y != 0))) {
+      response.request_id = request.request_id;
+      response.status = core::ipc::Status::kInvalidRequest;
+    } else if (request.command == core::ipc::Command::kOpenQuickMenu) {
+      response.request_id = request.request_id;
+      response.status = core::ipc::Status::kUnsupported;
+      if (request.session_id == 0 && request.value == 0 && quick_menu_provider_) {
+        response.status = quick_menu_provider_(request.point_x, request.point_y)
+                              ? core::ipc::Status::kOk
+                              : core::ipc::Status::kInternalError;
+      }
+    } else if (request.command == core::ipc::Command::kRunMenuAction) {
+      response.request_id = request.request_id;
+      response.status = core::ipc::Status::kUnsupported;
+      if (request.session_id == 0 && request.value >= 1 && request.value <= 2 &&
+          menu_action_provider_) {
+        response.status = menu_action_provider_(request.value)
+                              ? core::ipc::Status::kOk
+                              : core::ipc::Status::kInternalError;
+      }
+    } else if (request.command == core::ipc::Command::kGetThemeResource) {
+      response.request_id = request.request_id;
+      response.status = core::ipc::Status::kUnsupported;
+      if (request.session_id == 0 && !request.theme_id.empty() && theme_resource_provider_) {
+        const auto chunk = theme_resource_provider_(request.theme_id, request.resource,
+                                                    request.value);
+        if (chunk.has_value() && chunk->size() <= core::ipc::kMaximumThemeChunkBytes) {
+          response.theme_chunk = *chunk;
+          response.status = core::ipc::Status::kOk;
+        } else {
+          response.status = core::ipc::Status::kInvalidRequest;
+        }
+      }
+    } else if (request.command == core::ipc::Command::kGetSettings) {
       response.request_id = request.request_id;
       response.status = core::ipc::Status::kUnsupported;
       if (request.session_id == 0 && request.value == 0 && settings_provider_) {

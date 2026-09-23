@@ -34,6 +34,10 @@ class Handle final {
 PipeClient::PipeClient(std::wstring pipe_name, std::uint32_t timeout_milliseconds)
     : pipe_name_(std::move(pipe_name)), timeout_milliseconds_(timeout_milliseconds) {}
 
+bool PipeClient::IsServerAvailable() const noexcept {
+  return WaitNamedPipeW(pipe_name_.c_str(), NMPWAIT_NOWAIT) != FALSE;
+}
+
 std::optional<core::ipc::Response> PipeClient::Exchange(
     const core::ipc::Request& request) const {
   std::vector<std::byte> request_bytes;

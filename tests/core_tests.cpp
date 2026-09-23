@@ -154,6 +154,20 @@ int main() {
              decoded.snapshot.candidates == wire_response.snapshot.candidates,
          "UTF-8 protocol round trip should preserve candidates");
 
+  bool received_restricted = false;
+  ziliu::core::SessionHost restricted_host([&received_restricted](bool restricted) {
+    received_restricted = restricted;
+    return ziliu::core::CreateStubEngine();
+  });
+  const auto restricted_created = restricted_host.Handle(
+      {10, 0, ziliu::core::ipc::Command::kCreateSession, 1});
+  Expect(restricted_created.status == ziliu::core::ipc::Status::kOk &&
+             restricted_created.session_id != 0 && received_restricted,
+         "session host should pass restricted create policy to its engine factory");
+  Expect(restricted_host.Handle({11, 0, ziliu::core::ipc::Command::kCreateSession, 2}).status ==
+             ziliu::core::ipc::Status::kInvalidRequest,
+         "session host should reject unknown create-session policies");
+
   const ziliu::core::Settings defaults;
   Expect(defaults.candidate_layout == ziliu::core::CandidateLayout::kVertical &&
              defaults.candidate_count == 5 &&

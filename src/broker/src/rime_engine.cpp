@@ -235,7 +235,7 @@ class RimeRuntime final {
     traits.user_data_dir = user_data_directory_.c_str();
     traits.distribution_name = "Ziliu";
     traits.distribution_code_name = "ziliu";
-    traits.distribution_version = "0.2.0-dev";
+    traits.distribution_version = ZILIU_DISTRIBUTION_VERSION;
     traits.app_name = "rime.ziliu";
     traits.min_log_level = 2;
     api_->setup(&traits);
@@ -270,7 +270,10 @@ class RimeRuntime final {
 class RimeEngine final : public core::Engine {
  public:
   RimeEngine(RimeApi* api, RimeSessionId session_id) : api_(api), session_id_(session_id) {}
-  ~RimeEngine() override { api_->destroy_session(session_id_); }
+  ~RimeEngine() override {
+    api_->clear_composition(session_id_);
+    api_->destroy_session(session_id_);
+  }
 
   void Reset() override {
     ResetPaging();
@@ -630,7 +633,7 @@ class RimeEngine final : public core::Engine {
   std::vector<int> previous_page_offsets_;
 };
 
-std::unique_ptr<core::Engine> TryCreateRimeEngine() {
+std::unique_ptr<core::Engine> TryCreateRimeEngine(bool restricted) {
   RimeApi* api = RimeRuntime::Instance().api();
   if (api == nullptr) {
     return nullptr;
@@ -639,7 +642,7 @@ std::unique_ptr<core::Engine> TryCreateRimeEngine() {
   if (session_id == 0) {
     return nullptr;
   }
-  if (!api->select_schema(session_id, "rime_ice")) {
+  if (!api->select_schema(session_id, restricted ? "ziliu_private" : "rime_ice")) {
     api->destroy_session(session_id);
     return nullptr;
   }
@@ -652,9 +655,14 @@ void WarmUpEngineRuntime() {
   static_cast<void>(RimeRuntime::Instance());
 }
 
-std::unique_ptr<core::Engine> CreateEngine() {
-  auto engine = TryCreateRimeEngine();
-  return engine != nullptr ? std::move(engine) : core::CreateStubEngine();
+std::unique_ptr<core::Engine> CreateEngine(bool restricted) {
+  auto engine = TryCreateRimeEngine(restricted);
+  // Missing restricted data fails closed rather than silently changing the
+  // private-field engine contract. Ordinary mode retains the development stub.
+  if (engine == nullptr && !restricted) {
+    engine = core::CreateStubEngine();
+  }
+  return engine;
 }
 
 }  // namespace ziliu::broker

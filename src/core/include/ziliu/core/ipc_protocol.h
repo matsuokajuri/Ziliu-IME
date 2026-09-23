@@ -10,9 +10,10 @@
 
 namespace ziliu::core::ipc {
 
-inline constexpr std::uint16_t kProtocolVersion = 6;
+inline constexpr std::uint16_t kProtocolVersion = 8;
 inline constexpr std::uint16_t kOldestCompatibleProtocolVersion = 4;
 inline constexpr std::size_t kMaximumMessageBytes = 64U * 1024U;
+inline constexpr std::size_t kMaximumThemeChunkBytes = 60U * 1024U;
 inline constexpr std::size_t kMaximumCandidatesPerPage = 9;
 inline constexpr std::size_t kMaximumCandidateWindowPages = 5;
 inline constexpr std::size_t kMaximumCandidates =
@@ -34,6 +35,9 @@ enum class Command : std::uint16_t {
   kInputSeparator = 13,
   kSetCandidateWindowPageCount = 14,
   kGetSettings = 15,
+  kGetThemeResource = 16,
+  kOpenQuickMenu = 17,
+  kRunMenuAction = 18,
 };
 
 enum class Status : std::uint16_t {
@@ -48,7 +52,14 @@ struct Request {
   std::uint64_t request_id = 0;
   std::uint64_t session_id = 0;
   Command command = Command::kPing;
+  // Protocol v7: kCreateSession uses 0 for ordinary and 1 for restricted.
   std::uint32_t value = 0;
+  // Protocol v8: resource is empty for manifest.json, otherwise a validated
+  // relative asset path. The broker only serves the currently active theme.
+  std::string theme_id;
+  std::string resource;
+  std::int32_t point_x = 0;
+  std::int32_t point_y = 0;
 };
 
 struct Response {
@@ -59,6 +70,7 @@ struct Response {
   std::wstring commit;
   CompositionSnapshot snapshot;
   std::string settings_text;  // Protocol v6: bounded UTF-8 serialized settings.
+  std::vector<std::byte> theme_chunk;  // Protocol v8: bounded raw theme bytes.
 };
 
 [[nodiscard]] bool EncodeRequest(const Request& request, std::vector<std::byte>* bytes);

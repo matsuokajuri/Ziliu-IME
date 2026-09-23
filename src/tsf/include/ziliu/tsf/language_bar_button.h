@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -13,7 +14,9 @@ namespace ziliu::tsf {
 
 class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
  public:
-  LanguageBarButton(std::wstring settings_executable, std::function<HRESULT()> toggle_input_mode);
+  LanguageBarButton(std::wstring settings_executable, std::function<HRESULT()> toggle_input_mode,
+                    std::function<HRESULT(LONG, LONG)> launch_quick_menu,
+                    std::function<HRESULT(std::uint32_t)> run_menu_action);
 
   LanguageBarButton(const LanguageBarButton&) = delete;
   LanguageBarButton& operator=(const LanguageBarButton&) = delete;
@@ -43,12 +46,16 @@ class LanguageBarButton final : public ITfLangBarItemButton, public ITfSource {
 
   HRESULT ScheduleQuickMenu(LONG x, LONG y);
   HRESULT OpenQuickMenu(LONG x, LONG y);
+  HRESULT RunMenuAction(UINT identifier);
   void NotifyUpdate(DWORD flags) const;
 
   std::atomic<ULONG> reference_count_{1};
   std::wstring settings_executable_;
   std::function<HRESULT()> toggle_input_mode_;
+  std::function<HRESULT(LONG, LONG)> launch_quick_menu_;
+  std::function<HRESULT(std::uint32_t)> run_menu_action_;
   ULONGLONG last_menu_request_tick_ = 0;
+  POINT menu_anchor_{};
   ITfLangBarItemSink* sink_ = nullptr;
   bool chinese_mode_ = true;
   bool visible_ = true;

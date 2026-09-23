@@ -69,5 +69,6 @@ class Engine {
 // Temporary deterministic engine used to validate the Windows shell before
 // librime is connected. It deliberately contains no persistence or network IO.
 [[nodiscard]] std::unique_ptr<Engine> CreateStubEngine();
+[[nodiscard]] std::unique_ptr<Engine> CreateStubEngineForSession(bool restricted);
 
 }  // namespace ziliu::core

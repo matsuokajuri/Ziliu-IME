@@ -12,6 +12,6 @@ void WarmUpEngineRuntime();
 
 // Loads rime.dll beside ZiliuBroker.exe. A missing or incompatible runtime is
 // a supported development state and falls back to the deterministic engine.
-[[nodiscard]] std::unique_ptr<core::Engine> CreateEngine();
+[[nodiscard]] std::unique_ptr<core::Engine> CreateEngine(bool restricted = false);
 
 }  // namespace ziliu::broker

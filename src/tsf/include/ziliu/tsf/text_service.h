@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -54,6 +55,30 @@ class TextService final : public ITfTextInputProcessorEx,
   ~TextService();
 
   [[nodiscard]] bool EnsureSession();
+  [[nodiscard]] bool EnsureStartupWindow();
+  [[nodiscard]] bool IsFocusedContext(ITfContext* context) const;
+  [[nodiscard]] bool CaptureStartupTarget(TfEditCookie cookie, ITfContext* context,
+                                          bool capture_windows);
+  [[nodiscard]] bool ValidateStartupTarget(TfEditCookie cookie,
+                                           ITfContext* context) const;
+  [[nodiscard]] bool AllowKeyInContext(ITfContext* context,
+                                     const TfEditCookie* cookie = nullptr);
+  HRESULT RequestKeyEdit(ITfContext* context, WPARAM key, bool key_up, BOOL* eaten);
+  HRESULT HandleKeyDown(TfEditCookie cookie, ITfContext* context, WPARAM key, BOOL* eaten);
+  HRESULT HandleKeyUp(TfEditCookie cookie, ITfContext* context, WPARAM key, BOOL* eaten);
+  HRESULT ProcessKeyDown(ITfContext* context, WPARAM key, bool shifted, BOOL* eaten);
+  HRESULT ReplayStartupKeys(TfEditCookie cookie, ITfContext* context,
+                            std::uint64_t generation);
+  HRESULT FallbackStartupKeys(TfEditCookie cookie, ITfContext* context,
+                              std::uint64_t generation);
+  void QueueStartupKey(TfEditCookie cookie, ITfContext* context, WPARAM key,
+                       bool shifted, BOOL* eaten);
+  [[nodiscard]] bool ScheduleStartupReplay();
+  void RequestStartupEdit(bool fallback);
+  void CancelStartupReplay(bool destroy_window = false);
+  void OnStartupTimer();
+  static LRESULT CALLBACK StartupWindowProcedure(HWND window, UINT message,
+                                                 WPARAM wparam, LPARAM lparam);
   [[nodiscard]] bool ShouldHandleKey(WPARAM wparam) const;
   [[nodiscard]] bool IsInputModeSwitchKey(WPARAM wparam) const;
   HRESULT ToggleInputMode(ITfContext* context, BOOL* eaten, bool commit_pending_input);

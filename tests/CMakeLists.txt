@@ -8,6 +8,21 @@ add_executable(ziliu_tsf_commit_caret_tests tsf_commit_caret_tests.cpp)
 ziliu_configure_target(ziliu_tsf_commit_caret_tests)
 add_test(NAME ziliu_tsf_commit_caret_tests COMMAND ziliu_tsf_commit_caret_tests)
 
+add_executable(ziliu_tsf_input_privacy_tests tsf_input_privacy_tests.cpp)
+target_link_libraries(ziliu_tsf_input_privacy_tests PRIVATE ole32 oleaut32 uuid)
+ziliu_configure_target(ziliu_tsf_input_privacy_tests)
+add_test(NAME ziliu_tsf_input_privacy_tests COMMAND ziliu_tsf_input_privacy_tests)
+
+# A deliberately manual, visible host fixture for guest-only privacy acceptance.
+# It is excluded from normal builds and is not part of the product/package payload.
+add_executable(ziliu_alpha_input_scope_host WIN32 EXCLUDE_FROM_ALL alpha_input_scope_host.cpp)
+target_link_libraries(ziliu_alpha_input_scope_host PRIVATE ole32 uuid)
+ziliu_configure_target(ziliu_alpha_input_scope_host)
+
+add_executable(ziliu_tsf_startup_key_queue_tests tsf_startup_key_queue_tests.cpp)
+ziliu_configure_target(ziliu_tsf_startup_key_queue_tests)
+add_test(NAME ziliu_tsf_startup_key_queue_tests COMMAND ziliu_tsf_startup_key_queue_tests)
+
 add_executable(ziliu_ui_preview_window_tests ui_preview_window_tests.cpp ../src/settings/app.manifest)
 target_link_libraries(ziliu_ui_preview_window_tests PRIVATE ziliu_ui)
 ziliu_configure_target(ziliu_ui_preview_window_tests)

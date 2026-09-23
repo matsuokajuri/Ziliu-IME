@@ -72,9 +72,9 @@ bool ActivateExistingQuickMenu(const QuickMenuLaunchOptions& options) {
   const int preferred_y = options.anchor_y - height - 8;
   const int y = preferred_y >= work_top ? preferred_y
                                         : std::min(options.anchor_y + 36, work_bottom - height);
+  ShowWindow(window, SW_SHOWNORMAL);
   SetWindowPos(window, HWND_TOPMOST, x, std::clamp(y, work_top, work_bottom - height), width,
                height, SWP_SHOWWINDOW);
-  ShowWindow(window, SW_SHOWNORMAL);
   static_cast<void>(SetForegroundWindow(window));
   return true;
 }
@@ -112,6 +112,8 @@ void App::OnLaunched(Microsoft::UI::Xaml::LaunchActivatedEventArgs const&) {
     if (SUCCEEDED(window_.as<::IWindowNative>()->get_WindowHandle(&window_handle)) &&
         window_handle != nullptr) {
       ShowWindow(window_handle, SW_SHOWNORMAL);
+      SetWindowPos(window_handle, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
       static_cast<void>(SetForegroundWindow(window_handle));
     }
   }

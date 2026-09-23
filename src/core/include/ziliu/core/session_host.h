@@ -13,15 +13,15 @@ namespace ziliu::core {
 
 class SessionHost final {
  public:
-  using EngineFactory = std::function<std::unique_ptr<Engine>()>;
+  using EngineFactory = std::function<std::unique_ptr<Engine>(bool restricted)>;
 
-  explicit SessionHost(EngineFactory engine_factory = CreateStubEngine);
+  explicit SessionHost(EngineFactory engine_factory = CreateStubEngineForSession);
 
   [[nodiscard]] ipc::Response Handle(const ipc::Request& request);
   [[nodiscard]] std::size_t session_count() const noexcept { return sessions_.size(); }
 
  private:
-  [[nodiscard]] std::uint64_t CreateSession();
+  [[nodiscard]] std::uint64_t CreateSession(bool restricted);
 
   EngineFactory engine_factory_;
   std::unordered_map<std::uint64_t, std::unique_ptr<Engine>> sessions_;

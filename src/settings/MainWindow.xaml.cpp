@@ -1539,6 +1539,14 @@ MainWindow::MainWindow() {
           const auto activation_state = args.WindowActivationState();
           if (activation_state !=
                   Microsoft::UI::Xaml::WindowActivationState::Deactivated &&
+              g_quick_menu_window != nullptr) {
+            // WinUI may recreate its z-order when Activate runs after the
+            // constructor's initial placement. Keep the menu above the host.
+            SetWindowPos(g_quick_menu_window, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+          }
+          if (activation_state !=
+                  Microsoft::UI::Xaml::WindowActivationState::Deactivated &&
               !quick_menu_animation_started_) {
             quick_menu_animation_started_ = true;
             PlayQuickMenuOpenAnimation();
@@ -1577,7 +1585,6 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   extended_style |= WS_EX_TOOLWINDOW;
   SetWindowLongPtrW(window_handle, GWL_EXSTYLE, extended_style);
 
-  const int width = scaled(344);
   const int height = scaled(260);
   const POINT anchor{anchor_x, anchor_y};
   const HMONITOR monitor = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
@@ -1589,12 +1596,16 @@ void MainWindow::ConfigureWindow(bool quick_menu, int anchor_x, int anchor_y) {
   const int work_top = static_cast<int>(monitor_info.rcWork.top);
   const int work_right = static_cast<int>(monitor_info.rcWork.right);
   const int work_bottom = static_cast<int>(monitor_info.rcWork.bottom);
+  // The shell search and Start surfaces can cover an ordinary popup. The
+  // language bar anchors at a monitor edge in that case; keep the menu narrow
+  // enough for the exposed strip without changing the normal tray menu.
+  const int width = scaled(anchor_x <= work_left || anchor_x >= work_right ? 300 : 344);
   const int x = std::clamp(anchor_x - width / 2, work_left, work_right - width);
   const int preferred_y = anchor_y - height - scaled(8);
   const int y = preferred_y >= work_top
                     ? preferred_y
                     : std::min(anchor_y + scaled(36), work_bottom - height);
-  SetWindowPos(window_handle, HWND_TOP, x, y, width, height,
+  SetWindowPos(window_handle, HWND_TOPMOST, x, y, width, height,
                SWP_FRAMECHANGED | SWP_NOACTIVATE);
 
   const DWMNCRENDERINGPOLICY rendering_policy = DWMNCRP_ENABLED;
@@ -1724,6 +1735,7 @@ void MainWindow::InitializeNavigation() {
       [this](auto const&, auto const&) { ShowSettingsPage(L"appearance"); });
   ImportThemeButton().Click([this](auto const&, auto const&) { ImportTheme(); });
   CandidatePreviewHost().Loaded([this](auto const&, auto const&) {
+    UpdatePageResponsiveLayout();
     EnsureCandidatePreview();
     UpdateCandidatePreview();
   });
@@ -1731,10 +1743,28 @@ void MainWindow::InitializeNavigation() {
       [this](auto const&, auto const&) { UpdateCandidatePreview(); });
   CandidatePreviewHost().Unloaded(
       [this](auto const&, auto const&) { candidate_preview_.Hide(); });
+  const auto on_page_resize =
+      [this](auto const&, auto const&) { UpdatePageResponsiveLayout(); };
+  CommonPage().SizeChanged(on_page_resize);
+  CorrectionPage().SizeChanged(on_page_resize);
+  FuzzyPage().SizeChanged(on_page_resize);
+  PunctuationPage().SizeChanged(on_page_resize);
+  ThemePage().SizeChanged(on_page_resize);
+  KeysPage().SizeChanged(on_page_resize);
   AppearancePage().ViewChanged(
-      [this](auto const&, auto const&) { UpdateCandidatePreview(); });
+      [this](auto const&, auto const&) {
+        UpdatePageResponsiveLayout();
+        UpdateCandidatePreview();
+      });
+  AppearancePage().SizeChanged([this](auto const&, auto const&) {
+    UpdatePageResponsiveLayout();
+    UpdateCandidatePreview();
+  });
   RootGrid().SizeChanged(
-      [this](auto const&, auto const&) { UpdateCandidatePreview(); });
+      [this](auto const&, auto const&) {
+        UpdatePageResponsiveLayout();
+        UpdateCandidatePreview();
+      });
   const auto save_appearance = [this]() {
     if (SaveFromControls()) {
       AppearanceInfoBar().IsOpen(false);
@@ -1775,6 +1805,7 @@ void MainWindow::InitializeNavigation() {
     if (suppress_appearance_events_) {
       return;
     }
+    UpdatePageResponsiveLayout();
     UpdateCandidatePreview();
     static_cast<void>(save_appearance());
   };
@@ -1915,6 +1946,7 @@ void MainWindow::ShowSettingsPage(std::wstring_view page) {
   } else {
     CommonPage().Visibility(visible);
   }
+  UpdatePageResponsiveLayout();
   if (page != L"appearance") {
     candidate_preview_.Hide();
   }
@@ -1928,6 +1960,36 @@ void MainWindow::ApplyThemeFromControls() {
     theme = Microsoft::UI::Xaml::ElementTheme::Dark;
   }
   RootGrid().RequestedTheme(theme);
+}
+
+void MainWindow::UpdatePageResponsiveLayout() {
+  const auto fit_page = [](Microsoft::UI::Xaml::Controls::ScrollViewer const& page,
+                           Microsoft::UI::Xaml::Controls::StackPanel const& content) {
+    const double viewport = page.ViewportWidth() > 0.0 ? page.ViewportWidth()
+                                                         : page.ActualWidth();
+    if (!std::isfinite(viewport) || viewport <= 0.0) {
+      return;
+    }
+    // A ScrollViewer can retain the StackPanel's 900-DIP desired width after
+    // the navigation pane or display scale narrows the available viewport.
+    const double width = std::min(content.MaxWidth(), std::max(0.0, viewport - 8.0));
+    const double current = content.Width();
+    if (!std::isfinite(current) || std::abs(current - width) > 0.5) {
+      content.Width(width);
+    }
+  };
+  fit_page(CommonPage(), CommonPageContent());
+  fit_page(CorrectionPage(), CorrectionPageContent());
+  fit_page(FuzzyPage(), FuzzyPageContent());
+  fit_page(PunctuationPage(), PunctuationPageContent());
+  fit_page(AppearancePage(), AppearancePageContent());
+  fit_page(ThemePage(), ThemePageContent());
+  fit_page(KeysPage(), KeysPageContent());
+
+  const double preview_height = LayoutCombo().SelectedIndex() == 1 ? 340.0 : 220.0;
+  if (std::abs(CandidatePreviewHost().Height() - preview_height) > 0.5) {
+    CandidatePreviewHost().Height(preview_height);
+  }
 }
 
 void MainWindow::UpdateAppearanceControlStates() {

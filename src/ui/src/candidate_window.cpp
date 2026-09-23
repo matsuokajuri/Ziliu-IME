@@ -416,9 +416,11 @@ bool DrawSsfGdiText(ID2D1RenderTarget* target, IDWriteTextFormat* format,
   std::fill_n(pixels, count, 0U);
   SetBkMode(resources.dc, TRANSPARENT);
   SetTextColor(resources.dc, RGB(255, 255, 255));
-  if (!prefix.empty() && !ExtTextOutW(resources.dc, 0, 0, ETO_IGNORELANGUAGE,
+  // Do not pass ETO_IGNORELANGUAGE here: Microsoft documents it as disabling
+  // Uniscribe and font fallback, which leaves missing SSF fonts/glyphs as tofu.
+  if (!prefix.empty() && !ExtTextOutW(resources.dc, 0, 0, 0,
       nullptr, prefix.data(), static_cast<UINT>(prefix.size()), nullptr)) return false;
-  if (!ExtTextOutW(resources.dc, prefix_slot, 0, ETO_IGNORELANGUAGE, nullptr, text.data(),
+  if (!ExtTextOutW(resources.dc, prefix_slot, 0, 0, nullptr, text.data(),
                    static_cast<UINT>(text.size()),
                    advances.empty() ? nullptr : advances.data())) return false;
   GdiFlush();
@@ -628,7 +630,9 @@ void CandidateWindow::ShowInternal(const core::CompositionSnapshot& snapshot,
   GetWindowRect(window_, &previous_rectangle);
 
   const bool theme_changed =
-      !theme_initialized_ || settings_.active_theme_id != settings.active_theme_id;
+      !theme_initialized_ || settings_.active_theme_id != settings.active_theme_id ||
+      (theme_manifest_.id != settings.active_theme_id &&
+       GetTickCount64() - theme_retry_tick_ >= 1000);
   if (theme_changed) {
     RefreshTheme(settings.active_theme_id);
   }
@@ -1271,6 +1275,10 @@ void CandidateWindow::SetQuickMenuAction(std::function<void(POINT)> action) {
   quick_menu_action_ = std::move(action);
 }
 
+void CandidateWindow::SetThemeResourceLoader(ThemeResourceLoader loader) {
+  theme_resource_loader_ = std::move(loader);
+}
+
 void CandidateWindow::Hide() {
   candidate_requested_visible_ = false;
   pending_presentation_.reset();
@@ -1642,6 +1650,7 @@ LRESULT CandidateWindow::HandleMessage(UINT message, WPARAM wparam, LPARAM lpara
 void CandidateWindow::RefreshTheme(std::string_view theme_id) {
   theme_manifest_ = core::MakeDefaultThemeManifest();
   theme_directory_.clear();
+  theme_retry_tick_ = GetTickCount64();
   if (theme_id != theme_manifest_.id) {
     const auto themes_directory = ThemesDirectoryPath();
     if (themes_directory.has_value()) {
@@ -1649,6 +1658,17 @@ void CandidateWindow::RefreshTheme(std::string_view theme_id) {
       if (installed.has_value()) {
         theme_manifest_ = installed->manifest;
         theme_directory_ = installed->directory;
+      }
+    }
+    if (theme_manifest_.id != theme_id && theme_resource_loader_) {
+      const auto contents = theme_resource_loader_(theme_id, {});
+      if (contents.has_value()) {
+        const std::string json(reinterpret_cast<const char*>(contents->data()),
+                               contents->size());
+        const auto parsed = core::ParseThemeManifest(json);
+        if (parsed.ok() && parsed.manifest.id == theme_id) {
+          theme_manifest_ = parsed.manifest;
+        }
       }
     }
   }
@@ -1767,28 +1787,44 @@ bool CandidateWindow::EnsureImagingFactory() {
 Microsoft::WRL::ComPtr<ID2D1Bitmap> CandidateWindow::LoadThemeBitmap(
     std::string_view asset) const {
   Microsoft::WRL::ComPtr<ID2D1Bitmap> bitmap;
-  if (asset.empty() || theme_directory_.empty() || imaging_factory_ == nullptr ||
+  if (asset.empty() || imaging_factory_ == nullptr ||
       render_target_ == nullptr) {
     return bitmap;
   }
-
-  const std::wstring asset_name = Utf8ToWide(asset);
-  if (asset_name.empty()) {
-    return bitmap;
-  }
-  const std::filesystem::path asset_path = theme_directory_ / asset_name;
-  std::error_code status_error;
-  const auto status = std::filesystem::symlink_status(asset_path, status_error);
-  if (status_error || !std::filesystem::is_regular_file(status) ||
-      std::filesystem::is_symlink(status)) {
-    return bitmap;
-  }
-
   Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
-  if (FAILED(imaging_factory_->CreateDecoderFromFilename(
-          asset_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
-          decoder.GetAddressOf()))) {
-    return bitmap;
+  std::optional<std::vector<std::byte>> remote_bytes;
+  Microsoft::WRL::ComPtr<IWICStream> remote_stream;
+  if (theme_directory_.empty()) {
+    if (!theme_resource_loader_ || !core::IsSafeThemeAssetPath(asset)) {
+      return bitmap;
+    }
+    remote_bytes = theme_resource_loader_(theme_manifest_.id, asset);
+    if (!remote_bytes.has_value() || remote_bytes->empty() ||
+        remote_bytes->size() > std::numeric_limits<DWORD>::max() ||
+        FAILED(imaging_factory_->CreateStream(remote_stream.GetAddressOf())) ||
+        FAILED(remote_stream->InitializeFromMemory(
+            reinterpret_cast<BYTE*>(remote_bytes->data()),
+            static_cast<DWORD>(remote_bytes->size()))) ||
+        FAILED(imaging_factory_->CreateDecoderFromStream(
+            remote_stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf()))) {
+      return bitmap;
+    }
+  } else {
+    const std::wstring asset_name = Utf8ToWide(asset);
+    if (asset_name.empty()) {
+      return bitmap;
+    }
+    const std::filesystem::path asset_path = theme_directory_ / asset_name;
+    std::error_code status_error;
+    const auto status = std::filesystem::symlink_status(asset_path, status_error);
+    if (status_error || !std::filesystem::is_regular_file(status) ||
+        std::filesystem::is_symlink(status) ||
+        FAILED(imaging_factory_->CreateDecoderFromFilename(
+            asset_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf()))) {
+      return bitmap;
+    }
   }
   Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
   if (FAILED(decoder->GetFrame(0, frame.GetAddressOf()))) {

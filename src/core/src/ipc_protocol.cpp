@@ -49,6 +49,15 @@ class Writer final {
     return true;
   }
 
+  bool Bytes(std::span<const std::byte> value) {
+    if (value.size() > kMaximumThemeChunkBytes) {
+      return false;
+    }
+    Integer(static_cast<std::uint32_t>(value.size()));
+    bytes_.insert(bytes_.end(), value.begin(), value.end());
+    return true;
+  }
+
  private:
   static bool AppendCodePoint(std::uint32_t code_point, std::string* output) {
     if (code_point <= 0x7FU) {
@@ -150,6 +159,18 @@ class Reader final {
     return true;
   }
 
+  bool Bytes(std::vector<std::byte>* value) {
+    std::uint32_t count = 0;
+    if (value == nullptr || !Integer(&count) || count > kMaximumThemeChunkBytes ||
+        remaining() < count) {
+      return false;
+    }
+    value->assign(bytes_.begin() + static_cast<std::ptrdiff_t>(offset_),
+                  bytes_.begin() + static_cast<std::ptrdiff_t>(offset_ + count));
+    offset_ += count;
+    return true;
+  }
+
  private:
   [[nodiscard]] std::size_t remaining() const noexcept { return bytes_.size() - offset_; }
 
@@ -227,6 +248,9 @@ bool IsKnownCommand(Command command) {
     case Command::kInputSeparator:
     case Command::kSetCandidateWindowPageCount:
     case Command::kGetSettings:
+    case Command::kGetThemeResource:
+    case Command::kOpenQuickMenu:
+    case Command::kRunMenuAction:
       return true;
   }
   return false;
@@ -261,7 +285,14 @@ bool EncodeRequest(const Request& request, std::uint16_t protocol_version,
     return false;
   }
   if (!IsSupportedProtocolVersion(protocol_version) ||
-      (request.command == Command::kGetSettings && protocol_version < 6)) {
+      (request.command == Command::kGetSettings && protocol_version < 6) ||
+      (request.command == Command::kGetThemeResource && protocol_version < 8) ||
+      (request.command == Command::kOpenQuickMenu && protocol_version < 8) ||
+      (request.command == Command::kRunMenuAction && protocol_version < 8) ||
+      (request.command == Command::kCreateSession && request.value != 0 &&
+       protocol_version < 7) ||
+      (protocol_version < 8 && (!request.theme_id.empty() || !request.resource.empty() ||
+                                request.point_x != 0 || request.point_y != 0))) {
     return false;
   }
   Writer writer;
@@ -271,6 +302,14 @@ bool EncodeRequest(const Request& request, std::uint16_t protocol_version,
   writer.Integer(request.request_id);
   writer.Integer(request.session_id);
   writer.Integer(request.value);
+  if (protocol_version >= 8 &&
+      (!writer.Utf8String(request.theme_id) || !writer.Utf8String(request.resource))) {
+    return false;
+  }
+  if (protocol_version >= 8) {
+    writer.Integer(std::bit_cast<std::uint32_t>(request.point_x));
+    writer.Integer(std::bit_cast<std::uint32_t>(request.point_y));
+  }
   *bytes = std::move(writer).Take();
   return bytes->size() <= kMaximumMessageBytes;
 }
@@ -288,16 +327,30 @@ bool DecodeRequest(std::span<const std::byte> bytes, Request* request,
   std::uint32_t magic = 0;
   std::uint16_t version = 0;
   std::uint16_t command = 0;
+  std::uint32_t point_x = 0;
+  std::uint32_t point_y = 0;
   Request decoded;
   if (!reader.Integer(&magic) || !reader.Integer(&version) || !reader.Integer(&command) ||
       !reader.Integer(&decoded.request_id) || !reader.Integer(&decoded.session_id) ||
-      !reader.Integer(&decoded.value) || !reader.finished() || magic != kRequestMagic ||
+      !reader.Integer(&decoded.value) ||
+      (version >= 8 && (!reader.Utf8String(&decoded.theme_id) ||
+                        !reader.Utf8String(&decoded.resource) ||
+                        !reader.Integer(&point_x) || !reader.Integer(&point_y))) ||
+      !reader.finished() || magic != kRequestMagic ||
       !IsSupportedProtocolVersion(version)) {
     return false;
   }
   decoded.command = static_cast<Command>(command);
+  if (version >= 8) {
+    decoded.point_x = std::bit_cast<std::int32_t>(point_x);
+    decoded.point_y = std::bit_cast<std::int32_t>(point_y);
+  }
   if (!IsKnownCommand(decoded.command) ||
-      (decoded.command == Command::kGetSettings && version < 6)) {
+      (decoded.command == Command::kGetSettings && version < 6) ||
+      (decoded.command == Command::kGetThemeResource && version < 8) ||
+      (decoded.command == Command::kOpenQuickMenu && version < 8) ||
+      (decoded.command == Command::kRunMenuAction && version < 8) ||
+      (decoded.command == Command::kCreateSession && decoded.value != 0 && version < 7)) {
     return false;
   }
   *request = decoded;
@@ -343,6 +396,9 @@ bool EncodeResponse(const Response& response, std::uint16_t protocol_version,
     writer.Integer(std::bit_cast<std::uint64_t>(candidate.score));
   }
   if (protocol_version >= 6 && !writer.Utf8String(response.settings_text)) {
+    return false;
+  }
+  if (protocol_version >= 8 && !writer.Bytes(response.theme_chunk)) {
     return false;
   }
   *bytes = std::move(writer).Take();
@@ -403,7 +459,8 @@ bool DecodeResponse(std::span<const std::byte> bytes, Response* response,
     candidate.score = std::bit_cast<double>(score);
     decoded.snapshot.candidates.push_back(std::move(candidate));
   }
-  if ((version >= 6 && !reader.Utf8String(&decoded.settings_text)) || !reader.finished() ||
+  if ((version >= 6 && !reader.Utf8String(&decoded.settings_text)) ||
+      (version >= 8 && !reader.Bytes(&decoded.theme_chunk)) || !reader.finished() ||
       (!decoded.snapshot.candidates.empty() &&
        decoded.snapshot.highlighted_index >= decoded.snapshot.candidates.size())) {
     return false;

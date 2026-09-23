@@ -17,6 +17,7 @@ class PipeClient final {
                       std::uint32_t timeout_milliseconds =
                           kDefaultBrokerTimeoutMilliseconds);
 
+  [[nodiscard]] bool IsServerAvailable() const noexcept;
   [[nodiscard]] std::optional<core::ipc::Response> Exchange(
       const core::ipc::Request& request) const;
 

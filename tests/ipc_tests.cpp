@@ -60,7 +60,8 @@ class DelayedEngine final : public ziliu::core::Engine {
   std::unique_ptr<ziliu::core::Engine> engine_;
 };
 
-std::unique_ptr<ziliu::core::Engine> CreateDelayedEngine() {
+std::unique_ptr<ziliu::core::Engine> CreateDelayedEngine(bool restricted) {
+  static_cast<void>(restricted);
   return std::make_unique<DelayedEngine>();
 }
 
@@ -142,9 +143,13 @@ int main() {
   preferences.candidate_count = 7;
   preferences.candidate_chinese_font_family = "霞鹜文楷";
   preferences.custom_theme_scale_with_windows = false;
+  preferences.active_theme_id = "sogou.test";
   const std::string configured = ziliu::core::SerializeSettings(preferences);
   std::atomic<int> settings_state = 0;
   std::atomic<int> settings_reads = 0;
+  std::atomic<int> theme_reads = 0;
+  std::atomic<int> menu_reads = 0;
+  std::atomic<int> menu_actions = 0;
   ziliu::ipc::PipeServer server(pipe_name, CreateDelayedEngine,
       [&]() -> std::optional<std::string> {
         ++settings_reads;
@@ -152,6 +157,31 @@ int main() {
           return std::nullopt;
         }
         return settings_state.load() == 0 ? configured : ziliu::core::SerializeSettings({});
+      },
+      [&](std::string_view theme_id, std::string_view resource,
+          std::uint32_t offset) -> std::optional<std::vector<std::byte>> {
+        ++theme_reads;
+        if (theme_id != "sogou.test") {
+          return std::nullopt;
+        }
+        if (resource.empty() && offset == 0) {
+          return std::vector<std::byte>{std::byte{'{'}, std::byte{'}'}};
+        }
+        if (resource == "assets/a.png" && offset == 0) {
+          return std::vector<std::byte>{std::byte{0}, std::byte{0xFF}};
+        }
+        if (resource == "assets/a.png" && offset == 2) {
+          return std::vector<std::byte>{};
+        }
+        return std::nullopt;
+      },
+      [&](std::int32_t x, std::int32_t y) {
+        ++menu_reads;
+        return x == -100 && y == 700;
+      },
+      [&](std::uint32_t action) {
+        ++menu_actions;
+        return action == 1 || action == 2;
       });
   std::jthread server_thread([&server] { Expect(server.Run() == 0, "server should stop cleanly"); });
   ziliu::ipc::PipeClient client(pipe_name);
@@ -186,6 +216,80 @@ int main() {
          "settings read failure must not be reported as successful default settings");
   settings_state = 0;
 
+  Request theme_request{request_id++, 0, Command::kGetThemeResource, 0};
+  theme_request.theme_id = "sogou.test";
+  theme_request.resource = "assets/a.png";
+  std::vector<std::byte> theme_wire;
+  Expect(!ziliu::core::ipc::EncodeRequest(theme_request, 7, &theme_wire),
+         "theme transfer must require protocol v8");
+  Expect(ziliu::core::ipc::EncodeRequest(theme_request, &theme_wire),
+         "theme transfer should encode in protocol v8");
+  Request decoded_theme_request;
+  Expect(ziliu::core::ipc::DecodeRequest(theme_wire, &decoded_theme_request) &&
+             decoded_theme_request.theme_id == theme_request.theme_id &&
+             decoded_theme_request.resource == theme_request.resource,
+         "theme identity and resource path should survive the wire round trip");
+  response = client.Exchange(theme_request);
+  Expect(response.has_value() && response->status == Status::kOk &&
+             response->theme_chunk ==
+                 std::vector<std::byte>{std::byte{0}, std::byte{0xFF}},
+         "raw theme bytes must survive the authenticated pipe");
+  theme_request.request_id = request_id++;
+  theme_request.value = 2;
+  response = client.Exchange(theme_request);
+  Expect(response.has_value() && response->status == Status::kOk &&
+             response->theme_chunk.empty(), "theme resource EOF should be explicit");
+  theme_request.request_id = request_id++;
+  theme_request.theme_id = "sogou.other";
+  response = client.Exchange(theme_request);
+  Expect(response.has_value() && response->status == Status::kInvalidRequest,
+         "a resource outside the active theme should not be served");
+  Expect(theme_reads.load() == 3, "only authenticated theme requests reach the provider");
+
+  Request menu_request{request_id++, 0, Command::kOpenQuickMenu, 0};
+  menu_request.point_x = -100;
+  menu_request.point_y = 700;
+  Expect(!ziliu::core::ipc::EncodeRequest(menu_request, 7, &theme_wire),
+         "quick-menu launch must require protocol v8");
+  Expect(ziliu::core::ipc::EncodeRequest(menu_request, &theme_wire),
+         "quick-menu launch should encode in protocol v8");
+  Request decoded_menu_request;
+  Expect(ziliu::core::ipc::DecodeRequest(theme_wire, &decoded_menu_request) &&
+             decoded_menu_request.point_x == -100 &&
+             decoded_menu_request.point_y == 700,
+         "signed monitor coordinates must survive the wire round trip");
+  response = client.Exchange(menu_request);
+  Expect(response.has_value() && response->status == Status::kOk &&
+             menu_reads.load() == 1,
+         "authenticated client should be able to open the user-session menu");
+  menu_request.request_id = request_id++;
+  menu_request.session_id = session_id;
+  response = client.Exchange(menu_request);
+  Expect(response.has_value() && response->status == Status::kUnsupported &&
+             menu_reads.load() == 1,
+         "menu launch may not borrow an engine session identifier");
+
+  Request action_request{request_id++, 0, Command::kRunMenuAction, 1};
+  Expect(!ziliu::core::ipc::EncodeRequest(action_request, 7, &theme_wire),
+         "menu actions require protocol v8");
+  response = client.Exchange(action_request);
+  Expect(response.has_value() && response->status == Status::kOk &&
+             menu_actions.load() == 1,
+         "authenticated menu action should reach its provider");
+  action_request.request_id = request_id++;
+  action_request.value = 3;
+  response = client.Exchange(action_request);
+  Expect(response.has_value() && response->status == Status::kUnsupported &&
+             menu_actions.load() == 1,
+         "unknown menu action must not reach its provider");
+  action_request.request_id = request_id++;
+  action_request.session_id = session_id;
+  action_request.value = 2;
+  response = client.Exchange(action_request);
+  Expect(response.has_value() && response->status == Status::kUnsupported &&
+             menu_actions.load() == 1,
+         "menu action may not borrow an engine session identifier");
+
   Response settings_response;
   settings_response.settings_text = configured;
   std::vector<std::byte> settings_bytes;
@@ -208,6 +312,16 @@ int main() {
          "invalid UTF-8 settings must be rejected");
   Expect(!ziliu::core::ipc::EncodeRequest(Request{1, 0, Command::kGetSettings, 0}, 5,
                                          &settings_bytes), "settings query requires v6");
+  const Request restricted_create{2, 0, Command::kCreateSession, 1};
+  Expect(!ziliu::core::ipc::EncodeRequest(restricted_create, 6, &settings_bytes),
+         "restricted session requires protocol v7");
+  Expect(ziliu::core::ipc::EncodeRequest(restricted_create, &settings_bytes),
+         "restricted session should encode in protocol v7");
+  settings_bytes[4] = std::byte{6};
+  settings_bytes[5] = std::byte{0};
+  Request downgraded_restricted;
+  Expect(!ziliu::core::ipc::DecodeRequest(settings_bytes, &downgraded_restricted),
+         "the current parser must reject a forged v6 restricted-create request");
 
   for (const wchar_t letter : std::wstring_view(L"ziliu")) {
     response = client.Exchange(

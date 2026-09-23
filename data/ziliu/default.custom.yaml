@@ -4,5 +4,6 @@
 patch:
   schema_list:
     - schema: rime_ice
+    - schema: ziliu_private
   # 后端始终准备最大页容量；界面再按用户设置显示 3 至 9 个候选。
   menu/page_size: 9

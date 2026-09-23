@@ -1,15 +1,101 @@
 #include "ziliu/broker/rime_engine.h"
 
+#include <windows.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace {
+
+void Expect(bool condition, std::string_view message);
+
+std::filesystem::path UserDataPath() {
+  char* value = nullptr;
+  std::size_t length = 0;
+  if (_dupenv_s(&value, &length, "ZILIU_RIME_USER_DATA_DIR") != 0 || value == nullptr) {
+    std::free(value);
+    return {};
+  }
+  const std::filesystem::path result(value);
+  std::free(value);
+  return result;
+}
+
+using FileSnapshot = std::map<std::filesystem::path, std::vector<char>>;
+
+FileSnapshot SnapshotFiles(const std::filesystem::path& root) {
+  FileSnapshot snapshot;
+  std::error_code error;
+  std::filesystem::path failed_path;
+  for (std::filesystem::recursive_directory_iterator it(root, error), end;
+       !error && it != end; it.increment(error)) {
+    if (!it->is_regular_file(error) || error) continue;
+    // LevelDB's process-held LOCK is synchronization state, not persisted input,
+    // and is intentionally not readable while held. Only its known empty form is excluded.
+    if (it->path().filename() == L"LOCK") {
+      if (it->file_size(error) != 0 || error) {
+        failed_path = it->path();
+        if (!error) error = std::error_code(ERROR_INVALID_DATA, std::system_category());
+        break;
+      }
+      continue;
+    }
+    const auto relative = std::filesystem::relative(it->path(), root, error);
+    if (error) break;
+    const HANDLE file = CreateFileW(it->path().c_str(), GENERIC_READ,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                    nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+      failed_path = it->path();
+      error = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+      break;
+    }
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 ||
+        static_cast<unsigned long long>(size.QuadPart) > SIZE_MAX) {
+      failed_path = it->path();
+      const DWORD last_error = GetLastError();
+      error = std::error_code(static_cast<int>(last_error == ERROR_SUCCESS
+                                                   ? ERROR_INVALID_DATA : last_error),
+                              std::system_category());
+      CloseHandle(file);
+      break;
+    }
+    std::vector<char> bytes(static_cast<std::size_t>(size.QuadPart));
+    std::size_t offset = 0;
+    while (offset < bytes.size()) {
+      const auto chunk = static_cast<DWORD>((std::min)(
+          bytes.size() - offset, static_cast<std::size_t>(MAXDWORD)));
+      DWORD read = 0;
+      if (!ReadFile(file, bytes.data() + offset, chunk, &read, nullptr)) {
+        failed_path = it->path();
+        error = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+        break;
+      }
+      if (read != chunk) {
+        failed_path = it->path();
+        error = std::error_code(ERROR_HANDLE_EOF, std::system_category());
+        break;
+      }
+      offset += read;
+    }
+    CloseHandle(file);
+    if (error) break;
+    snapshot.emplace(relative, std::move(bytes));
+  }
+  if (error) {
+    std::cerr << "Snapshot failure at " << failed_path.string() << ": " << error.message() << '\n';
+  }
+  Expect(!error, "Rime user-data snapshot should be readable");
+  return snapshot;
+}
 
 void Expect(bool condition, std::string_view message) {
   if (!condition) {
@@ -21,16 +107,8 @@ void Expect(bool condition, std::string_view message) {
 std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>>
 PrepareUnchangedOverlays(const std::filesystem::path& executable_path) {
   std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> timestamps;
-  char* user_data_value = nullptr;
-  std::size_t user_data_length = 0;
-  if (_dupenv_s(&user_data_value, &user_data_length, "ZILIU_RIME_USER_DATA_DIR") != 0 ||
-      user_data_value == nullptr) {
-    std::free(user_data_value);
-    return timestamps;
-  }
-
-  const std::filesystem::path user_data_path(user_data_value);
-  std::free(user_data_value);
+  const std::filesystem::path user_data_path = UserDataPath();
+  if (user_data_path.empty()) return timestamps;
   const auto shared_data_path = executable_path.parent_path() / "data" / "rime";
   std::error_code file_error;
   std::filesystem::create_directories(user_data_path, file_error);
@@ -68,6 +146,45 @@ int main(int argument_count, char* arguments[]) {
     Expect(!file_error && actual_timestamp == expected_timestamp,
            "An unchanged Rime overlay should not be rewritten during cold start");
   }
+  // Finish ordinary-schema warmup before inspecting restricted input. Its
+  // LevelDB WAL is intentionally held exclusively while an ordinary session is open.
+  engine.reset();
+  const auto user_data_path = UserDataPath();
+  Expect(!user_data_path.empty(), "Rime tests require an isolated user-data directory");
+  auto restricted_engine = ziliu::broker::CreateEngine(true);
+  Expect(restricted_engine != nullptr,
+         "the restricted Rime schema must be deployed; do not fall back to ordinary learning");
+  restricted_engine->SetCandidatePageSize(7);
+  // Session/schema metadata may be prepared when the restricted session opens;
+  // freeze the warmed state before any private input to detect input-derived writes.
+  const auto before_restricted = SnapshotFiles(user_data_path);
+  for (const wchar_t letter : std::wstring_view(L"nihao")) {
+    Expect(restricted_engine->ProcessLetter(letter),
+           "restricted local composition should consume pinyin");
+  }
+  const auto restricted_snapshot = restricted_engine->Snapshot();
+  Expect(restricted_snapshot.preedit == L"ni'hao" &&
+             !restricted_snapshot.candidates.empty() &&
+             restricted_snapshot.candidates.front().text == L"你好",
+         "restricted schema should use the static Rime Ice Chinese dictionary");
+  Expect(restricted_engine->Select(0).consumed,
+         "restricted schema should commit a local static-dictionary candidate");
+  for (const wchar_t letter : std::wstring_view(L"shi")) {
+    Expect(restricted_engine->ProcessLetter(letter),
+           "restricted local composition should consume an ambiguous spelling");
+  }
+  const auto ambiguous_restricted = restricted_engine->Snapshot();
+  Expect(ambiguous_restricted.candidates.size() >= 4,
+         "restricted schema should expose a nonfirst static candidate");
+  Expect(restricted_engine->Select(3).consumed,
+         "restricted schema should commit a nonfirst candidate without learning it");
+  Expect(SnapshotFiles(user_data_path) == before_restricted,
+         "restricted input must not change exact Rime user-data file contents");
+  restricted_engine.reset();
+  Expect(SnapshotFiles(user_data_path) == before_restricted,
+         "destroying a restricted session must not flush private input to user data");
+  engine = ziliu::broker::CreateEngine();
+  Expect(engine != nullptr, "ordinary Rime session should reopen after restricted input");
   engine->SetCandidatePageSize(7);
 
   for (const wchar_t letter : std::wstring_view(L"nihao")) {

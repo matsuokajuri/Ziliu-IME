@@ -132,4 +132,9 @@ class StubEngine final : public Engine {
 
 std::unique_ptr<Engine> CreateStubEngine() { return std::make_unique<StubEngine>(); }
 
+std::unique_ptr<Engine> CreateStubEngineForSession(bool restricted) {
+  static_cast<void>(restricted);
+  return CreateStubEngine();
+}
+
 }  // namespace ziliu::core

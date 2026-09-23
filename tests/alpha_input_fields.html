@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ziliu TEST ONLY - local input fields</title>
+<style>body{font:16px sans-serif;max-width:46rem;margin:2rem}label{display:block;margin-top:1rem}textarea,input{display:block;width:100%;box-sizing:border-box}small{color:#555}</style>
+<h1>Ziliu TEST ONLY - local synthetic input fields</h1>
+<p>No network, form submission, or global keystroke tracking. The downloaded JSON contains only values, composition/input events, and code points from these fields.</p>
+<label>Ordinary<textarea id="ordinary" rows="2"></textarea></label>
+<label>Password<input id="password" type="password" autocomplete="off"></label>
+<label>Numeric-password synthetic PIN-like field <small>This HTML control does <strong>not</strong> assert that Edge exposes TSF <code>IS_NUMERIC_PIN</code>; use the native host fixture for that scope.</small><input id="pinLike" type="password" inputmode="numeric" autocomplete="off"></label>
+<label>Second ordinary<textarea id="ordinarySecond" rows="2"></textarea></label>
+<button id="export" type="button">Export synthetic results</button>
+<script>
+"use strict";
+const fields = [...document.querySelectorAll("textarea,input")];
+const events = new Map(fields.map(field => [field.id, []]));
+for (const field of fields) {
+  for (const type of ["compositionstart", "compositionupdate", "compositionend", "input"]) {
+    field.addEventListener(type, event => events.get(field.id).push({type, data: event.data ?? ""}));
+  }
+}
+const codepoints = text => Array.from(text, character => "U+" + character.codePointAt(0).toString(16).toUpperCase().padStart(4, "0"));
+document.querySelector("#export").addEventListener("click", () => {
+  const result = {testOnly: true, fields: fields.map(field => ({id: field.id, value: field.value, codepoints: codepoints(field.value), events: events.get(field.id)}))};
+  const blob = new Blob([JSON.stringify(result, null, 2) + "\n"], {type: "application/json"});
+  const link = Object.assign(document.createElement("a"), {href: URL.createObjectURL(blob), download: "ziliu-alpha-input-fields.json"});
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+</script>

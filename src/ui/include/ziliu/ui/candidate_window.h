@@ -11,6 +11,7 @@
 #include <wrl/client.h>
 
 #include <filesystem>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -38,6 +39,9 @@ class CandidateWindow final {
                    const RECT* viewport_bounds = nullptr);
   void SetExpanded(bool expanded);
   void SetQuickMenuAction(std::function<void(POINT)> action);
+  using ThemeResourceLoader = std::function<std::optional<std::vector<std::byte>>(
+      std::string_view theme_id, std::string_view resource)>;
+  void SetThemeResourceLoader(ThemeResourceLoader loader);
   void Hide();
 
  static LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wparam,
@@ -173,6 +177,7 @@ class CandidateWindow final {
   bool dark_theme_ = false;
   bool dark_theme_initialized_ = false;
   bool theme_initialized_ = false;
+  ULONGLONG theme_retry_tick_ = 0;
   bool preview_mode_ = false;
   bool expanded_ = false;
   bool can_expand_ = false;
@@ -185,6 +190,7 @@ class CandidateWindow final {
   std::vector<float> candidate_tops_;
   core::ThemeManifest theme_manifest_;
   std::filesystem::path theme_directory_;
+  ThemeResourceLoader theme_resource_loader_;
   D2D1_RECT_F expand_button_bounds_{};
   D2D1_RECT_F menu_button_bounds_{};
   bool expand_button_hovered_ = false;

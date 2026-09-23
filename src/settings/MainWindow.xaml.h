@@ -26,7 +26,7 @@ struct MainWindow : MainWindowT<MainWindow> {
   void ShowSettingsPage(std::wstring_view page);
   void ApplyThemeFromControls();
   void UpdateAppearanceControlStates();
-  void UpdateAppearanceResponsiveLayout();
+  void UpdatePageResponsiveLayout();
   void UpdateColorSwatches();
   void UpdateCandidatePreview();
   void EnsureCandidatePreview();

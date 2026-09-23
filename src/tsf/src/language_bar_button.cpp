@@ -83,9 +83,13 @@ HICON CreateModeIcon(bool chinese_mode) {
 }  // namespace
 
 LanguageBarButton::LanguageBarButton(std::wstring settings_executable,
-                                     std::function<HRESULT()> toggle_input_mode)
+                                     std::function<HRESULT()> toggle_input_mode,
+                                     std::function<HRESULT(LONG, LONG)> launch_quick_menu,
+                                     std::function<HRESULT(std::uint32_t)> run_menu_action)
     : settings_executable_(std::move(settings_executable)),
-      toggle_input_mode_(std::move(toggle_input_mode)) {
+      toggle_input_mode_(std::move(toggle_input_mode)),
+      launch_quick_menu_(std::move(launch_quick_menu)),
+      run_menu_action_(std::move(run_menu_action)) {
   AddModuleReference();
 }
 
@@ -170,16 +174,31 @@ STDMETHODIMP LanguageBarButton::OnClick(TfLBIClick click, POINT point, const REC
   if (click == TF_LBI_CLK_LEFT) {
     return toggle_input_mode_ ? toggle_input_mode_() : S_OK;
   }
-  if (click != TF_LBI_CLK_RIGHT || settings_executable_.empty()) {
+  if (click != TF_LBI_CLK_RIGHT) {
     return S_OK;
   }
-  const LONG x = area != nullptr ? area->left + (area->right - area->left) / 2 : point.x;
+  LONG x = area != nullptr ? area->left + (area->right - area->left) / 2 : point.x;
   const LONG y = area != nullptr ? area->top : point.y;
+  MONITORINFO monitor{sizeof(monitor)};
+  if (GetMonitorInfoW(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST), &monitor)) {
+    const POINT probe{(monitor.rcWork.left + monitor.rcWork.right) / 2,
+                      (monitor.rcWork.top + monitor.rcWork.bottom) / 2};
+    const HWND obstacle = GetAncestor(WindowFromPoint(probe), GA_ROOT);
+    if (obstacle != nullptr &&
+        (GetWindowLongPtrW(obstacle, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0) {
+      RECT obstacle_bounds{};
+      if (GetWindowRect(obstacle, &obstacle_bounds)) {
+        const LONG left_space = obstacle_bounds.left - monitor.rcWork.left;
+        const LONG right_space = monitor.rcWork.right - obstacle_bounds.right;
+        x = left_space >= right_space ? monitor.rcWork.left : monitor.rcWork.right;
+      }
+    }
+  }
   return ScheduleQuickMenu(x, y);
 }
 
 HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
-  if (settings_executable_.empty()) {
+  if (settings_executable_.empty() && !launch_quick_menu_) {
     return S_OK;
   }
   const ULONGLONG now = GetTickCount64();
@@ -187,8 +206,11 @@ HRESULT LanguageBarButton::ScheduleQuickMenu(LONG x, LONG y) {
       now - last_menu_request_tick_ < kQuickMenuDebounceMilliseconds) {
     return S_OK;
   }
-  last_menu_request_tick_ = now;
-  return OpenQuickMenu(x, y);
+  const HRESULT result = OpenQuickMenu(x, y);
+  if (SUCCEEDED(result)) {
+    last_menu_request_tick_ = now;
+  }
+  return result;
 }
 
 HRESULT LanguageBarButton::ShowQuickMenu(LONG x, LONG y) {
@@ -196,8 +218,11 @@ HRESULT LanguageBarButton::ShowQuickMenu(LONG x, LONG y) {
 }
 
 HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
-  if (settings_executable_.empty()) {
+  if (launch_quick_menu_ && SUCCEEDED(launch_quick_menu_(x, y))) {
     return S_OK;
+  }
+  if (settings_executable_.empty()) {
+    return E_FAIL;
   }
   const std::wstring arguments =
       L"--quick-menu --x " + std::to_wstring(x) + L" --y " + std::to_wstring(y);
@@ -206,20 +231,39 @@ HRESULT LanguageBarButton::OpenQuickMenu(LONG x, LONG y) {
   return reinterpret_cast<INT_PTR>(result) > 32 ? S_OK : E_FAIL;
 }
 
+HRESULT LanguageBarButton::RunMenuAction(UINT identifier) {
+  if (identifier == 2 && !settings_executable_.empty()) {
+    const HINSTANCE launched = ShellExecuteW(nullptr, L"open", settings_executable_.c_str(),
+                                             nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(launched) > 32) {
+      return S_OK;
+    }
+  }
+  return run_menu_action_ ? run_menu_action_(identifier) : E_FAIL;
+}
+
 STDMETHODIMP LanguageBarButton::InitMenu(ITfMenu* menu) {
   if (menu == nullptr) {
     return E_INVALIDARG;
   }
-  POINT cursor{};
-  if (!GetCursorPos(&cursor)) {
+  if (!GetCursorPos(&menu_anchor_)) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
-  return ScheduleQuickMenu(cursor.x, cursor.y);
+  // The taskbar may request the TSF menu without sending OnClick (for example
+  // after focus leaves a text field). A menu-style item must actually populate
+  // ITfMenu; opening a separate window from InitMenu leaves the native menu empty.
+  constexpr wchar_t toggle_label[] = L"简繁切换";
+  constexpr wchar_t settings_label[] = L"打开完整设置";
+  const HRESULT toggle = menu->AddMenuItem(1, 0, nullptr, nullptr, toggle_label,
+                                            static_cast<ULONG>(std::size(toggle_label) - 1), nullptr);
+  return SUCCEEDED(toggle)
+             ? menu->AddMenuItem(2, 0, nullptr, nullptr, settings_label,
+                                 static_cast<ULONG>(std::size(settings_label) - 1), nullptr)
+             : toggle;
 }
 
 STDMETHODIMP LanguageBarButton::OnMenuSelect(UINT identifier) {
-  static_cast<void>(identifier);
-  return S_OK;
+  return identifier >= 1 && identifier <= 2 ? RunMenuAction(identifier) : S_OK;
 }
 
 STDMETHODIMP LanguageBarButton::GetIcon(HICON* icon) {

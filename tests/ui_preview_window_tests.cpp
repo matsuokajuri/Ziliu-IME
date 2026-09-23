@@ -163,6 +163,9 @@ struct CandidateWindowTestAccess {
   static ID2D1Bitmap* BackgroundIdentity(const CandidateWindow& window) {
     return window.surface_bitmaps_.background.Get();
   }
+  static std::string ThemeId(const CandidateWindow& window) {
+    return window.theme_manifest_.id;
+  }
   static float PresentedWidth(const CandidateWindow& window) {
     return window.PresentedContentWidth();
   }
@@ -314,6 +317,38 @@ LONG WindowWidth(HWND window) {
   return bounds.right - bounds.left;
 }
 
+std::vector<std::byte> MakeTinyPng() {
+  using Microsoft::WRL::ComPtr;
+  ComPtr<IWICImagingFactory> factory;
+  ComPtr<IWICBitmap> bitmap;
+  ComPtr<IStream> stream;
+  ComPtr<IWICBitmapEncoder> encoder;
+  ComPtr<IWICBitmapFrameEncode> frame;
+  BYTE pixel[4]{0, 0, 255, 255};
+  Expect(SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(&factory))) &&
+             SUCCEEDED(factory->CreateBitmapFromMemory(1, 1, GUID_WICPixelFormat32bppBGRA,
+                                                       4, sizeof(pixel), pixel, &bitmap)) &&
+             SUCCEEDED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) &&
+             SUCCEEDED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
+             SUCCEEDED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) &&
+             SUCCEEDED(encoder->CreateNewFrame(&frame, nullptr)) &&
+             SUCCEEDED(frame->Initialize(nullptr)) &&
+             SUCCEEDED(frame->WriteSource(bitmap.Get(), nullptr)) &&
+             SUCCEEDED(frame->Commit()) && SUCCEEDED(encoder->Commit()),
+         "create an in-memory PNG for the remote theme test");
+  STATSTG stat{};
+  Expect(SUCCEEDED(stream->Stat(&stat, STATFLAG_NONAME)) && stat.cbSize.QuadPart > 0 &&
+             stat.cbSize.QuadPart < 4096, "in-memory PNG has a bounded size");
+  std::vector<std::byte> bytes(static_cast<std::size_t>(stat.cbSize.QuadPart));
+  LARGE_INTEGER start{};
+  ULONG read = 0;
+  Expect(SUCCEEDED(stream->Seek(start, STREAM_SEEK_SET, nullptr)) &&
+             SUCCEEDED(stream->Read(bytes.data(), static_cast<ULONG>(bytes.size()), &read)) &&
+             read == bytes.size(), "read the in-memory PNG");
+  return bytes;
+}
+
 void CheckRealWidthAnimation() {
   // Never show this popup on the input desktop. No SwitchDesktop, input injection,
   // registration, or VM is involved; the private desktop dies with this test.
@@ -404,7 +439,10 @@ void CheckRealWidthAnimation() {
       Access::Queue(popup, key % 2 ? narrow : wide, stale_top, settings);
       // Timeout/null completion must retain the last verified caret, not TSF.
       Access::Complete(popup, key % 3 ? std::optional<RECT>(actual_bottom) : std::nullopt);
-      PumpFor(17);
+      // A Windows timer can be delivered about 30 ms apart here. Give each
+      // alternating target enough time to produce a real HWND position event;
+      // 17 ms can phase-align the reversals so no frame is ever presented.
+      PumpFor(60);
       RECT current{};
       GetWindowRect(window, &current);
       Expect(current.top == bottom.top, "every input update keeps the verified vertical position");
@@ -453,6 +491,19 @@ void CheckRealWidthAnimation() {
     theme.light.typography.english_font_family = "Consolas";
     theme.light.horizontal.separator = ziliu::core::ThemeSeparator{0xffff0000U, "", 0, 0, 2};
     theme.light.horizontal.menu_button = ziliu::core::ThemeButtonImages{};
+    Access::SetTheme(popup, theme, {});
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
+    auto missing_font_theme = theme;
+    missing_font_theme.light.typography.chinese_font_family =
+        "Ziliu Missing Font Fallback Test";
+    Access::SetTheme(popup, missing_font_theme, {});
+    auto missing_font_snapshot = narrow;
+    missing_font_snapshot.candidates[0].text = L"你好";
+    popup.Show(missing_font_snapshot, caret, settings, 0);
+    PumpFor(80);
+    Expect(Access::Height(popup) > 0,
+           "SSF GDI rendering must retain a candidate surface for Chinese text with a missing authored font");
     Access::SetTheme(popup, theme, {});
     popup.Show(narrow, caret, settings, 0);
     PumpFor(80);
@@ -636,6 +687,37 @@ void CheckRealWidthAnimation() {
            "custom V1 reaches its wider endpoint with theme scaling disabled");
     settings.candidate_layout = ziliu::core::CandidateLayout::kHorizontal;
     settings.custom_theme_scale_with_windows = true;
+    popup.Hide();
+    PumpFor(150);
+    auto remote_theme = ziliu::core::MakeDefaultThemeManifest();
+    remote_theme.id = "ziliu.remote-test";
+    remote_theme.source_format = "sogou-ssf";
+    remote_theme.light.horizontal.background = ziliu::core::ThemeImage{};
+    remote_theme.light.horizontal.background->asset = "assets/remote.png";
+    const std::string remote_manifest = ziliu::core::SerializeThemeManifest(remote_theme);
+    const auto remote_png = MakeTinyPng();
+    int manifest_reads = 0;
+    int asset_reads = 0;
+    popup.SetThemeResourceLoader([&](std::string_view id, std::string_view resource)
+                                     -> std::optional<std::vector<std::byte>> {
+      if (id != remote_theme.id) return std::nullopt;
+      if (resource.empty()) {
+        ++manifest_reads;
+        const auto* first = reinterpret_cast<const std::byte*>(remote_manifest.data());
+        return std::vector<std::byte>(first, first + remote_manifest.size());
+      }
+      if (resource == "assets/remote.png") {
+        ++asset_reads;
+        return remote_png;
+      }
+      return std::nullopt;
+    });
+    settings.active_theme_id = remote_theme.id;
+    popup.Show(narrow, caret, settings, 0);
+    PumpFor(80);
+    Expect(Access::ThemeId(popup) == remote_theme.id && manifest_reads == 1 &&
+               asset_reads > 0 && Access::BackgroundIdentity(popup) != nullptr,
+           "restricted-host theme manifest and PNG load without filesystem access");
     popup.Hide();
     PumpFor(150);
     const auto default_theme = ziliu::core::MakeDefaultThemeManifest();

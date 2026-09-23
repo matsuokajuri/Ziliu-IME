@@ -47,7 +47,7 @@
             <Style x:Key="PageStackStyle" TargetType="StackPanel">
                 <Setter Property="MaxWidth" Value="900" />
                 <Setter Property="Padding" Value="36,28,36,40" />
-                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
             </Style>
         </Grid.Resources>
 
@@ -56,7 +56,7 @@
                 <VisualStateGroup x:Name="SettingsWidthStates">
                     <VisualState x:Name="WideSettingsLayout">
                         <VisualState.StateTriggers>
-                            <AdaptiveTrigger MinWindowWidth="720" />
+                            <AdaptiveTrigger MinWindowWidth="1400" />
                         </VisualState.StateTriggers>
                     </VisualState>
                     <VisualState x:Name="NarrowSettingsLayout">
@@ -71,13 +71,6 @@
                             <Setter Target="AppearancePageContent.Padding" Value="20,20,20,32" />
                             <Setter Target="ThemePageContent.Padding" Value="20,20,20,32" />
                             <Setter Target="KeysPageContent.Padding" Value="20,20,20,32" />
-                            <Setter Target="CandidatePreviewHost.Height" Value="190" />
-                            <Setter Target="ThemeHeaderGrid.ColumnSpacing" Value="0" />
-                            <Setter Target="ThemeHeaderGrid.RowSpacing" Value="12" />
-                            <Setter Target="ImportThemeButton.(Grid.Row)" Value="1" />
-                            <Setter Target="ImportThemeButton.(Grid.Column)" Value="0" />
-                            <Setter Target="ImportThemeButton.HorizontalAlignment" Value="Left" />
-                            <Setter Target="ImportThemeButton.Margin" Value="0,4,0,0" />
                         </VisualState.Setters>
                     </VisualState>
                 </VisualStateGroup>
@@ -97,7 +90,7 @@
                 IsTitleBarAutoPaddingEnabled="False"
                 OpenPaneLength="210"
                 CompactModeThresholdWidth="640"
-                ExpandedModeThresholdWidth="1008"
+                ExpandedModeThresholdWidth="1400"
                 PaneDisplayMode="Auto"
                 SelectionFollowsFocus="Disabled">
                 <NavigationView.PaneHeader>
@@ -130,7 +123,7 @@
                 </NavigationView.MenuItems>
 
                 <Grid>
-                    <ScrollViewer x:Name="CommonPage" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="CommonPage" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="CommonPageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="常用" Style="{StaticResource ZiliuTitleStyle}" />
 
@@ -173,7 +166,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="CorrectionPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="CorrectionPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="CorrectionPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="CorrectionBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="拼音纠错" Style="{StaticResource ZiliuTitleStyle}"/>
@@ -190,7 +183,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="FuzzyPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="FuzzyPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="FuzzyPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="FuzzyBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="模糊音" Style="{StaticResource ZiliuTitleStyle}"/>
@@ -208,7 +201,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="PunctuationPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="PunctuationPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="PunctuationPageContent" Style="{StaticResource PageStackStyle}">
                             <Button x:Name="PunctuationBackButton" Padding="8" Margin="-8,0,0,16" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0"><StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE72B;"/><TextBlock Text="返回常用"/></StackPanel></Button>
                             <TextBlock Text="自定义标点" Style="{StaticResource ZiliuTitleStyle}"/>
@@ -227,7 +220,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="AppearancePageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="外观" Style="{StaticResource ZiliuTitleStyle}"/>
                             <Border x:Name="CandidatePreviewSection"
@@ -235,7 +228,7 @@
                                     Padding="28"
                                     CornerRadius="12"
                                     Background="{ThemeResource LayerFillColorAltBrush}">
-                                <Grid x:Name="CandidatePreviewHost" Height="250">
+                                <Grid x:Name="CandidatePreviewHost" Height="220">
                                     <StackPanel x:Name="CandidatePreviewUnavailable"
                                                 HorizontalAlignment="Center"
                                                 VerticalAlignment="Center"
@@ -310,28 +303,28 @@
                     <ScrollViewer x:Name="ThemePage"
                                   Visibility="Collapsed"
                                   HorizontalContentAlignment="Stretch"
+                                  HorizontalScrollMode="Disabled"
+                                  HorizontalScrollBarVisibility="Disabled"
                                   VerticalScrollBarVisibility="Auto">
-                        <StackPanel x:Name="ThemePageContent" Style="{StaticResource PageStackStyle}" HorizontalAlignment="Stretch">
+                        <StackPanel x:Name="ThemePageContent" Style="{StaticResource PageStackStyle}" MaxWidth="760">
                             <Button x:Name="ThemeBackButton" Padding="6,4" Margin="-6,0,0,18" HorizontalAlignment="Left" Background="Transparent" BorderThickness="0">
                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                     <FontIcon FontSize="14" Glyph="&#xE72B;"/>
                                     <TextBlock Text="返回外观"/>
                                 </StackPanel>
                             </Button>
-                            <Grid x:Name="ThemeHeaderGrid" ColumnSpacing="24">
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <StackPanel Spacing="12">
                                 <StackPanel Spacing="4">
                                     <TextBlock Text="主题" Style="{StaticResource ZiliuTitleStyle}"/>
-                          <TextBlock Text="选择候选窗口外观，或从本地导入字流或搜狗主题包" Style="{StaticResource RowHintStyle}"/>
+                                    <TextBlock Text="选择候选窗口外观，或从本地导入字流或搜狗主题包" Style="{StaticResource RowHintStyle}"/>
                                 </StackPanel>
-                                <Button x:Name="ImportThemeButton" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource AccentButtonStyle}">
+                                <Button x:Name="ImportThemeButton" HorizontalAlignment="Left" Style="{StaticResource AccentButtonStyle}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon FontSize="15" Glyph="&#xE8E5;"/>
                                         <TextBlock Text="导入主题"/>
                                     </StackPanel>
                                 </Button>
-                            </Grid>
+                            </StackPanel>
                             <InfoBar x:Name="ThemeInfoBar" Margin="0,16,0,0" IsOpen="False" IsClosable="True"/>
                             <TextBlock Text="已安装主题" Style="{StaticResource SectionLabelStyle}"/>
                             <Border Style="{StaticResource SettingsCardStyle}">
@@ -340,7 +333,7 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <ScrollViewer x:Name="KeysPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalScrollBarVisibility="Auto">
+                    <ScrollViewer x:Name="KeysPage" Visibility="Collapsed" HorizontalContentAlignment="Stretch" HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
                         <StackPanel x:Name="KeysPageContent" Style="{StaticResource PageStackStyle}">
                             <TextBlock Text="按键" Style="{StaticResource ZiliuTitleStyle}"/>
                             <TextBlock Text="快捷键" Style="{StaticResource SectionLabelStyle}"/>
