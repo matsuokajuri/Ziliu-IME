@@ -1,7 +1,9 @@
-Ziliu 0.1.0-alpha.1 local candidate
+Ziliu 0.1.0-alpha.1 unsigned early test release
 
-THIS PACKAGE IS UNSIGNED AND FOR LOCAL ALPHA TESTING ONLY.
-DO NOT PUBLISH OR REDISTRIBUTE IT AS AN OFFICIAL RELEASE.
+THIS PACKAGE IS UNSIGNED AND IS NOT A STABLE RELEASE.
+Windows SmartScreen may warn about an unknown publisher or block installation.
+Download only from the project's GitHub Release page and compare its SHA-256.
+Do not disable SmartScreen globally. Signing is deferred until a formal release.
 
 SHA-256 checks in this package detect accidental corruption. They do not establish
 publisher identity or make unsigned code trustworthy.

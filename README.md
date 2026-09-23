@@ -4,8 +4,9 @@
 低占用、纯粹。
 
 当前版本身份为 **0.1.0-alpha.1**。TSF、版本化命名管道、Broker、librime、雾凇拼音和
-候选窗已经连通；目前只准备 Windows 11 x64 的未签名本地测试候选包，尚未批准公开发布。
-安装、升级、卸载、真实密码框和常用 Windows 应用兼容性仍需在隔离 VM 完成验收。
+候选窗已经连通；首个 Windows 11 x64 预发布版是**未签名的早期测试包**，不代表稳定版。
+已完成限定范围的隔离 VM 功能验收，详见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)；
+并未验证所有应用、皮肤或自定义 SSF 的逐像素一致性。
 
 ## 技术栈
 
@@ -66,7 +67,19 @@ ZiliuRegister.exe install
 ZiliuRegister.exe uninstall
 ```
 
-## 本地 Alpha 候选包
+## Alpha 预发布版
+
+[GitHub Releases](https://github.com/matsuokajuri/Ziliu-IME/releases) 提供 Windows 11 x64 的
+未签名 ZIP 和图形安装器。此版本仅供愿意承担测试风险的用户试用；目前**没有代码签名**，
+Windows SmartScreen 可能显示“未知发布者”、警告或拦截安装。请只从本仓库的 Release 页面
+下载，并核对同页 SHA-256；校验和只能核对下载完整性，不能证明发布者身份。不要为安装
+而全局关闭 SmartScreen。早期测试版暂不签名，正式版发布前再研究和落实签名。
+
+图形安装器需要管理员权限，并应由将使用字流的管理员账户运行；此 alpha 不支持标准用户
+通过另一管理员账户的凭据跨账户安装。安装或升级后请注销或重启 Windows，再重新打开
+要测试的应用。卸载会保留用户设置、皮肤和 Rime 用户数据。
+
+### 本地打包
 
 Release x64 构建完成后，可从明确文件清单生成未签名、本地测试专用候选包：
 
@@ -76,9 +89,8 @@ scripts\package-alpha.cmd
 ```
 
 候选包会严格校验真实 `rime.dll`、Rime 数据、WinUI 3 self-contained 文件、四个产品二进制的
-`0.1.0-alpha.1` 版本资源、许可证文件和逐文件 SHA-256。校验和只提供完整性，不提供发布者
-身份。不要把此未签名候选包作为官方 Release 分发。安装/升级/卸载设计、只读 `-VerifyOnly`
-用法和仍待执行的隔离 VM gate 见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)。
+`0.1.0-alpha.1` 版本资源、许可证文件和逐文件 SHA-256。安装/升级/卸载设计、只读
+`-VerifyOnly` 用法及实际验收边界见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)。
 
 ## 当前边界
 

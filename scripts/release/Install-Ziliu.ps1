@@ -243,10 +243,10 @@ if ($release.product -ne "Ziliu" -or $release.version -ne "0.1.0-alpha.1" -or
     $release.platform -ne "windows-11-x64" -or $release.signed -ne $false -or
     $release.testOnly -ne $true -or $release.windowsAppSdkDeployment -ne "self-contained" -or
     $release.userDataPolicy -ne "preserve") {
-  throw "release.json does not describe the expected unsigned local alpha candidate."
+  throw "release.json does not describe the expected unsigned alpha test package."
 }
 if ($VerifyOnly) {
-  Write-Host "Package verification passed for unsigned local-test candidate $($release.version)."
+  Write-Host "Package verification passed for unsigned alpha test package $($release.version)."
   Write-Warning "SHA-256 checks provide integrity only; this package is not signed or trusted."
   return
 }
@@ -351,8 +351,8 @@ try {
     throw "Installation failed; the previous registration state was restored."
   }
 
-  Write-Host "Installed unsigned local-test candidate at: $versionRoot"
-  Write-Warning "This package is unsigned and is not approved for public release."
+  Write-Host "Installed unsigned alpha test package at: $versionRoot"
+  Write-Warning "This early test release is unsigned; Windows SmartScreen may warn or block installation."
   Write-Warning "The registration now points at this version, but loaded TIP/Broker processes may still run the old version. Sign out or reboot, then reopen applications before treating the upgrade as converged."
   Write-Host "User settings, themes, and Rime data under LocalAppData were not modified."
 } catch {

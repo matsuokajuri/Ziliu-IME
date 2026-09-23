@@ -1,0 +1,20 @@
+Ziliu 0.1.0-alpha.1 - unsigned early test release
+
+This installer is an unsigned early test release, not a stable version. Windows
+SmartScreen may warn about an unknown publisher or block installation. Download
+only from the project's GitHub Release and verify the published SHA-256. Do not
+disable SmartScreen globally. Signing is planned for a future formal release.
+It installs only on Windows 11 x64 and requires administrator permission to
+register the input method.
+Run it from the administrator account that will use Ziliu. Installing for a
+different standard-user account through separate administrator credentials is
+not supported by this alpha installer.
+
+Setup preserves existing Ziliu user settings, themes, and Rime user data. An
+existing installation of this exact alpha version will not be overwritten.
+After an install or upgrade, sign out or restart Windows and reopen applications
+before evaluating the new input method version.
+
+Uninstall removes managed program files and registration but preserves user data.
+If a loaded input method DLL prevents file cleanup, restart Windows and retry
+uninstall. Do not delete the version directory manually.

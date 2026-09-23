@@ -2,9 +2,10 @@
 
 ## 状态与范围
 
-此阶段只准备和测试 `Ziliu 0.1.0-alpha.1` 的 Windows 11 x64 未签名候选包，不创建
-GitHub Release、tag 或公开下载，也不把 SHA-256 当作代码签名。正式公开发行前仍必须完成
-签名与第三方声明复核；guest 验收结果只对下方记录的精确候选包有效。
+本文前半部分记录了 `Ziliu 0.1.0-alpha.1` 的 Windows 11 x64 本地验收历史；其中
+“不公开发布”的结论属于当时的授权状态。现在用户批准公开**未签名的早期测试预发布版**，
+README、安装器提示与发行包会明确标示 SmartScreen 风险。代码签名延至正式版前处理。
+SHA-256 只验证完整性，不等于代码签名；guest 验收结果只对记录的精确候选包有效。
 
 WinUI 设置程序采用 **unpackaged self-contained** Windows App SDK 部署。候选包不依赖目标
 机器预装 Windows App Runtime，但打包会按固定 allowlist 要求本地 Release 输出包含完整
@@ -188,3 +189,41 @@ InputScope 与 TSF 注册枚举的 JSON 保存在 guest 的 `C:\ZiliuCompat\alph
 结论：冻结 r7 包在上述 **0.1.0-alpha.1 本地功能验收范围**内通过。不同应用/设置组合、
 全部 SSF 及逐像素 parity 均不由这一轮证明；不能把测试数量或这些功能通过项计为自定义
 SSF 渲染最终目标的完成度。
+
+## 2026-09-23 图形安装器（初始本地测试记录）
+
+`scripts/package-alpha-installer.ps1` 使用 Inno Setup 6.7.3 将上面的**精确 r7 ZIP**封装成可双击运行的
+`Ziliu-0.1.0-alpha.1-win11-x64-unsigned-test-only-setup.exe`。打包前会核对固定的 ZIP SHA-256
+`EC4F22358403794F00A0760487B093E7B232F2C543B0C419D6EFE03E5C10625B`；安装时再次核对
+内嵌 ZIP，并调用原有 `Install-Ziliu.ps1 -VerifyOnly` 与安装路径。图形安装器只负责提升权限、
+承载 ZIP 和在“应用与功能”登记卸载入口，不另写 TIP、Broker、用户数据的安装逻辑。
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -File .\scripts\package-alpha-installer.ps1
+```
+
+默认输出在 r7 ZIP 同目录，同时生成 EXE 的 `.sha256` 文件。若以后换用新 ZIP，必须显式传入
+`-PackageZip` 和与之匹配的 `-ExpectedSha256`，并重新做 guest 安装／卸载验收；不能沿用本节结果。
+同版本目录已存在时按原脚本设计拒绝覆盖。安装与卸载均只支持执行程序的管理员账户；
+标准用户通过**另一个**管理员账户的 UAC 凭据安装，可能把当前用户 Broker 启动项写到该管理员
+账户，故此 alpha 不支持这种跨账户安装。安装／升级后必须注销或重启才能验证已加载 TIP 收敛。
+
+本次安装器 EXE SHA-256 为 `A7943D6115C96F62A1BE1B2C4BD7652A00EEBE7ADEFB051BA8218AA3E2C3AE84`。
+隔离 VM `ziliu-compat-20260913` 中，传入 EXE 的 SHA-256 与主机一致；从旧版 `settings-fix-1`
+安装返回 0，436 个 manifest 文件、TIP 注册、HKCU Broker Run 值及 Windows 卸载入口均存在；
+同版本重装拒绝（退出码 7）在安装逻辑相同、仅提示文本不同的前一编译体上验证；
+最终 EXE 的安装与图形卸载器均返回 0，版本目录、COM、Run 值、卸载入口和卸载器
+均消失。用户数据 66 文件的汇总 SHA-256 在安装前、卸载后均为
+`D63B4F55776BBB86AB855C1C1D38E0835F5965F4771E160A770FFD14CAD96DF5`。
+guest 测试日志位于 `C:\ZiliuCompat\alpha-installer-20260923\`。本节不代表首装空白系统、
+跨账户安装、卸载时 DLL 被占用的恢复路径或真实 GUI 点击流程已验收；也不改变未签名、
+不得公开发行的状态。图形封装仍不是 MSI 事务；如果原安装脚本已成功而 Inno 后续登记卸载
+入口失败，需在隔离环境中人工审查状态，不能声称自动回滚成功。
+
+## 公开预发布版边界
+
+用户后来明确批准将未签名包作为 GitHub 预发布版提供，并将签名推迟到正式版前研究。
+发布包必须重新包含固定上游雾凇拼音 Credits、实际使用的 Windows App SDK 许可与
+NOTICE，并重新生成 ZIP、安装器和 SHA-256；上述 r7 本地包的散列及 VM 验收不能冒充
+新包的散列或验收。早期测试版的未签名、Windows 11 x64 限制、跨账户安装限制、
+SmartScreen 警告和剩余未验证行为均须在 README 与 Release 说明中披露。

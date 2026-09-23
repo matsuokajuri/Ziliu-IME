@@ -240,6 +240,13 @@ try {
       -RelativeDestination "licenses\librime-LICENSE"
   Copy-ReleaseFile -Source (Join-Path $dependencyPath "third_party\rime-ice\LICENSE") `
       -RelativeDestination "licenses\rime-ice-LICENSE"
+  Copy-ReleaseFile -Source (Join-Path $dependencyPath "third_party\rime-ice\others\docs\Credits.md") `
+      -RelativeDestination "licenses\rime-ice-Credits.md"
+  $windowsAppSdkPackage = Join-Path $env:USERPROFILE ".nuget\packages\microsoft.windowsappsdk\2.2.0"
+  Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "license.txt") `
+      -RelativeDestination "licenses\WindowsAppSDK-LICENSE.txt"
+  Copy-ReleaseFile -Source (Join-Path $windowsAppSdkPackage "NOTICE.txt") `
+      -RelativeDestination "licenses\WindowsAppSDK-NOTICE.txt"
   Copy-ReleaseFile -Source (Join-Path $PSScriptRoot "release\UNSIGNED-TEST-ONLY.txt") `
       -RelativeDestination "UNSIGNED-TEST-ONLY.txt"
   Copy-ReleaseFile -Source (Join-Path $PSScriptRoot "release\Uninstall-Ziliu.ps1") `
@@ -307,7 +314,7 @@ try {
   $artifactHash = (Get-Sha256 -Path $artifactPath).ToLowerInvariant()
   [System.IO.File]::WriteAllText($artifactHashPath, "$artifactHash  $artifactName`n",
       [System.Text.UTF8Encoding]::new($false))
-  Write-Host "Created unsigned local alpha candidate:"
+  Write-Host "Created unsigned alpha test package:"
   Write-Host "  $artifactPath"
   Write-Host "  SHA-256: $artifactHash"
 } finally {
