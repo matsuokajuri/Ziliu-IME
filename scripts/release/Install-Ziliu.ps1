@@ -152,21 +152,40 @@ function Get-RegisteredTipPath {
   }
 }
 
-function Get-BrokerRunValue {
+function Get-BrokerRunEntry {
   $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($brokerRunKey)
   if ($null -eq $key) { return $null }
-  try { return $key.GetValue($brokerRunName, $null, "DoNotExpandEnvironmentNames") }
+  try {
+    $value = $key.GetValue($brokerRunName, $null, "DoNotExpandEnvironmentNames")
+    if ($null -eq $value) { return $null }
+    return [pscustomobject]@{
+      Value = $value
+      Kind = $key.GetValueKind($brokerRunName)
+    }
+  }
   finally { $key.Dispose() }
 }
 
-function Remove-OwnBrokerRunValue {
-  param([Parameter(Mandatory = $true)][string]$Expected)
+function Restore-BrokerRunEntry {
+  param(
+    [Parameter(Mandatory = $true)][string]$Expected,
+    [AllowNull()][object]$Previous
+  )
   $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($brokerRunKey, $true)
-  if ($null -eq $key) { return }
+  if ($null -eq $key) { throw "Cannot restore the current user's startup key." }
   try {
-    if ([string]::Equals($key.GetValue($brokerRunName, $null, "DoNotExpandEnvironmentNames"),
-                         $Expected, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $current = $key.GetValue($brokerRunName, $null, "DoNotExpandEnvironmentNames")
+    if (-not [string]::Equals($current, $Expected,
+                             [System.StringComparison]::OrdinalIgnoreCase)) {
+      if ($null -ne $Previous -and
+          [string]::Equals($current, $Previous.Value,
+                           [System.StringComparison]::OrdinalIgnoreCase)) { return }
+      throw "The ZiliuBroker startup entry changed during installation."
+    }
+    if ($null -eq $Previous) {
       $key.DeleteValue($brokerRunName, $false)
+    } else {
+      $key.SetValue($brokerRunName, $Previous.Value, $Previous.Kind)
     }
   } finally { $key.Dispose() }
 }
@@ -242,21 +261,33 @@ $stagingRoot = Join-Path $installRoot ("." + $release.version + ".install-" +
 $installRootCreated = $false
 if (Test-Path -LiteralPath $installRoot) {
   Assert-NoReparseTree -Root $installRoot
-} else {
-  [System.IO.Directory]::CreateDirectory($installRoot) | Out-Null
-  $installRootCreated = $true
 }
 if (Test-Path -LiteralPath $versionRoot) {
   throw "Refusing to overwrite an existing version directory: $versionRoot"
 }
-if ($null -ne (Get-BrokerRunValue)) {
-  throw "Refusing to overwrite an existing ZiliuBroker startup entry."
-}
-
 $previousTipPath = Get-RegisteredTipPath
+$previousBrokerRunEntry = Get-BrokerRunEntry
+if ($null -ne $previousBrokerRunEntry) {
+  if ($null -eq $previousTipPath -or
+      $previousBrokerRunEntry.Kind -ne [Microsoft.Win32.RegistryValueKind]::String -or
+      $previousBrokerRunEntry.Value -isnot [string]) {
+    throw "Refusing to overwrite an unverified ZiliuBroker startup entry."
+  }
+  $expectedPreviousBroker = '"' +
+      (Join-Path (Split-Path -Parent $previousTipPath) "ZiliuBroker.exe") + '"'
+  if (-not [string]::Equals($previousBrokerRunEntry.Value, $expectedPreviousBroker,
+                           [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to overwrite a ZiliuBroker startup entry that does not match the registered TIP."
+  }
+}
 $brokerRunInstalled = $false
-[System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
+$preserveVersionRoot = $false
 try {
+  if (-not (Test-Path -LiteralPath $installRoot)) {
+    [System.IO.Directory]::CreateDirectory($installRoot) | Out-Null
+    $installRootCreated = $true
+  }
+  [System.IO.Directory]::CreateDirectory($stagingRoot) | Out-Null
   foreach ($entry in $entries) {
     $source = Resolve-SafeRelativePath -Root $payloadRoot -Relative $entry.Relative
     $destination = Resolve-SafeRelativePath -Root $stagingRoot -Relative $entry.Relative
@@ -271,6 +302,16 @@ try {
   Assert-NoReparseTree -Root $stagingRoot
   [System.IO.Directory]::Move($stagingRoot, $versionRoot)
 
+  $runBeforeSwitch = Get-BrokerRunEntry
+  if (-not [string]::Equals((Get-RegisteredTipPath), $previousTipPath,
+                            [System.StringComparison]::OrdinalIgnoreCase) -or
+      ($null -eq $runBeforeSwitch) -ne ($null -eq $previousBrokerRunEntry) -or
+      ($null -ne $runBeforeSwitch -and
+       ($runBeforeSwitch.Kind -ne $previousBrokerRunEntry.Kind -or
+        -not [string]::Equals($runBeforeSwitch.Value, $previousBrokerRunEntry.Value,
+                             [System.StringComparison]::OrdinalIgnoreCase)))) {
+    throw "The previous TIP registration or Broker startup entry changed during installation."
+  }
   $runKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($brokerRunKey)
   if ($null -eq $runKey) { throw "Cannot open the current user's startup key." }
   try {
@@ -301,9 +342,10 @@ try {
       $restored = $rollbackExit -eq 0 -and $null -eq (Get-RegisteredTipPath)
     }
     if (-not $restored) {
+      $preserveVersionRoot = $true
       throw "FAILED: new registration failed and the previous registration state could not be confirmed. The new version directory was preserved for diagnosis: $versionRoot"
     }
-    Remove-OwnBrokerRunValue -Expected $brokerRunValue
+    Restore-BrokerRunEntry -Expected $brokerRunValue -Previous $previousBrokerRunEntry
     $brokerRunInstalled = $false
     Remove-KnownInstallFiles -Root $versionRoot -Entries $entries
     throw "Installation failed; the previous registration state was restored."
@@ -314,12 +356,14 @@ try {
   Write-Warning "The registration now points at this version, but loaded TIP/Broker processes may still run the old version. Sign out or reboot, then reopen applications before treating the upgrade as converged."
   Write-Host "User settings, themes, and Rime data under LocalAppData were not modified."
 } catch {
-  if ($brokerRunInstalled) {
-    Remove-OwnBrokerRunValue -Expected $brokerRunValue
+  $newTipRegistered = [string]::Equals(
+      (Get-RegisteredTipPath), (Join-Path $versionRoot "ZiliuTIP.dll"),
+      [System.StringComparison]::OrdinalIgnoreCase)
+  if ($brokerRunInstalled -and -not $newTipRegistered -and -not $preserveVersionRoot) {
+    Restore-BrokerRunEntry -Expected $brokerRunValue -Previous $previousBrokerRunEntry
   }
   if ((Test-Path -LiteralPath $versionRoot) -and
-      -not [string]::Equals((Get-RegisteredTipPath), (Join-Path $versionRoot "ZiliuTIP.dll"),
-                           [System.StringComparison]::OrdinalIgnoreCase)) {
+      -not $newTipRegistered -and -not $preserveVersionRoot) {
     Assert-NoReparseTree -Root $versionRoot
     Remove-KnownInstallFiles -Root $versionRoot -Entries $entries
   }
