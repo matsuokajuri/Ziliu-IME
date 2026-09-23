@@ -8,12 +8,16 @@ endif()
 target_include_directories(ziliu_broker_engine PUBLIC include)
 target_include_directories(ziliu_broker_engine SYSTEM PRIVATE
   "${ZILIU_DEPENDENCY_ROOT}/third_party/librime/src")
+target_compile_definitions(
+  ziliu_broker_engine PRIVATE ZILIU_DISTRIBUTION_VERSION="${ZILIU_RELEASE_VERSION}")
 target_link_libraries(ziliu_broker_engine PUBLIC ziliu_core PRIVATE ole32 shell32)
 ziliu_configure_target(ziliu_broker_engine)
 
 add_executable(ZiliuBroker WIN32 src/broker_main.cpp)
 target_link_libraries(ZiliuBroker PRIVATE ziliu_broker_engine ziliu_ipc_server)
 ziliu_configure_target(ZiliuBroker)
+ziliu_add_version_resource(
+  ZiliuBroker "Ziliu input method broker" "ZiliuBroker.exe" VFT_APP)
 
 add_custom_target(ziliu_stage_rime_data ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZiliuBroker>/data/rime"

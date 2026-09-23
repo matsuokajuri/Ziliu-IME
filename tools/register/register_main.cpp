@@ -238,11 +238,21 @@ HRESULT Install() {
 }
 
 HRESULT Uninstall() {
-  const HRESULT user_layout_result = UpdateUserLayoutOrTip(false);
+  HRESULT result = S_OK;
+  const auto record_failure = [&result](HRESULT operation_result) {
+    if (FAILED(operation_result) && SUCCEEDED(result)) {
+      result = operation_result;
+    }
+  };
+
+  record_failure(UpdateUserLayoutOrTip(false));
 
   ComPtr<ITfCategoryMgr> category_manager;
-  if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
-                                 IID_PPV_ARGS(category_manager.ReleaseAndGetAddressOf())))) {
+  HRESULT operation_result = CoCreateInstance(
+      CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER,
+      IID_PPV_ARGS(category_manager.ReleaseAndGetAddressOf()));
+  record_failure(operation_result);
+  if (SUCCEEDED(operation_result)) {
     constexpr std::array<const GUID*, 6> categories = {
         &GUID_TFCAT_TIP_KEYBOARD,
         &GUID_TFCAT_TIPCAP_UIELEMENTENABLED,
@@ -252,27 +262,36 @@ HRESULT Uninstall() {
         &GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT,
     };
     for (const GUID* category : categories) {
-      category_manager->UnregisterCategory(ziliu::tsf::kTextServiceClsid, *category,
-                                           ziliu::tsf::kTextServiceClsid);
+      record_failure(category_manager->UnregisterCategory(
+          ziliu::tsf::kTextServiceClsid, *category, ziliu::tsf::kTextServiceClsid));
     }
   }
 
   ComPtr<ITfInputProcessorProfileMgr> profile_manager;
-  HRESULT result = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
-                                    CLSCTX_INPROC_SERVER,
-                                    IID_PPV_ARGS(profile_manager.ReleaseAndGetAddressOf()));
-  if (SUCCEEDED(result)) {
-    result = profile_manager->UnregisterProfile(ziliu::tsf::kTextServiceClsid,
-                                                ziliu::tsf::kSimplifiedChineseLanguageId,
-                                                ziliu::tsf::kSimplifiedChineseProfileGuid, 0);
+  operation_result = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
+                                      CLSCTX_INPROC_SERVER,
+                                      IID_PPV_ARGS(profile_manager.ReleaseAndGetAddressOf()));
+  record_failure(operation_result);
+  if (SUCCEEDED(operation_result)) {
+    record_failure(profile_manager->UnregisterProfile(
+        ziliu::tsf::kTextServiceClsid, ziliu::tsf::kSimplifiedChineseLanguageId,
+        ziliu::tsf::kSimplifiedChineseProfileGuid, 0));
+  }
+
+  // UnregisterProfile removes the declared language profile, but the text-service
+  // registration itself must also be removed or TSF can still enumerate the CLSID.
+  ComPtr<ITfInputProcessorProfiles> profiles;
+  operation_result = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr,
+                                      CLSCTX_INPROC_SERVER,
+                                      IID_PPV_ARGS(profiles.ReleaseAndGetAddressOf()));
+  record_failure(operation_result);
+  if (SUCCEEDED(operation_result)) {
+    record_failure(profiles->Unregister(ziliu::tsf::kTextServiceClsid));
   }
 
   const std::wstring clsid_key =
       std::wstring(kClsidRoot) + GuidToString(ziliu::tsf::kTextServiceClsid);
   const LSTATUS delete_result = RegDeleteTreeW(HKEY_LOCAL_MACHINE, clsid_key.c_str());
-  if (FAILED(user_layout_result)) {
-    return user_layout_result;
-  }
   if (FAILED(result)) {
     return result;
   }

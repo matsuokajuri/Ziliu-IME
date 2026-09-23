@@ -3,9 +3,9 @@
 字流是一款面向 Windows 的自由开源中文输入法。项目坚持五个原则：现代、简洁、高效、
 低占用、纯粹。
 
-当前仓库处于 **0.2 输入链路阶段**。TSF、版本化命名管道、Broker、librime、雾凇拼音和
-候选窗已经连通，并由真实引擎测试验证 `zhongguo → 中国` 与 `ziliu → 字流`。候选翻页、
-完整快捷键和常用 Windows 应用兼容性仍待验证，因此尚不是可日常使用的 Alpha。
+当前版本身份为 **0.1.0-alpha.1**。TSF、版本化命名管道、Broker、librime、雾凇拼音和
+候选窗已经连通；目前只准备 Windows 11 x64 的未签名本地测试候选包，尚未批准公开发布。
+安装、升级、卸载、真实密码框和常用 Windows 应用兼容性仍需在隔离 VM 完成验收。
 
 ## 技术栈
 
@@ -59,23 +59,37 @@ ctest --preset windows-x64-debug
 `build/local-x64-Release/bin`；preset 构建产物位于 `build/windows-x64/bin/Debug`
 或 `build/windows-x64/bin/Release`。省略脚本参数时默认构建 Debug。
 
-开发期注册工具已经能够注册和注销 TSF 配置，但骨架阶段不会自动运行，也不要把它加入
-登录启动项：
+开发期注册工具能够注册和注销 TSF 配置，但不会自动运行，也不要把它加入登录启动项：
 
 ```powershell
 ZiliuRegister.exe install
 ZiliuRegister.exe uninstall
 ```
 
+## 本地 Alpha 候选包
+
+Release x64 构建完成后，可从明确文件清单生成未签名、本地测试专用候选包：
+
+```powershell
+$env:ZILIU_DEPENDENCY_ROOT = 'D:\path\to\prepared-ziliu-dependencies'
+scripts\package-alpha.cmd
+```
+
+候选包会严格校验真实 `rime.dll`、Rime 数据、WinUI 3 self-contained 文件、四个产品二进制的
+`0.1.0-alpha.1` 版本资源、许可证文件和逐文件 SHA-256。校验和只提供完整性，不提供发布者
+身份。不要把此未签名候选包作为官方 Release 分发。安装/升级/卸载设计、只读 `-VerifyOnly`
+用法和仍待执行的隔离 VM gate 见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)。
+
 ## 当前边界
 
 - TSF DLL 仅在 Broker 会话可用时处理字母、退格、Esc、空格和数字选词，并通过 edit
   session 管理组合文本；IPC 失败时结束当前组合并恢复放行。
-- `ziliu_core` 提供有大小限制的 IPC v1 编解码、会话隔离和确定性 Stub。
+- `ziliu_core` 提供有大小限制的 IPC 编解码、会话隔离和确定性 Stub。
 - Broker 使用当前用户 SID ACL 的本机命名管道，独占 librime 和用户词库写入。
-- librime 缺失或不兼容时安全退回 Stub；正常构建使用雾凇拼音并加载字流 overlay。
-- 候选窗已支持定位、选词和上屏，尚未实现翻页与方向键导航。
-- Settings 展示原生 Direct2D 界面骨架，尚未写入配置。
+- 开发构建在 librime 缺失或不兼容时可安全退回 Stub；Alpha 打包会拒绝缺少已校验真实
+  `rime.dll` 或完整 Rime 数据的构建。
+- 候选窗已支持定位、分页、选词和上屏；方向键等真实应用兼容性仍待隔离 VM 验证。
+- Settings 使用原生 WinUI 3，支持持久化设置以及皮肤导入、选择和删除。
 - 不包含联网、同步、遥测和自动更新代码。
 
 详细设计见 [架构文档](docs/ARCHITECTURE.md) 和

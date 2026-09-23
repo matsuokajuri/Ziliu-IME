@@ -6,3 +6,5 @@ if(MSVC)
     ZiliuRegister PRIVATE "/MANIFESTUAC:level='requireAdministrator' uiAccess='false'")
 endif()
 ziliu_configure_target(ZiliuRegister)
+ziliu_add_version_resource(
+  ZiliuRegister "Ziliu TSF registration tool" "ZiliuRegister.exe" VFT_APP)

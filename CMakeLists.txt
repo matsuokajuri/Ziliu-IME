@@ -6,6 +6,9 @@ project(
   DESCRIPTION "Ziliu - a clean, local-first Chinese input method for Windows"
   LANGUAGES CXX)
 
+set(ZILIU_RELEASE_VERSION "0.1.0-alpha.1")
+set(ZILIU_FILE_VERSION "0,1,0,1")
+
 if(NOT WIN32)
   message(FATAL_ERROR "Ziliu is a Windows-only project.")
 endif()
@@ -26,6 +29,15 @@ option(ZILIU_ENABLE_RIME "Build the librime adapter when the dependency is avail
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ZiliuWarnings)
+
+function(ziliu_add_version_resource target description original_filename file_type)
+  set(ZILIU_VERSION_DESCRIPTION "${description}")
+  set(ZILIU_VERSION_ORIGINAL_FILENAME "${original_filename}")
+  set(ZILIU_VERSION_FILE_TYPE "${file_type}")
+  set(version_resource "${CMAKE_CURRENT_BINARY_DIR}/${target}_version.rc")
+  configure_file("${PROJECT_SOURCE_DIR}/cmake/ZiliuVersion.rc.in" "${version_resource}" @ONLY)
+  target_sources(${target} PRIVATE "${version_resource}")
+endfunction()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

@@ -1,0 +1,7 @@
+Ziliu 0.1.0-alpha.1 local candidate
+
+THIS PACKAGE IS UNSIGNED AND FOR LOCAL ALPHA TESTING ONLY.
+DO NOT PUBLISH OR REDISTRIBUTE IT AS AN OFFICIAL RELEASE.
+
+SHA-256 checks in this package detect accidental corruption. They do not establish
+publisher identity or make unsigned code trustworthy.
