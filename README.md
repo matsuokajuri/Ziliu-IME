@@ -74,7 +74,7 @@ TSF 负责与应用交互，Broker 承载输入会话和 Rime 引擎，候选栏
 
 Alpha 发布记录覆盖有限的记事本、Edge、Windows 搜索、输入范围、主题、升级与卸载场景；所有应用和自定义 SSF 的逐像素一致性仍未验证。更详细的已测与未测范围见[发布记录](docs/ALPHA-RELEASE.md)。
 
-仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 配置 Windows CMake 构建与 CTest，使用 `ZILIU_ENABLE_RIME=OFF`。该工作流的检查范围不包含真实 Rime、独立 WinUI 3 工程、安装器或交互验收；它的状态不能替代发布包验证。
+仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 配置 Windows CMake 构建与 CTest，包含独立 WinUI 3 工程的编译，使用 `ZILIU_ENABLE_RIME=OFF`。该工作流的检查范围不包含真实 Rime、安装器或交互验收；它的状态不能替代发布包验证。
 
 当前优先级是完善输入兼容性和安装生命周期，建立可复核的发布与性能基线，再评估实验方向。路线图不承诺日期，也不把目标指标当成已测结果。
 
