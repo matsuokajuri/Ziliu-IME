@@ -1,24 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
-  <title id="title">字流 / Ziliu</title>
-  <desc id="desc">让输入回到文字本身。Windows 中文输入法项目的原创品牌封面，以流动线条连接字与流；非产品截图。</desc>
-  <rect width="1200" height="360" rx="24" fill="#f5f7f2"/>
-  <path d="M48 48h36M48 48v36M1152 312h-36M1152 312v-36" fill="none" stroke="#c4d4ca" stroke-width="2"/>
-  <g font-family="Segoe UI, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
-    <text x="74" y="87" fill="#58766b" font-size="14" letter-spacing="3">WINDOWS CHINESE INPUT METHOD</text>
-    <text x="70" y="172" fill="#193e33" font-size="66" font-weight="600">字流 <tspan font-size="36" font-weight="400" fill="#55776b">/ Ziliu</tspan></text>
-    <text x="74" y="229" fill="#38594d" font-size="28">让输入回到文字本身。</text>
-    <text x="74" y="287" fill="#64786e" font-size="17">本地输入 · 原生集成 · 自由定制</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="480" viewBox="0 0 1440 480" role="img" aria-labelledby="title desc">
+  <title id="title">字流 / Ziliu — 字形、候选排版与主题色概念</title>
+  <desc id="desc">原创品牌插画。流动线条连接字形与抽象文字排版，配合主题色块；这是概念示意，非软件截图。</desc>
+  <rect width="1440" height="480" rx="28" fill="#f4f4ef"/>
+  <path d="M72 80h32M72 80v32M1368 400h-32M1368 400v-32" fill="none" stroke="#cfdbd4" stroke-width="2"/>
   <g fill="none" stroke-linecap="round">
-    <path d="M723 127c55 0 45 106 114 106s39-106 116-106h103" stroke="#b6c9bb" stroke-width="3"/>
-    <path d="M719 159c77 0 26 106 124 106s42-106 127-106h91" stroke="#6d9b86" stroke-width="3"/>
-    <path d="M725 191c48 0 33-96 118-96s61 96 120 96h88" stroke="#d2ddcb" stroke-width="3"/>
+    <path d="M255 359C422 359 392 145 596 145S748 238 914 238" stroke="#cfdbd4" stroke-width="3"/>
+    <path d="M257 386C439 386 426 182 598 182S746 280 932 280" stroke="#287b6c" stroke-width="3" opacity=".65"/>
+    <path d="M266 412C443 412 476 218 601 218S756 324 938 324" stroke="#cfdbd4" stroke-width="3"/>
+    <path d="M307 93C452 93 446 337 660 337S797 145 1000 145" stroke="#cfdbd4" stroke-width="2" opacity=".7"/>
   </g>
-  <rect x="708" y="122" width="112" height="112" rx="28" fill="#e1ebe0" stroke="#c4d4ca"/>
-  <rect x="987" y="106" width="112" height="112" rx="28" fill="#234f40"/>
-  <g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="56" text-anchor="middle">
-    <text x="764" y="196" fill="#234f40">字</text>
-    <text x="1043" y="180" fill="#f5f7f2">流</text>
+  <g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" text-anchor="middle">
+    <text x="235" y="325" font-size="260" font-weight="500" fill="#243a36">字</text>
+    <text x="622" y="317" font-size="122" font-weight="400" fill="#287b6c">流</text>
   </g>
-  <text x="1099" y="300" text-anchor="end" font-family="Segoe UI, Microsoft YaHei, sans-serif" fill="#64786e" font-size="13">品牌示意 · 非产品截图</text>
+  <g transform="translate(875 88)">
+    <rect x="0" y="0" width="440" height="96" rx="24" fill="#fcfcf8" stroke="#cfdbd4"/>
+    <rect x="22" y="21" width="9" height="54" rx="4" fill="#287b6c"/>
+    <text x="68" y="67" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="47" fill="#243a36">字流</text>
+    <path d="M244 39h134M244 57h95" stroke="#cfdbd4" stroke-width="7" stroke-linecap="round"/>
+    <rect x="25" y="117" width="394" height="72" rx="20" fill="#e2ebe3"/>
+    <text x="58" y="165" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" fill="#243a36">文字</text>
+    <path d="M218 145h130M218 162h82" stroke="#74877e" stroke-width="5" stroke-linecap="round" opacity=".5"/>
+    <rect x="48" y="211" width="354" height="63" rx="19" fill="#fcfcf8" stroke="#cfdbd4"/>
+    <text x="76" y="253" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" fill="#74877e">输入</text>
+    <path d="M224 235h111M224 249h62" stroke="#cfdbd4" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(84 309)">
+      <circle cx="0" cy="0" r="16" fill="#287b6c"/>
+      <circle cx="51" cy="0" r="16" fill="#a5bbaa"/>
+      <circle cx="102" cy="0" r="16" fill="#d7cbb4"/>
+      <circle cx="153" cy="0" r="16" fill="#738f9b"/>
+      <circle cx="204" cy="0" r="16" fill="#243a36"/>
+    </g>
+  </g>
 </svg>
