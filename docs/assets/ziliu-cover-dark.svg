@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="480" viewBox="0 0 1440 480" role="img" aria-labelledby="title desc">
+  <title id="title">字流 / Ziliu — 字形、候选排版与主题色概念</title>
+  <desc id="desc">原创品牌插画。流动线条连接字形与抽象文字排版，配合主题色块；这是概念示意，非软件截图。</desc>
+  <rect width="1440" height="480" rx="28" fill="#13201f"/>
+  <path d="M72 80h32M72 80v32M1368 400h-32M1368 400v-32" fill="none" stroke="#354d46" stroke-width="2"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M255 359C422 359 392 145 596 145S748 238 914 238" stroke="#354d46" stroke-width="3"/>
+    <path d="M257 386C439 386 426 182 598 182S746 280 932 280" stroke="#76c7ac" stroke-width="3" opacity=".65"/>
+    <path d="M266 412C443 412 476 218 601 218S756 324 938 324" stroke="#354d46" stroke-width="3"/>
+    <path d="M307 93C452 93 446 337 660 337S797 145 1000 145" stroke="#354d46" stroke-width="2" opacity=".7"/>
+  </g>
+  <g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" text-anchor="middle">
+    <text x="235" y="325" font-size="260" font-weight="500" fill="#deebe2">字</text>
+    <text x="622" y="317" font-size="122" font-weight="400" fill="#76c7ac">流</text>
+  </g>
+  <g transform="translate(875 88)">
+    <rect x="0" y="0" width="440" height="96" rx="24" fill="#1b2d28" stroke="#354d46"/>
+    <rect x="22" y="21" width="9" height="54" rx="4" fill="#76c7ac"/>
+    <text x="68" y="67" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="47" fill="#deebe2">字流</text>
+    <path d="M244 39h134M244 57h95" stroke="#354d46" stroke-width="7" stroke-linecap="round"/>
+    <rect x="25" y="117" width="394" height="72" rx="20" fill="#263b34"/>
+    <text x="58" y="165" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="34" fill="#deebe2">文字</text>
+    <path d="M218 145h130M218 162h82" stroke="#7fa697" stroke-width="5" stroke-linecap="round" opacity=".5"/>
+    <rect x="48" y="211" width="354" height="63" rx="19" fill="#1b2d28" stroke="#354d46"/>
+    <text x="76" y="253" font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="30" fill="#7fa697">输入</text>
+    <path d="M224 235h111M224 249h62" stroke="#354d46" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(84 309)">
+      <circle cx="0" cy="0" r="16" fill="#76c7ac"/>
+      <circle cx="51" cy="0" r="16" fill="#a5bbaa"/>
+      <circle cx="102" cy="0" r="16" fill="#d7cbb4"/>
+      <circle cx="153" cy="0" r="16" fill="#738f9b"/>
+      <circle cx="204" cy="0" r="16" fill="#deebe2"/>
+    </g>
+  </g>
+</svg>
