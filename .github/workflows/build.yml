@@ -8,6 +8,8 @@ on:
 jobs:
   windows-x64:
     runs-on: windows-2025-vs2026
+    env:
+      ZILIU_WINDOWS_SDK_VERSION: 10.0.26100.0
     steps:
       - uses: actions/checkout@v4
         with:
