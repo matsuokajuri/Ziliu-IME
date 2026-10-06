@@ -1,4 +1,5 @@
 #include "ziliu/broker/rime_engine.h"
+#include "ziliu/broker/rime_initialization.h"
 
 #include "ziliu/core/ipc_protocol.h"
 
@@ -26,40 +27,6 @@ namespace ziliu::broker {
 namespace {
 
 constexpr int kRimeBackspace = 0xFF08;
-
-bool FilesHaveSameContents(const std::filesystem::path& source,
-                           const std::filesystem::path& destination) {
-  std::error_code file_error;
-  const auto source_size = std::filesystem::file_size(source, file_error);
-  if (file_error) {
-    return false;
-  }
-  const auto destination_size = std::filesystem::file_size(destination, file_error);
-  if (file_error || source_size != destination_size) {
-    return false;
-  }
-
-  std::ifstream source_stream(source, std::ios::binary);
-  std::ifstream destination_stream(destination, std::ios::binary);
-  if (!source_stream || !destination_stream) {
-    return false;
-  }
-  return std::equal(std::istreambuf_iterator<char>(source_stream),
-                    std::istreambuf_iterator<char>(),
-                    std::istreambuf_iterator<char>(destination_stream));
-}
-
-bool CopyFileIfDifferent(const std::filesystem::path& source,
-                         const std::filesystem::path& destination) {
-  if (FilesHaveSameContents(source, destination)) {
-    return true;
-  }
-  std::error_code copy_error;
-  return std::filesystem::copy_file(source, destination,
-                                    std::filesystem::copy_options::overwrite_existing,
-                                    copy_error) &&
-         !copy_error;
-}
 
 std::string ToUtf8(std::wstring_view value) {
   if (value.empty()) {
@@ -195,7 +162,7 @@ class RimeRuntime final {
       return;
     }
     for (const auto* overlay : {L"default.custom.yaml", L"rime_ice.custom.yaml"}) {
-      if (!CopyFileIfDifferent(shared_data_path / overlay, user_data_path / overlay)) {
+      if (!detail::EnsureInitialOverlay(shared_data_path / overlay, user_data_path / overlay)) {
         return;
       }
     }
@@ -642,7 +609,14 @@ std::unique_ptr<core::Engine> TryCreateRimeEngine(bool restricted) {
   if (session_id == 0) {
     return nullptr;
   }
-  if (!api->select_schema(session_id, restricted ? "ziliu_private" : "rime_ice")) {
+  const char* requested_schema = restricted ? "ziliu_private" : "rime_ice";
+  char current_schema[64]{};
+  // Session creation already loads a schema. Avoid reopening its translators
+  // and user databases when the API reports the complete, exact requested name.
+  const bool schema_matches = RIME_API_AVAILABLE(api, get_current_schema) &&
+      api->get_current_schema(session_id, current_schema, sizeof(current_schema)) != False &&
+      detail::CompleteSchemaMatches(current_schema, requested_schema);
+  if (!schema_matches && !api->select_schema(session_id, requested_schema)) {
     api->destroy_session(session_id);
     return nullptr;
   }

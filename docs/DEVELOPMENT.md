@@ -9,6 +9,8 @@
 - CMake 3.28+；使用 `windows-x64` preset 时，CMake 还需支持 Visual Studio 18 2026 generator。
 - Git 与 7-Zip（`7z.exe` 可从 PATH 找到）。
 - WinUI 3 工程使用 Windows SDK `10.0.28000.0`、Windows App SDK `2.2.0` 与 C++/WinRT `3.0.260715.1`。
+
+`build-winui3.cmd` 保留 Windows SDK `10.0.28000.0` 作为本地默认；可通过环境变量 `ZILIU_WINDOWS_SDK_VERSION` 显式选择已安装版本。CI 选择官方 runner 提供的 `10.0.26100.0`，不修改工程的默认 SDK、工具集或 NuGet 版本。
 - CodeGraph CLI，用于符号定位和结构变更后的索引同步。
 
 详细约束见 [AGENTS.md](../AGENTS.md)。不直接修改 `third_party/`；数据定制放在[字流覆盖层](../data/ziliu/README.md)。
@@ -38,6 +40,8 @@ scripts\build-local.cmd Release
 `build-local.cmd` 定位 Visual Studio、加载 MSVC 环境，配置 CMake、构建并运行 CTest。省略参数时默认 Debug。产物分别位于 `build/local-x64-Debug/bin` 与 `build/local-x64-Release/bin`。
 
 该脚本启用 Rime 适配器；依赖缺失时开发构建可以退回确定性 Stub。要验证真实拼音能力，应准备固定 submodule 和已校验运行时，检查构建输出与真实 Rime 测试结果，不能把 Stub 测试当作完整输入功能验收。
+
+Rime 用户目录中的 `default.custom.yaml` 与 `rime_ice.custom.yaml` 只在首次缺失时由随包默认值创建。已有普通文件归用户管理，启动和更换随包默认值都不会覆盖它们；旧版默认内容也会保留。需要采用新的默认设置时，应先备份并检查差异，再显式迁移。此源码行为不代表旧的 Alpha 发布包已经更新。
 
 在 Visual Studio Developer PowerShell 中也可使用 presets：
 
