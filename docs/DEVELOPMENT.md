@@ -39,6 +39,8 @@ scripts\build-local.cmd Release
 
 该脚本启用 Rime 适配器；依赖缺失时开发构建可以退回确定性 Stub。要验证真实拼音能力，应准备固定 submodule 和已校验运行时，检查构建输出与真实 Rime 测试结果，不能把 Stub 测试当作完整输入功能验收。
 
+Rime 用户目录中的 `default.custom.yaml` 与 `rime_ice.custom.yaml` 只在首次缺失时由随包默认值创建。已有普通文件归用户管理，启动和更换随包默认值都不会覆盖它们；旧版默认内容也会保留。需要采用新的默认设置时，应先备份并检查差异，再显式迁移。此源码行为不代表旧的 Alpha 发布包已经更新。
+
 在 Visual Studio Developer PowerShell 中也可使用 presets：
 
 ```powershell

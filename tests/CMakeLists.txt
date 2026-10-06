@@ -4,6 +4,11 @@ ziliu_configure_target(ziliu_core_tests)
 
 add_test(NAME ziliu_core_tests COMMAND ziliu_core_tests)
 
+add_executable(ziliu_rime_initialization_tests rime_initialization_tests.cpp)
+target_include_directories(ziliu_rime_initialization_tests PRIVATE ../src/broker/include)
+ziliu_configure_target(ziliu_rime_initialization_tests)
+add_test(NAME ziliu_rime_initialization_tests COMMAND ziliu_rime_initialization_tests)
+
 add_executable(ziliu_tsf_commit_caret_tests tsf_commit_caret_tests.cpp)
 ziliu_configure_target(ziliu_tsf_commit_caret_tests)
 add_test(NAME ziliu_tsf_commit_caret_tests COMMAND ziliu_tsf_commit_caret_tests)
