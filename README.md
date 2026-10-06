@@ -9,6 +9,7 @@
 <p align="center">面向 Windows 的原生中文输入法<br>基于 Rime 与雾凇拼音，提供可定制候选栏及部分搜狗 SSF 皮肤支持</p>
 
 <p align="center">
+  <a href="https://ziliu-ime.matsuokajuri.chatgpt.site">官网</a> ·
   <strong><a href="https://github.com/matsuokajuri/Ziliu-IME/releases/tag/v0.1.0-alpha.1">下载 Alpha</a></strong> ·
   <a href="docs/getting-started.md">安装指南</a> ·
   <a href="#配置与皮肤">皮肤配置</a> ·
@@ -86,6 +87,6 @@ TSF 负责与应用交互，Broker 承载输入会话，候选栏呈现结果，
 
 ## English at a glance
 
-**Ziliu (字流)** is a native Chinese input method for Windows, combining librime and Rime Ice with TSF integration, a customizable candidate window, WinUI 3 settings and partial Sogou SSF skin support. This is the main source repository.
+**Ziliu (字流)** is a native Chinese input method for Windows, combining librime and Rime Ice with TSF integration, a customizable candidate window, WinUI 3 settings and partial Sogou SSF skin support. This is the main source repository. Visit the [official website](https://ziliu-ime.matsuokajuri.chatgpt.site) for a product overview.
 
 The [Alpha download](https://github.com/matsuokajuri/Ziliu-IME/releases/tag/v0.1.0-alpha.1) is **unsigned and test-only**, for Windows 11 x64. Start with the [installation guide](docs/getting-started.md) or [development guide](docs/DEVELOPMENT.md). Contextual ranking remains research; no model or demonstrated AI improvement is released. The cover is original concept art, not a product screenshot. The project retains its existing [GPL v3 license](LICENSE).
