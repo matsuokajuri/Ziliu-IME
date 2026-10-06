@@ -63,7 +63,7 @@ scripts\build-winui3.cmd Release build\local-x64-Release\bin\
 
 第一方 C++ 警告按错误处理。行为修改应运行相关的确定性测试，并说明未执行的环境验证。源码构建和 CTest 不自动注册开发 TIP。
 
-仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 使用 Windows runner、Visual Studio 2022 generator、`ZILIU_ENABLE_RIME=OFF`，执行 CMake 构建和 CTest。它没有覆盖真实 Rime、独立 WinUI 3 工程、打包、安装或实际宿主交互；请以具体运行记录评估结果。
+仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 固定 `windows-2025-vs2026` runner，使用 Visual Studio 2026 generator、`ZILIU_ENABLE_RIME=OFF`，执行 CMake 构建和 CTest。支持 push、pull request 与手动触发；手动运行应记录所选分支和实际 `head_sha`。它没有覆盖真实 Rime、独立 WinUI 3 工程、打包、安装或实际宿主交互；请以具体运行记录评估结果。
 
 修改结构后执行 `codegraph sync .`。开发期注册工具的 `install` / `uninstall` 会改变 Windows 状态，须独立、显式执行，不加入自动测试或登录启动项。
 
