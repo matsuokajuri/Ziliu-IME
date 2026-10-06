@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">字流 / Ziliu</title>
+  <desc id="desc">让输入回到文字本身。Windows 中文输入法项目的原创品牌封面，以流动线条连接字与流；非产品截图。</desc>
+  <rect width="1200" height="360" rx="24" fill="#f5f7f2"/>
+  <path d="M48 48h36M48 48v36M1152 312h-36M1152 312v-36" fill="none" stroke="#c4d4ca" stroke-width="2"/>
+  <g font-family="Segoe UI, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+    <text x="74" y="87" fill="#58766b" font-size="14" letter-spacing="3">WINDOWS CHINESE INPUT METHOD</text>
+    <text x="70" y="172" fill="#193e33" font-size="66" font-weight="600">字流 <tspan font-size="36" font-weight="400" fill="#55776b">/ Ziliu</tspan></text>
+    <text x="74" y="229" fill="#38594d" font-size="28">让输入回到文字本身。</text>
+    <text x="74" y="287" fill="#64786e" font-size="17">本地输入 · 原生集成 · 自由定制</text>
+  </g>
+  <g fill="none" stroke-linecap="round">
+    <path d="M723 127c55 0 45 106 114 106s39-106 116-106h103" stroke="#b6c9bb" stroke-width="3"/>
+    <path d="M719 159c77 0 26 106 124 106s42-106 127-106h91" stroke="#6d9b86" stroke-width="3"/>
+    <path d="M725 191c48 0 33-96 118-96s61 96 120 96h88" stroke="#d2ddcb" stroke-width="3"/>
+  </g>
+  <rect x="708" y="122" width="112" height="112" rx="28" fill="#e1ebe0" stroke="#c4d4ca"/>
+  <rect x="987" y="106" width="112" height="112" rx="28" fill="#234f40"/>
+  <g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="56" text-anchor="middle">
+    <text x="764" y="196" fill="#234f40">字</text>
+    <text x="1043" y="180" fill="#f5f7f2">流</text>
+  </g>
+  <text x="1099" y="300" text-anchor="end" font-family="Segoe UI, Microsoft YaHei, sans-serif" fill="#64786e" font-size="13">品牌示意 · 非产品截图</text>
+</svg>

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="400" viewBox="0 0 1100 400" role="img" aria-labelledby="title desc">
+  <title id="title">字流常规输入架构</title>
+  <desc id="desc">应用进程中的 TSF 输入服务与候选栏，通过本机命名管道连接独立 Broker。Broker 使用 librime 和雾凇拼音。WinUI 3 设置保存本地配置，供输入路径读取。图中不含实验模型。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto-start-reverse"><path d="M0 0l8 4-8 4z" fill="#628674"/></marker>
+  </defs>
+  <rect width="1100" height="400" rx="20" fill="#f5f7f2"/>
+  <g font-family="Segoe UI, Microsoft YaHei, Noto Sans CJK SC, sans-serif">
+    <text x="36" y="44" fill="#234f40" font-size="20" font-weight="600">从按键到文字</text>
+    <text x="1064" y="44" text-anchor="end" fill="#64786e" font-size="14">常规路径 · 本机运行 · 架构示意</text>
+    <rect x="36" y="72" width="294" height="211" rx="14" fill="#eaf0e7" stroke="#c4d4ca"/>
+    <text x="58" y="105" fill="#55776b" font-size="16">应用进程</text>
+    <rect x="58" y="122" width="250" height="65" rx="10" fill="#fff" stroke="#c4d4ca"/>
+    <text x="183" y="149" text-anchor="middle" fill="#234f40" font-size="18" font-weight="600">TSF 输入服务</text>
+    <text x="183" y="172" text-anchor="middle" fill="#64786e" font-size="13">按键 · 组合串 · 提交</text>
+    <rect x="58" y="204" width="250" height="53" rx="10" fill="#fff" stroke="#c4d4ca"/>
+    <text x="183" y="237" text-anchor="middle" fill="#234f40" font-size="17">原生候选栏</text>
+    <path d="M183 188v14" stroke="#628674" stroke-width="2"/>
+    <path d="M335 154h166" fill="none" stroke="#628674" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text x="418" y="135" text-anchor="middle" fill="#55776b" font-size="16">本机命名管道</text>
+    <text x="418" y="180" text-anchor="middle" fill="#64786e" font-size="13">输入操作 / 候选状态</text>
+    <rect x="516" y="72" width="548" height="211" rx="14" fill="#eaf0e7" stroke="#c4d4ca"/>
+    <text x="538" y="105" fill="#55776b" font-size="16">独立 Broker 进程</text>
+    <rect x="538" y="122" width="218" height="135" rx="10" fill="#234f40"/>
+    <text x="647" y="162" text-anchor="middle" fill="#fff" font-size="20" font-weight="600">ZiliuBroker</text>
+    <text x="647" y="193" text-anchor="middle" fill="#d6e5d9" font-size="15">会话管理 · 引擎适配</text>
+    <text x="647" y="220" text-anchor="middle" fill="#d6e5d9" font-size="15">配置与主题资源</text>
+    <path d="M760 190h36" fill="none" stroke="#628674" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <rect x="811" y="122" width="231" height="135" rx="10" fill="#fff" stroke="#c4d4ca"/>
+    <text x="926" y="163" text-anchor="middle" fill="#234f40" font-size="20" font-weight="600">librime</text>
+    <text x="926" y="195" text-anchor="middle" fill="#55776b" font-size="15">雾凇拼音 + 字流覆盖层</text>
+    <text x="926" y="222" text-anchor="middle" fill="#64786e" font-size="14">本地 Rime 用户数据</text>
+    <rect x="36" y="316" width="294" height="54" rx="10" fill="#fff" stroke="#c4d4ca"/>
+    <text x="183" y="349" text-anchor="middle" fill="#234f40" font-size="17">WinUI 3 设置 / 主题管理</text>
+    <path d="M334 343h167" fill="none" stroke="#628674" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="418" y="327" text-anchor="middle" fill="#64786e" font-size="13">保存配置</text>
+    <rect x="516" y="316" width="548" height="54" rx="10" fill="#fff" stroke="#c4d4ca"/>
+    <text x="790" y="349" text-anchor="middle" fill="#234f40" font-size="16">本地设置与主题文件 · 供输入服务与 Broker 读取</text>
+  </g>
+</svg>

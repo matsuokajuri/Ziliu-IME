@@ -1,113 +1,95 @@
-# 字流 Ziliu
+<p align="center">
+  <img src="docs/assets/ziliu-cover.svg" alt="字流 / Ziliu — 让输入回到文字本身。Windows 中文输入法项目的原创品牌示意。" width="100%">
+</p>
 
-字流是一款面向 Windows 的自由开源中文输入法。项目坚持五个原则：现代、简洁、高效、
-低占用、纯粹。
+<h1 align="center">字流 / Ziliu</h1>
 
-当前版本身份为 **0.1.0-alpha.1**。TSF、版本化命名管道、Broker、librime、雾凇拼音和
-候选窗已经连通；首个 Windows 11 x64 预发布版是**未签名的早期测试包**，不代表稳定版。
-已完成限定范围的隔离 VM 功能验收，详见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)；
-并未验证所有应用、皮肤或自定义 SSF 的逐像素一致性。
+<p align="center">面向 Windows 的本地中文输入法<br>Rime 输入引擎 · 原生 TSF 集成 · 自由定制候选栏</p>
 
-## 技术栈
+<p align="center">
+  <a href="https://github.com/matsuokajuri/Ziliu-IME/releases/tag/v0.1.0-alpha.1">0.1.0-alpha.1 · 未签名预发布</a>
+  · Windows 11 x64
+  · <a href="LICENSE">GPL-3.0-only</a>
+</p>
 
-- C++23 与 MSVC
-- Windows Text Services Framework（TSF）
-- Win32、Direct2D、DirectWrite、UI Automation
-- CMake、CTest、Visual Studio 2026
-- librime 1.17.0 输入引擎与固定版本的雾凇拼音词库
-- GPL-3.0-only
+<p align="center">
+  <a href="docs/getting-started.md">开始试用</a> ·
+  <a href="docs/DEVELOPMENT.md">构建与开发</a> ·
+  <a href="docs/ARCHITECTURE.md">架构</a> ·
+  <a href="docs/ROADMAP.md">路线图</a> ·
+  <a href="CONTRIBUTING.md">参与贡献</a> ·
+  <a href="#english">English</a>
+</p>
 
-项目不使用 Electron、WebView、常驻 .NET、遥测 SDK 或广告组件。
+## 字流是什么
 
-## 仓库结构
+字流希望把日常中文输入做得清爽、可控：沿用 Rime 与雾凇拼音的输入能力，以 Windows Text Services Framework（TSF）接入应用，并提供原生候选栏和 WinUI 3 设置界面。
 
-```text
-src/core       平台无关的组合态、候选和引擎接口
-src/tsf        加载进宿主进程的最小 TSF COM DLL
-src/ui         Direct2D/DirectWrite 候选窗
-src/broker     每用户单实例、零轮询的后台进程
-src/settings   仅在打开时运行的原生设置程序
-tools/register 开发期 TSF 注册工具
-data/ziliu     雾凇拼音的最小、可追溯覆盖层
-tests          无外部测试框架的核心测试
-docs           架构决策、开发和路线图
-```
+**本仓库是字流的主仓库**，包含第一方源码、测试、数据覆盖层、构建与打包脚本。输入引擎在本机运行，当前产品没有云同步、在线候选或遥测模块。
 
-## 构建
+> **当前阶段：未签名的早期测试版。** [0.1.0-alpha.1](https://github.com/matsuokajuri/Ziliu-IME/releases/tag/v0.1.0-alpha.1) 已提供 ZIP 和图形安装器，仅支持 Windows 11 x64。它经过限定范围的功能验收，仍有应用兼容性、安装恢复和皮肤表现等边界；不代表稳定正式版。下载与 SHA-256 校验方式见[试用指南](docs/getting-started.md)。
 
-要求：Windows 10/11、Visual Studio 2026 C++ 工具链、Windows SDK、CMake 3.28 以上。
+## 已有能力
 
-普通终端可以直接运行统一脚本，它会定位 Visual Studio、加载 MSVC 环境、配置、构建并测试：
+| 方向 | 当前实现 |
+| --- | --- |
+| 拼音输入 | librime + 雾凇拼音，简拼、拼写纠错与可选模糊音 |
+| 文字与标点 | 简繁切换、中英文模式、全半角标点及数字场景标点处理 |
+| 候选栏 | 横向 / 纵向布局、候选数量、字体、颜色和缩放设置 |
+| 外观定制 | 主题资源加载与预览，支持部分搜狗 `.ssf` 皮肤导入；兼容性仍在完善 |
+| 系统集成 | TSF 输入服务、独立 Broker、WinUI 3 设置与快捷菜单 |
+| 可追溯打包 | 固定公共依赖、校验过的 Rime 运行时、逐文件清单与测试包版本信息 |
+
+上下文排序、小模型与更深的输入引擎融合属于[规划与实验](docs/ROADMAP.md)。当前发布包没有这些 AI 功能，仓库未发布模型权重，也没有可据此承诺的效果提升。
+
+## 从哪里开始
+
+| 你想做什么 | 入口 |
+| --- | --- |
+| 下载、校验、安装或卸载测试包 | [试用指南](docs/getting-started.md) · [Alpha 发布记录](docs/ALPHA-RELEASE.md) |
+| 从源码构建、了解工具链与 CI 范围 | [开发指南](docs/DEVELOPMENT.md) |
+| 理解进程边界与输入数据流 | [架构说明](docs/ARCHITECTURE.md) |
+| 了解后续优先级 | [路线图](docs/ROADMAP.md) |
+| 制作主题或了解 SSF 兼容边界 | [主题格式](docs/theme-format-v1.md) · [SSF 映射](docs/sogou-ssf-mapping.md) |
+| 报告问题或参与改进 | [Issues](https://github.com/matsuokajuri/Ziliu-IME/issues) · [贡献指南](CONTRIBUTING.md) |
+
+准备好 Windows 开发环境后，在 PowerShell 中执行：
 
 ```powershell
+git clone --recurse-submodules https://github.com/matsuokajuri/Ziliu-IME.git
+cd Ziliu-IME
 scripts\fetch-librime-runtime.ps1
-scripts\build-local.cmd Debug
 scripts\build-local.cmd Release
 ```
 
-运行时脚本从 librime 官方 Release 下载固定的 MSVC x64 包并校验 SHA-256。若不运行，项目
-仍可编译和测试 IPC，Broker 会退回只含少量词的确定性 Stub 引擎。
+需要 Visual Studio 2026 C++ 工具链、Windows SDK、CMake 和 7-Zip。WinUI 3 设置程序使用单独的 MSBuild 工程；完整步骤见[开发指南](docs/DEVELOPMENT.md)。源码构建不会自动安装或注册输入法。
 
-在 Visual Studio Developer PowerShell 中也可使用 CMake presets：
+## 架构一览
 
-```powershell
-cmake --preset windows-x64
-cmake --build --preset windows-x64-debug
-ctest --preset windows-x64-debug
-```
+![字流常规输入架构：应用中的 TSF 与候选栏通过本机命名管道连接 Broker，Broker 使用 librime 与雾凇数据；WinUI 3 设置保存本地配置。](docs/assets/architecture.svg)
 
-脚本构建产物分别位于 `build/local-x64-Debug/bin` 和
-`build/local-x64-Release/bin`；preset 构建产物位于 `build/windows-x64/bin/Debug`
-或 `build/windows-x64/bin/Release`。省略脚本参数时默认构建 Debug。
+TSF 负责与应用交互，Broker 承载输入会话和 Rime 引擎，候选栏呈现结果，设置程序管理配置与主题。上图是原创架构示意，非产品截图；模块入口和数据边界见[架构说明](docs/ARCHITECTURE.md)。
 
-开发期注册工具能够注册和注销 TSF 配置，但不会自动运行，也不要把它加入登录启动项：
+## 开发状态
 
-```powershell
-ZiliuRegister.exe install
-ZiliuRegister.exe uninstall
-```
+Alpha 发布记录覆盖有限的记事本、Edge、Windows 搜索、输入范围、主题、升级与卸载场景；所有应用和自定义 SSF 的逐像素一致性仍未验证。更详细的已测与未测范围见[发布记录](docs/ALPHA-RELEASE.md)。
 
-## Alpha 预发布版
+仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 配置 Windows CMake 构建与 CTest，使用 `ZILIU_ENABLE_RIME=OFF`。该工作流的检查范围不包含真实 Rime、独立 WinUI 3 工程、安装器或交互验收；它的状态不能替代发布包验证。
 
-[GitHub Releases](https://github.com/matsuokajuri/Ziliu-IME/releases) 提供 Windows 11 x64 的
-未签名 ZIP 和图形安装器。此版本仅供愿意承担测试风险的用户试用；目前**没有代码签名**，
-Windows SmartScreen 可能显示“未知发布者”、警告或拦截安装。请只从本仓库的 Release 页面
-下载，并核对同页 SHA-256；校验和只能核对下载完整性，不能证明发布者身份。不要为安装
-而全局关闭 SmartScreen。早期测试版暂不签名，正式版发布前再研究和落实签名。
+当前优先级是完善输入兼容性和安装生命周期，建立可复核的发布与性能基线，再评估实验方向。路线图不承诺日期，也不把目标指标当成已测结果。
 
-图形安装器需要管理员权限，并应由将使用字流的管理员账户运行；此 alpha 不支持标准用户
-通过另一管理员账户的凭据跨账户安装。安装或升级后请注销或重启 Windows，再重新打开
-要测试的应用。卸载会保留用户设置、皮肤和 Rime 用户数据。
+## 贡献与许可
 
-### 本地打包
+欢迎可复现的兼容性问题、文档改进、合成测试用例和小范围修复。请先阅读[贡献指南](CONTRIBUTING.md)，在[新建 Issue](https://github.com/matsuokajuri/Ziliu-IME/issues/new)时提供版本、应用和最小复现步骤，使用合成输入代替私人文档或个人词库。安全问题请按 [SECURITY.md](SECURITY.md) 的入口报告。
 
-Release x64 构建完成后，可从明确文件清单生成未签名、本地测试专用候选包：
+项目采用现有 [GNU GPL v3 许可证](LICENSE)，沿用仓库的 GPL-3.0-only 声明。感谢 [Rime](https://github.com/rime/librime)、[雾凇拼音](https://github.com/iDvel/rime-ice)及相关上游项目；依赖保留各自许可，见[第三方声明](THIRD_PARTY_NOTICES.md)与[数据来源](data/ziliu/README.md)。本页封面和架构图为项目原创 SVG，按仓库现有许可证提供。
 
-```powershell
-$env:ZILIU_DEPENDENCY_ROOT = 'D:\path\to\prepared-ziliu-dependencies'
-scripts\package-alpha.cmd
-```
+<a id="english"></a>
 
-候选包会严格校验真实 `rime.dll`、Rime 数据、WinUI 3 self-contained 文件、四个产品二进制的
-`0.1.0-alpha.1` 版本资源、许可证文件和逐文件 SHA-256。安装/升级/卸载设计、只读
-`-VerifyOnly` 用法及实际验收边界见 [Alpha 发布说明](docs/ALPHA-RELEASE.md)。
+## English at a glance
 
-## 当前边界
+**Ziliu (字流)** is a local-first Chinese input method for Windows, combining librime and Rime Ice with native TSF integration, a configurable candidate window, and WinUI 3 settings. This is the main source repository.
 
-- TSF DLL 仅在 Broker 会话可用时处理字母、退格、Esc、空格和数字选词，并通过 edit
-  session 管理组合文本；IPC 失败时结束当前组合并恢复放行。
-- `ziliu_core` 提供有大小限制的 IPC 编解码、会话隔离和确定性 Stub。
-- Broker 使用当前用户 SID ACL 的本机命名管道，独占 librime 和用户词库写入。
-- 开发构建在 librime 缺失或不兼容时可安全退回 Stub；Alpha 打包会拒绝缺少已校验真实
-  `rime.dll` 或完整 Rime 数据的构建。
-- 候选窗已支持定位、分页、选词和上屏；方向键等真实应用兼容性仍待隔离 VM 验证。
-- Settings 使用原生 WinUI 3，支持持久化设置以及皮肤导入、选择和删除。
-- 不包含联网、同步、遥测和自动更新代码。
+The [0.1.0-alpha.1 prerelease](https://github.com/matsuokajuri/Ziliu-IME/releases/tag/v0.1.0-alpha.1) provides an **unsigned, test-only** ZIP and installer for Windows 11 x64. It is an early test release with limited acceptance coverage. Contextual ranking and small-model integration remain research directions; no model or demonstrated AI improvement is released here.
 
-详细设计见 [架构文档](docs/ARCHITECTURE.md) 和
-[ADR-0001](docs/adr/0001-native-windows-stack.md)。
-
-## 许可证
-
-字流以 GNU GPL v3 发布。第三方组件继续使用各自许可证，详见
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Start with the [trial guide](docs/getting-started.md), [development guide](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), or [contribution guide](CONTRIBUTING.md). Documentation is primarily in Chinese. The project retains its existing [GPL v3 license](LICENSE); third-party components retain their own terms.
