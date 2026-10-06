@@ -33,3 +33,18 @@ OpenCC 原生支持的 `text` 格式，以免要求额外的词典编译工具�
 
 - `STPhrases.txt`: `17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b`
 - `STCharacters.txt`: `ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41`
+
+## 离线字符排序研究参考
+
+`scripts/offline_character_model.py` 是第一方 PyTorch reader，参考
+[metasequoiaime/chinese-ime-lm 的 reference](https://github.com/metasequoiaime/chinese-ime-lm/tree/f4a3fc007fba051695ae8300de917bb824d458ba/reference)
+的格式与架构（chinese-ime-lm contributors，Apache-2.0）。保留
+[reference LICENSE](docs/licenses/chinese-ime-lm-reference-LICENSE.txt)。
+该参考目录与上游根训练代码的许可分别适用。
+
+[固定模型卡](https://huggingface.co/metasequoiaime/pinyin-ime-reranker-4M/blob/e5b1f7e768d7cb2b6ff334db4e34af153920c6ff/README.md)
+声明模型采用 Apache-2.0，并列出 C4/LCCC attribution。保留上游
+[model LICENSE](docs/licenses/pinyin-ime-reranker-model-LICENSE.txt) 和
+[model NOTICE](docs/licenses/pinyin-ime-reranker-model-NOTICE.txt) 作为来源材料。
+此源码草稿不分发模型或语料，不证明真实权重署名、全部权利链、数值等价或性能。
+进一步边界见[研究工具说明](docs/research/offline-character-ranking.md)。
