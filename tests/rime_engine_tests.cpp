@@ -137,8 +137,13 @@ PrepareUnchangedOverlays(const std::filesystem::path& executable_path) {
 int main(int argument_count, char* arguments[]) {
   Expect(argument_count > 0 && arguments[0] != nullptr,
          "Rime test executable path should be available");
+  const auto executable_path = std::filesystem::absolute(arguments[0]);
+  if (!std::filesystem::exists(executable_path.parent_path() / "rime.dll")) {
+    std::cout << "SKIPPED: verified rime.dll is not staged\n";
+    return 77;
+  }
   const auto overlay_timestamps =
-      PrepareUnchangedOverlays(std::filesystem::absolute(arguments[0]));
+      PrepareUnchangedOverlays(executable_path);
   auto engine = ziliu::broker::CreateEngine();
   for (const auto& [overlay, expected_timestamp] : overlay_timestamps) {
     std::error_code file_error;
