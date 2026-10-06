@@ -33,3 +33,12 @@ OpenCC 原生支持的 `text` 格式，以免要求额外的词典编译工具�
 
 - `STPhrases.txt`: `17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b`
 - `STCharacters.txt`: `ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41`
+
+## Cassotis 离线研究适配器
+
+[research/cassotis](research/cassotis/README.md) 的评分适配器改编自
+`shenmin/cassotis-ime` 固定 commit `e4d632d20c296fc5f3dd1bfe3c74be6b60cafca2`
+中的 `src/host/native/nc_char_lm_ort.inc`（GPL-3.0）。修改日期为2026-10-06，
+原始来源与修改声明保留在子目录 [NOTICE](research/cassotis/NOTICE.md)。
+ORT 与 NumPy 是单独运行依赖，须保留其自身许可和第三方声明。
+本目录不分发运行库、模型、词表或语料；内容完整性 pin 不证明完整资产权利链。
