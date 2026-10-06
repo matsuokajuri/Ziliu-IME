@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | [offline_rerank_protocol.py](../../scripts/offline_rerank_protocol.py) | 候选身份、admission、实验隔离、固定分母指标及请求字段 allowlist | 调用方必须实际使用 `scoring_request` 的返回对象；字段过滤不认证文本来源 |
 | [offline_candidate_evidence.py](../../scripts/offline_candidate_evidence.py) | 将 native span、剩余输入和完整提交证据转为候选事实；未知证据保留 unknown | `qualified_observer` 是外部断言；nonce 关联身份，不提供来源认证 |
+| [offline_context_policy_v2.py](../../scripts/offline_context_policy_v2.py) | 区分候选来源与显式偏好保护，仅做受限离线比较 | 来源资格、前文与 scope 是外部断言；详见[来源/保护语义](source-protection-policy.md) |
 | [offline_character_model.py](../../scripts/offline_character_model.py) | 固定格式的 CPU PyTorch reader、独立重算和短生命周期缓存 | 包来源、隔离 worker、硬超时与内存预算，以及真实数值等价性 |
 
 评分请求只包含 `prefix`、`pinyin` 和候选的 `source_index/text`。研究标签、family、split 与其他 metadata 不应传给模型。当前代码提供这一 API；完整实验调用链是否遵守约束仍需单独检查。
