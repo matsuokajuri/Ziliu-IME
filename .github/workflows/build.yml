@@ -13,6 +13,15 @@ jobs:
         with:
           submodules: true
 
+      - name: Restore pinned WinUI packages
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath
+          if (-not $vs) { throw 'MSBuild installation not found' }
+          & "$vs\MSBuild\Current\Bin\amd64\MSBuild.exe" src/settings/ZiliuSettings.vcxproj /t:Restore /p:Configuration=Release /p:Platform=x64 /p:RestoreSources=https://api.nuget.org/v3/index.json "/p:RestorePackagesPath=$env:USERPROFILE\.nuget\packages"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Configure
         run: >-
           cmake -S . -B build/ci

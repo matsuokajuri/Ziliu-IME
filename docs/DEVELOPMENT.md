@@ -53,7 +53,7 @@ ctest --preset windows-x64-debug
 
 ## WinUI 3 设置程序
 
-设置界面采用独立 MSBuild 工程，CMake 中的基础设置目标不能代替它。先准备工程所需的 NuGet 包，再执行：
+设置界面采用独立 MSBuild 工程；CMake 的 `ZiliuSettings` 默认构建目标会调用下述脚本，完整构建也需要它的 SDK 和 NuGet 依赖。先准备工程所需的 NuGet 包，也可单独执行：
 
 ```powershell
 scripts\build-winui3.cmd Release build\local-x64-Release\bin\
@@ -65,7 +65,7 @@ scripts\build-winui3.cmd Release build\local-x64-Release\bin\
 
 第一方 C++ 警告按错误处理。行为修改应运行相关的确定性测试，并说明未执行的环境验证。源码构建和 CTest 不自动注册开发 TIP。
 
-仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 固定 `windows-2025-vs2026` runner，使用 Visual Studio 2026 generator、`ZILIU_ENABLE_RIME=OFF`，执行 CMake 构建和 CTest。支持 push、pull request 与手动触发；手动运行应记录所选分支和实际 `head_sha`。它没有覆盖真实 Rime、独立 WinUI 3 工程、打包、安装或实际宿主交互；请以具体运行记录评估结果。
+仓库现有 [build 工作流](https://github.com/matsuokajuri/Ziliu-IME/actions/workflows/build.yml) 固定 `windows-2025-vs2026` runner，初始化固定的一级公共 submodule，并从官方 NuGet 源恢复工程固定的 WinUI 包到 runner 缓存；使用 Visual Studio 2026 generator、`ZILIU_ENABLE_RIME=OFF`，执行包含独立 WinUI 3 工程的 CMake 构建和 CTest。支持 push、pull request 与手动触发；手动运行应记录所选分支和实际 `head_sha`。这不会覆盖真实 Rime、界面交互、打包或安装验收；请以具体运行记录评估结果。
 
 修改结构后执行 `codegraph sync .`。开发期注册工具的 `install` / `uninstall` 会改变 Windows 状态，须独立、显式执行，不加入自动测试或登录启动项。
 
