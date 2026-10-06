@@ -1901,6 +1901,12 @@ HRESULT TextService::ApplyCompositionEdit(TfEditCookie edit_cookie, ITfContext* 
       }
       static_cast<void>(view->GetWnd(&state_->candidate_owner));
     }
+    // Preedit, paging, backspace and cancellation only update the candidate
+    // surface. Preserve the host's selection until actual text is committed so
+    // the eventual commit replaces it, and Esc leaves the selection unchanged.
+    if (commit.empty()) {
+      return S_OK;
+    }
     const HRESULT collapse_result = detail::CollapseInsertedRange(range.Get(), edit_cookie, caret_back);
     if (FAILED(collapse_result)) {
       return collapse_result;
