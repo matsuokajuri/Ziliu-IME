@@ -9,6 +9,8 @@
 - CMake 3.28+；使用 `windows-x64` preset 时，CMake 还需支持 Visual Studio 18 2026 generator。
 - Git 与 7-Zip（`7z.exe` 可从 PATH 找到）。
 - WinUI 3 工程使用 Windows SDK `10.0.28000.0`、Windows App SDK `2.2.0` 与 C++/WinRT `3.0.260715.1`。
+
+`build-winui3.cmd` 保留 Windows SDK `10.0.28000.0` 作为本地默认；可通过环境变量 `ZILIU_WINDOWS_SDK_VERSION` 显式选择已安装版本。CI 选择官方 runner 提供的 `10.0.26100.0`，不修改工程的默认 SDK、工具集或 NuGet 版本。
 - CodeGraph CLI，用于符号定位和结构变更后的索引同步。
 
 详细约束见 [AGENTS.md](../AGENTS.md)。不直接修改 `third_party/`；数据定制放在[字流覆盖层](../data/ziliu/README.md)。
