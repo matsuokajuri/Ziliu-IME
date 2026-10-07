@@ -11,6 +11,8 @@
 | [offline_context_policy_v2.py](../../scripts/offline_context_policy_v2.py) | 区分候选来源与显式偏好保护，仅做受限离线比较 | 来源资格、前文与 scope 是外部断言；详见[来源/保护语义](source-protection-policy.md) |
 | [offline_character_model.py](../../scripts/offline_character_model.py) | 固定格式的 CPU PyTorch reader、独立重算和短生命周期缓存 | 包来源、隔离 worker、硬超时与内存预算，以及真实数值等价性 |
 
+新增的[评估契约与结果配对核心](evaluation-core.md)提供标准库API及独立合成测试；三模型运行controller、模型adapter及训练工具不在其公开范围内。
+
 评分请求只包含 `prefix`、`pinyin` 和候选的 `source_index/text`。研究标签、family、split 与其他 metadata 不应传给模型。当前代码提供这一 API；完整实验调用链是否遵守约束仍需单独检查。
 
 reader 延迟导入 Torch，不自动下载或安装依赖。实际构造 reader 要求显式提供受限的精确 Torch 版本，以及与源码固定大小、SHA-256、结构一致的模型文件。版本相等不认证包来源，非空 attribution 也不证明全部语料权利链。
