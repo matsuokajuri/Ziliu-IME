@@ -46,7 +46,7 @@ def validate_request(request, config=Config()):
         exact(c, {"source_index", "text"})
         ident = c["source_index"]
         if type(ident) is not int or not 0 <= ident < config.max_candidates or ident in ids:
-            raise ValueError("unique original first-nine source identities required")
+            raise ValueError("unique original source identities within explicit candidate cap required")
         ids.append(ident)
         text(c["text"], config.max_candidate_scalars)
     if 0 not in ids:

@@ -69,7 +69,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(Config().candidate_tokens,253)
 
     def test_bounded_geometry(self):
-        for kwargs in ({"width":257},{"heads":3},{"max_candidates":10},{"max_batch":9},{"vocab_size":259}):
+        for kwargs in ({"width":257},{"heads":3},{"max_candidates":33},{"max_batch":9},{"vocab_size":259}):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 Config(**kwargs)
 

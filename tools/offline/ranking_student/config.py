@@ -26,7 +26,7 @@ class Config:
                 or self.context_layers > 7 or self.candidate_layers > 2
                 or self.vocab_size > 8192 or self.max_batch > 8
                 or self.max_prefix_scalars > 48 or self.max_pinyin_scalars > 64
-                or self.max_candidate_scalars > 63 or self.max_candidates > 9):
+                or self.max_candidate_scalars > 63 or self.max_candidates > 32):
             raise ValueError("geometry exceeds this bounded prototype")
 
     @property
