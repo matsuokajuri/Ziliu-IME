@@ -31,6 +31,8 @@ python -B -W error -m tools.offline.ranking_student.train --manifest ./approved-
 
 准备模式不导入 Torch、NumPy 或 ORT，不申请资源锁或执行优化。合成 fixture 永远不成为真实训练 READY。训练准备要求至少64个不同 request、8篇文档及8个家族，同时检查首次训练的 S/T token 上限；这些是工程准入条件，不是统计独立性证明。
 
+READY 之前按既有固定种子和选择规则验证实际64条 cohort；全部输入的聚合组数不能代替所选子集的组数。准备结果冻结 `training_order`，摘要的 `training_cohort` 逐项绑定原始 row ID、完整请求摘要和有序候选 ID。worker 消费并重新核对这份 cohort；无法保持组数或绑定不一致时拒绝执行。摘要的 `rows`、文档数和家族数仍描述全部已准入输入，`training_cohort` 描述实际预定步骤。
+
 ## 工作进程与预算
 
 `--run` 仅供经审核的控制器启动。它先检查独立 permit，再读训练数据；在导入重运行库前核对解释器、运行库版本、全部工作进程与门控源码摘要、实时资源租约和实际 Windows Job 限制。环境变量及本地收据用于防止误用，不是密码学授权。
@@ -46,6 +48,8 @@ python -B -W error -m tools.offline.ranking_student.train --manifest ./approved-
 完成预定阶段后，工作进程以独占创建方式写 `FINAL.npz`，仅保存当前模型的命名参数。随后用 `allow_pickle=False` 回读，核对完整名称集合、FP32 dtype、shape 和逐元素一致性；合成资格路径还包含重建模型后的固定输入预测回读检查。该过程核验本轮新写出的文件，不接受外部 checkpoint、resume 或任意权重文件。
 
 完成回读和最后预算检查后才产生有效 checkpoint 收据。超时或异常不产生完成状态；磁盘上可能已有部分文件，不能据此认定合格。`TOKENIZER.json`、`TRAINING-RESULT.json` 及模型文件属于执行侧输出，不是本仓库发布内容。
+
+合成资格回执用 `synthetic_input_order` 显式绑定每个固定预测的原始 row ID、完整请求 SHA256 和有序候选 ID。before、after、restored 都从同一经验证的顺序读取输入。标准库 `validate_synthetic_prediction_receipt(report, prepared)` 供消费端核对绑定、完整有限向量、回读声明及步骤身份；缺项、绑定条目的未知扩展、错序或摘要不一致会被拒绝，worker 和 CLI 成功路径也调用它。该函数不认证运行许可、实际模型数值、保存回读或真实训练；人工回执通过元数据检查不能成为模型资格证据。
 
 ## K32 与测试范围
 

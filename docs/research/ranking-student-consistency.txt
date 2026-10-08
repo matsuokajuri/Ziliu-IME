@@ -1,0 +1,41 @@
+训练 cohort 与合成预测回执的一致性
+
+准备与消费
+
+READY之前用固定SEED和既有选择规则验证实际64条cohort。聚合行数、文档数及家族数
+不能代替所选子集的组数。所选cohort不足8篇文档或8个家族时，prepare返回DATA_BLOCKED，
+并记录SCHEDULED_COHORT_GROUP_COVERAGE。选择规则、步骤上限和SGD参数保持原值。
+
+内部training_order固定索引顺序，summary.training_cohort逐项绑定原始row_id、完整
+request的pool_sha256、有序candidate_source_indices。worker消费这份cohort，并重新
+核对选择、绑定和training_cohort_sha256。摘要聚合统计及词表仍描述全部已准入训练输入；
+training_cohort描述实际预定步骤。
+
+合成固定预测
+
+synthetic_input_order使用与实际固定预测相同的输入顺序。绑定条目只允许：
+row_id、pool_sha256、candidate_source_indices。
+before、after、restored三个阶段均先校验该绑定，再按相同顺序读取request。
+
+标准库validate_synthetic_prediction_receipt(report, prepared)供消费端核对完整绑定、
+有限向量、回读声明及步骤身份；worker完成路径和CLI成功路径也调用它。
+缺项、额外绑定条目/字段、重复或未知行、错序、摘要变化、候选身份/顺序变化、
+不完整或非有限向量，以及不一致的回读声明/步骤历史会被拒绝。
+回执顶层扩展不属于绑定条目的封闭契约；缺少显式绑定的旧资格回执不能满足新检查。
+
+完整request摘要覆盖prefix、pinyin、有序候选source_index/text。新增元数据不作为
+模型特征，亦不把教师、标签、文档或家族字段传给模型。来源和授权声明须独立核查。
+消费验证核对身份、形状及声明一致性，不认证数值确由这些请求产生、运行许可、
+真实SGD或实际NPZ回读。人工回执通过元数据检查不能成为模型资格证据。
+
+无模型回归入口（仓库根目录）
+
+python3 -B -I -W error -m unittest discover -s tests -p test_ranking_student_stdlib.py -v
+python3 -B -I -W error -m unittest discover -s tests -p 'test_offline_*.py' -v
+python3 -B -I -W error -m unittest discover -s tests -p 'test_ranking_student_training*.py' -v
+python3 -B -I -W error -m unittest discover -s tests/research_acceptance -p 'test_ranking_student_*.py' -v
+
+新增验收包括65条稀疏家族反例、正常64条正控制、合成声明BLOCKED控制、
+准备/worker顺序一致，以及绑定和预测元数据的变异拒绝。测试只需Python标准库，
+不加载Torch、NumPy、模型或权重，不调用教师或执行训练。
+产品CTest与Python研究测试是不同入口；本增量不修改工作流或生产接入。
