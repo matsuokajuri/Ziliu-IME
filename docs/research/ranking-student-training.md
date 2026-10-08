@@ -31,6 +31,8 @@ python -B -W error -m tools.offline.ranking_student.train --manifest ./approved-
 
 准备模式不导入 Torch、NumPy 或 ORT，不申请资源锁或执行优化。合成 fixture 永远不成为真实训练 READY。训练准备要求至少64个不同 request、8篇文档及8个家族，同时检查首次训练的 S/T token 上限；这些是工程准入条件，不是统计独立性证明。
 
+READY 之前按既有固定种子和选择规则验证实际64条 cohort；全部输入的聚合组数不能代替所选子集的组数。准备结果冻结 `training_order`，摘要的 `training_cohort` 逐项绑定原始 row ID、完整请求摘要和有序候选 ID。worker 消费并重新核对这份 cohort；无法保持组数或绑定不一致时拒绝执行。摘要的 `rows`、文档数和家族数仍描述全部已准入输入，`training_cohort` 描述实际预定步骤。
+
 ## 工作进程与预算
 
 `--run` 仅供经审核的控制器启动。它先检查独立 permit，再读训练数据；在导入重运行库前核对解释器、运行库版本、全部工作进程与门控源码摘要、实时资源租约和实际 Windows Job 限制。环境变量及本地收据用于防止误用，不是密码学授权。

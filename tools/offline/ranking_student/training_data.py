@@ -3,15 +3,70 @@ from collections import Counter
 import hashlib
 import json
 from pathlib import Path
+import random
 
 from .codec import Codec
 from .contracts import (adapt_legacy_rank_row, digest, exact, hash_value, text,
-                        validate_split_manifest)
+                        validate_request, validate_split_manifest)
 
 EXCLUDED_COLLECTIONS = {"legacy_59_templates", "consumed_development_330", "exploration_96"}
 MAX_ROWS = 512
 MAX_BYTES = 8 * 1024 * 1024
 ARTIFACTS = {"native_cases", "native_admission", "labels", "lineage"}
+SEED = 20261007
+STEPS = 64
+
+
+def select_training_cohort(rows):
+    """The existing fixed-seed, one-pass selection, shared by prepare and worker."""
+    order = list(range(len(rows)))
+    random.Random(SEED).shuffle(order)
+    chosen, documents, families = [], set(), set()
+    while order and len(chosen) < STEPS:
+        index = max(order, key=lambda i: (
+            rows[i]["document_id"] not in documents)
+            + (rows[i]["family_id"] not in families))
+        order.remove(index); chosen.append(index)
+        documents.add(rows[index]["document_id"])
+        families.add(rows[index]["family_id"])
+    if len(chosen) != STEPS or min(len(documents), len(families)) < 8:
+        raise ValueError("scheduled subset does not preserve minimum group coverage")
+    return chosen
+
+
+def input_order_binding(rows, identities, order):
+    """Bind ordered row IDs and complete requests without model runtime or IO."""
+    if (type(rows) is not list or type(identities) is not list or len(rows) != len(identities)
+            or type(order) is not list or not 1 <= len(order) <= STEPS
+            or any(type(i) is not int or not 0 <= i < len(rows) for i in order)
+            or len(set(order)) != len(order)):
+        raise ValueError("bounded unique input order required")
+    result = []
+    for index in order:
+        row, ident = rows[index], identities[index]
+        text(ident, 128)
+        ids = validate_request(row["request"])
+        pool_sha = digest(row["request"])
+        if row["pool_sha256"] != pool_sha:
+            raise ValueError("input order request and frozen pool digest differ")
+        result.append(dict(row_id=ident, pool_sha256=pool_sha, candidate_source_indices=ids))
+    if len({item["row_id"] for item in result}) != len(result):
+        raise ValueError("input order row identities must be unique")
+    return result
+
+
+def validate_input_order_binding(binding, rows, identities, order):
+    expected = input_order_binding(rows, identities, order)
+    if type(binding) is not list or len(binding) != len(expected):
+        raise ValueError("complete ordered input binding required")
+    for item, wanted in zip(binding, expected):
+        exact(item, {"row_id", "pool_sha256", "candidate_source_indices"})
+        text(item["row_id"], 128)
+        hash_value(item["pool_sha256"])
+        ids = item["candidate_source_indices"]
+        if type(ids) is not list or any(type(i) is not int for i in ids) or item != wanted:
+            raise ValueError("input binding identity, request digest or candidate order differs")
+    return expected
 
 
 def unique_object(pairs):
@@ -169,6 +224,14 @@ def build_preparation(cases, admission, labels, lineage, native_input_sha256):
     if len(rows) < 64: blockers.append("NEED_64_UNIQUE_ADMITTED_REQUESTS")
     if min(documents, families) < 8: blockers.append("NEED_8_DOCUMENTS_AND_8_FAMILIES")
     if any(s > 128 or t > 128 for s, _, t in shapes): blockers.append("FIRST_RUN_TOKEN_CAP_EXCEEDED")
+    training_order, cohort = None, None
+    if not blockers:
+        try:
+            training_order = select_training_cohort(rows)
+        except ValueError:
+            blockers.append("SCHEDULED_COHORT_GROUP_COVERAGE")
+        else:
+            cohort = input_order_binding(rows, identities, training_order)
     summary = dict(status="READY_FOR_AUTHORIZED_WINDOW" if not blockers else "DATA_BLOCKED",
         blockers=blockers, rows=len(rows), unique_documents=documents, unique_families=families,
         origin=lineage["origin"], max_source_tokens=max(s for s, _, _ in shapes),
@@ -176,8 +239,10 @@ def build_preparation(cases, admission, labels, lineage, native_input_sha256):
         codec_sha256=codec.sha256, ignored_language_anchors=len(labels["language_anchors"]),
         teachers=sorted({t["id"] for r in rows for t in r["target"]["teachers"]}),
         probabilities_are="one_hot_hard_choices_not_teacher_confidence",
+        training_cohort=cohort, training_cohort_sha256=digest(cohort) if cohort is not None else None,
         runtime_loaded=False, optimizer_steps=0, quality_claim=False, production_enabled=False)
-    return dict(rows=rows, ids=identities, characters=characters, codec=codec, summary=summary)
+    return dict(rows=rows, ids=identities, characters=characters, codec=codec, summary=summary,
+                training_order=training_order)
 
 
 def prepare(manifest_path, manifest_sha256):

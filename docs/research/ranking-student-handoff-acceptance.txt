@@ -1,0 +1,46 @@
+训练 cohort 与固定预测绑定的无模型验收
+
+参考基础：6c57f1549811d7239374fd1a1eb1dc18fac7ff7b
+本验收只使用人工合成输入、标准库和源码检查，不执行模型或训练。
+
+从仓库根目录运行：
+
+python3 -B -I -W error -m unittest discover -s tests/research_acceptance -p test_ranking_student_handoff.py -v
+
+参考基础上有两个待满足的契约：READY准备必须可被后续固定cohort排程消费；
+固定预测回执必须显式写入synthetic_input_order。两个正常/合成声明控制项保持通过。
+测试目录没有__init__.py，文件名不匹配既有标准库、offline或training测试入口。
+
+READY 与实际 cohort
+
+fixture构造65个不同request，经临时JSON和固定字节摘要prepare()入口验证。
+所有内容、教师名称及收据都是人工占位；real_rime_train只模拟声明，不认证来源或授权。
+第23..29行（从0开始）属于同一合成文档和七个不同家族，另外58行各属不同文档、
+共享第八个家族。共65行、59篇文档、8个家族，S/T token上限为36/7。
+
+参考基础只检查聚合组数，返回READY，但固定SEED=20261007的64条选择会抛出：
+ValueError: scheduled subset does not preserve minimum group coverage
+
+验收要求：在发出READY之前验证同一实际cohort，或提前拒绝/返回DATA_BLOCKED。
+正常64条（8文档/8家族）正控制须保持可排程；synthetic_fixture声明须保持BLOCKED。
+聚合统计和全输入词表的范围与实际步骤应分别明确，不互相替代。
+
+固定预测绑定
+
+参考基础的before、after、restored只输出按order[:4]遍历的预测数组，缺少显式的
+synthetic_input_order。history.row_id与整体manifest摘要保留间接线索，但不是逐项绑定。
+最小AST验收检查run()对report的实际字段写入，不把注释或无关helper当作字段写入。
+它不调用run()，也不使用假的Torch/NumPy运行库。
+
+字段存在只是一项静态门槛。消费端还须核对同一顺序、原始row_id、完整请求摘要
+（包括prefix、pinyin和有序source_index/text）。缺项、错序、重复、未知绑定字段及
+请求摘要变化应被拒绝；数值是否确由请求产生、实际保存回读与运行许可需独立验证。
+适配等价helper或schema时须核对实际数据流，不能只添加一个未使用的字段。
+
+既有无模型套件：
+
+python3 -B -I -W error -m unittest discover -s tests -p test_ranking_student_stdlib.py -v
+python3 -B -I -W error -m unittest discover -s tests -p 'test_offline_*.py' -v
+python3 -B -I -W error -m unittest discover -s tests -p 'test_ranking_student_training*.py' -v
+
+测试不附真实语料、教师响应、模型或权重，不证明模型质量、性能、真实Job或产品验收。

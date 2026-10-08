@@ -3,16 +3,15 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import random
 import sys
 import time
 
 from .config import Config
-from .training_data import prepare
+from .contracts import digest
+from .training_data import (SEED, STEPS, prepare, select_training_cohort,
+                            validate_input_order_binding)
 from .training_window import authorize
 
-SEED = 20261007
-STEPS = 64
 LEARNING_RATE = 1e-3
 
 
@@ -26,20 +25,14 @@ def schedule(prepared, *, qualification=False):
         return list(range(len(prepared["rows"])))
     if prepared["summary"]["status"] != "READY_FOR_AUTHORIZED_WINDOW":
         raise ValueError("data readiness blockers; no optimizer execution")
-    order = list(range(len(prepared["rows"])))
-    random.Random(SEED).shuffle(order)
-    chosen, documents, families = [], set(), set()
-    # Cover declared groups before filling remaining slots in the seeded order.
-    while order and len(chosen) < STEPS:
-        index = max(order, key=lambda i: (
-            prepared["rows"][i]["document_id"] not in documents)
-            + (prepared["rows"][i]["family_id"] not in families))
-        order.remove(index); chosen.append(index)
-        documents.add(prepared["rows"][index]["document_id"])
-        families.add(prepared["rows"][index]["family_id"])
-    if len(chosen) != STEPS or min(len(documents), len(families)) < 8:
-        raise ValueError("scheduled subset does not preserve minimum group coverage")
-    return chosen  # One pass only: no cycling, epochs, or template repetition.
+    order = prepared.get("training_order")
+    if order != select_training_cohort(prepared["rows"]):
+        raise ValueError("worker order differs from the prepared fixed cohort")
+    cohort = validate_input_order_binding(prepared["summary"].get("training_cohort"),
+                                         prepared["rows"], prepared["ids"], order)
+    if prepared["summary"].get("training_cohort_sha256") != digest(cohort):
+        raise ValueError("prepared cohort receipt digest differs")
+    return list(order)  # One pass only; consume the cohort verified before READY.
 
 
 def save_json(path, value):
