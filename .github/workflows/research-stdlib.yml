@@ -1,0 +1,65 @@
+name: research-stdlib
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/research-stdlib.yml'
+      - 'tools/offline/**'
+      - 'scripts/**'
+      - 'tests/**'
+  pull_request:
+    paths:
+      - '.github/workflows/research-stdlib.yml'
+      - 'tools/offline/**'
+      - 'scripts/**'
+      - 'tests/**'
+
+permissions:
+  contents: read
+
+jobs:
+  research-stdlib:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Create a standard-library-only test environment
+        # No pip, third-party packages, data/weights, teacher calls, or training.
+        run: |
+          python3 -I -m venv --without-pip "$RUNNER_TEMP/research-stdlib"
+          printf '%s\n' "$RUNNER_TEMP/research-stdlib/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/research-stdlib/bin/python3" -B -I -W error - <<'PY'
+          import importlib.util
+          import sys
+          if sys.version_info[:2] != (3, 12):
+              raise RuntimeError("Python 3.12 is required")
+          forbidden = ("pip", "torch", "numpy", "onnxruntime")
+          available = [name for name in forbidden if importlib.util.find_spec(name) is not None]
+          if available:
+              raise RuntimeError(f"Non-stdlib packages are available: {available}")
+          print(sys.version)
+          print("No pip, Torch, NumPy, or ONNX Runtime is available to these tests.")
+          PY
+
+      - name: Ranking student standard-library contracts
+        run: python3 -B -I -W error -m unittest discover -s tests -p test_ranking_student_stdlib.py -v
+
+      - name: Offline standard-library contracts
+        run: python3 -B -I -W error -m unittest discover -s tests -p 'test_offline_*.py' -v
+
+      - name: Training admission and window contracts (no training)
+        run: python3 -B -I -W error -m unittest discover -s tests -p 'test_ranking_student_training*.py' -v
+
+      - name: Research handoff and receipt contracts
+        run: python3 -B -I -W error -m unittest discover -s tests/research_acceptance -p 'test_ranking_student_*.py' -v
