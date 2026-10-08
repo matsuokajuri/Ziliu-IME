@@ -7,9 +7,9 @@ import sys
 import time
 
 from .config import Config
-from .contracts import digest
+from .contracts import digest, finite_vector
 from .training_data import (SEED, STEPS, prepare, select_training_cohort,
-                            validate_input_order_binding)
+                            input_order_binding, validate_input_order_binding)
 from .training_window import authorize
 
 LEARNING_RATE = 1e-3
@@ -39,6 +39,37 @@ def save_json(path, value):
     with Path(path).open("x", encoding="utf-8", newline="\n") as stream:
         json.dump(value, stream, ensure_ascii=False, indent=2, allow_nan=False)
         stream.write("\n")
+
+
+def synthetic_prediction_order(prepared, binding):
+    """Consume explicit input identities before any fixed prediction is made."""
+    order = schedule(prepared, qualification=True)[:4]
+    validate_input_order_binding(binding, prepared["rows"], prepared["ids"], order)
+    return order
+
+
+def validate_synthetic_prediction_receipt(report, prepared):
+    """Stdlib binding/shape checks only; not authorization or numerical qualification."""
+    if (type(report) is not dict or report.get("purpose") != "synthetic_pipeline_qualification"
+            or report.get("status") != "SYNTHETIC_PIPELINE_QUALIFIED"):
+        raise ValueError("completed synthetic prediction receipt required")
+    order = synthetic_prediction_order(prepared, report.get("synthetic_input_order"))
+    for key in ("fixed_predictions_before", "fixed_predictions_after", "fixed_predictions_restored"):
+        predictions = report.get(key)
+        if type(predictions) is not list or len(predictions) != len(order):
+            raise ValueError("one fixed prediction vector per bound input required")
+        for vector, index in zip(predictions, order):
+            finite_vector(vector, len(prepared["rows"][index]["request"]["candidates"]))
+    if (report.get("restored_fixed_predictions_exact") is not True
+            or report["fixed_predictions_after"] != report["fixed_predictions_restored"]):
+        raise ValueError("restored fixed prediction receipt differs")
+    history = report.get("history")
+    if (type(report.get("optimizer_steps")) is not int or report["optimizer_steps"] != len(order)
+            or type(history) is not list or len(history) != len(order)
+            or any(type(item) is not dict for item in history)
+            or [item.get("row_id") for item in history] != [prepared["ids"][i] for i in order]):
+        raise ValueError("synthetic step history differs from bound input order")
+    return order
 
 
 def optimize_once(model, optimizer, prepared, order, check_window, finite, report):
@@ -78,6 +109,8 @@ def run(prepared, output, check_window, permit):
                   checkpoint=None, production_enabled=False, quality_claim=False,
                   initialization="random", teacher_calls=0, training_rows_repeated=False,
                   purpose="synthetic_pipeline_qualification" if qualification else "optimizer_training")
+    if qualification:
+        report["synthetic_input_order"] = input_order_binding(prepared["rows"], prepared["ids"], order[:4])
     try:
         import torch
         import numpy as np
@@ -98,7 +131,7 @@ def run(prepared, output, check_window, permit):
             instance.eval()
             with torch.inference_mode():
                 return [instance(**instance.tensors(codec.plan([prepared["rows"][i]["request"]])))[0].tolist()
-                        for i in order[:4]]
+                        for i in synthetic_prediction_order(prepared, report["synthetic_input_order"])]
         if qualification:
             report["fixed_predictions_before"] = predict(model)
             initial_hashes = {n:hashlib.sha256(p.detach().cpu().numpy().tobytes()).hexdigest()
@@ -144,6 +177,8 @@ def run(prepared, output, check_window, permit):
         report.update(status="SYNTHETIC_PIPELINE_QUALIFIED" if qualification else "BOUNDED_TRAINING_COMPLETE", checkpoint=dict(file=checkpoint.name,
             sha256=hashlib.sha256(checkpoint.read_bytes()).hexdigest(), allow_pickle=False,
             safe_roundtrip=True, selection="synthetic_qualification_only" if qualification else "predetermined_64_unique_train_requests"))
+        if qualification:
+            validate_synthetic_prediction_receipt(report, prepared)
     except TimeoutError:
         report["stop_reason"] = "WINDOW_ENDED_NO_AUTOMATIC_EXTENSION"
     except BaseException as error:
@@ -173,6 +208,8 @@ def main(argv=None):
     prepared = prepare(args.manifest, args.manifest_sha256)
     if args.run:
         report = run(prepared, args.out, check, permit)
+        if report["status"] == "SYNTHETIC_PIPELINE_QUALIFIED":
+            validate_synthetic_prediction_receipt(report, prepared)
         return 0 if report["status"] in {"BOUNDED_TRAINING_COMPLETE", "SYNTHETIC_PIPELINE_QUALIFIED"} else 2
     save_json(args.out, prepared["summary"])
     print(json.dumps(prepared["summary"], ensure_ascii=False))

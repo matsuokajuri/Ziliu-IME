@@ -49,6 +49,8 @@ READY 之前按既有固定种子和选择规则验证实际64条 cohort；全�
 
 完成回读和最后预算检查后才产生有效 checkpoint 收据。超时或异常不产生完成状态；磁盘上可能已有部分文件，不能据此认定合格。`TOKENIZER.json`、`TRAINING-RESULT.json` 及模型文件属于执行侧输出，不是本仓库发布内容。
 
+合成资格回执用 `synthetic_input_order` 显式绑定每个固定预测的原始 row ID、完整请求 SHA256 和有序候选 ID。before、after、restored 都从同一经验证的顺序读取输入。标准库 `validate_synthetic_prediction_receipt(report, prepared)` 供消费端核对绑定、完整有限向量、回读声明及步骤身份；缺项、绑定条目的未知扩展、错序或摘要不一致会被拒绝，worker 和 CLI 成功路径也调用它。该函数不认证运行许可、实际模型数值、保存回读或真实训练；人工回执通过元数据检查不能成为模型资格证据。
+
 ## K32 与测试范围
 
 `Config(max_candidates=32)` 显式启用最多32项；默认仍为9项。Codec 保留每个完整候选的文本、来源 ID 和 mask，超出数量、字符或 token 边界时拒绝，不截断。模型参数量不随 K 改变；K、候选 token 长度 T 和 source 长度 S 是不同维度，K9 的测量不能替代 K32 的测量。原生桥接、训练和旧比较协议继续使用各自的 K9 门控。
