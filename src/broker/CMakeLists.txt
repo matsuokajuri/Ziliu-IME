@@ -44,3 +44,11 @@ else()
     "Verified librime runtime not found; run scripts/fetch-librime-runtime.ps1. "
     "Broker will use the deterministic fallback engine.")
 endif()
+
+# Build-only integration seam; enabling it does not route input or load a model.
+option(ZILIU_ENABLE_ONNX_SCORER "Build the optional explicitly provisioned scorer worker library" OFF)
+if(ZILIU_ENABLE_ONNX_SCORER)
+  set(ZILIU_SOURCE_ROOT "${PROJECT_SOURCE_DIR}")
+  include(ZiliuScorer)
+  ziliu_add_onnx_scorer()
+endif()

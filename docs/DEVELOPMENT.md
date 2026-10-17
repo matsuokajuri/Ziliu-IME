@@ -9,6 +9,8 @@
 - CMake 3.28+；使用 `windows-x64` preset 时，CMake 还需支持 Visual Studio 18 2026 generator。
 - Git 与 7-Zip（`7z.exe` 可从 PATH 找到）。
 - WinUI 3 工程使用 Windows SDK `10.0.28000.0`、Windows App SDK `2.2.0` 与 C++/WinRT `3.0.260715.1`。
+
+`build-winui3.cmd` 保留 Windows SDK `10.0.28000.0` 作为本地默认；可通过环境变量 `ZILIU_WINDOWS_SDK_VERSION` 显式选择已安装版本。CI 选择官方 runner 提供的 `10.0.26100.0`，不修改工程的默认 SDK、工具集或 NuGet 版本。
 - CodeGraph CLI，用于符号定位和结构变更后的索引同步。
 
 详细约束见 [AGENTS.md](../AGENTS.md)。不直接修改 `third_party/`；数据定制放在[字流覆盖层](../data/ziliu/README.md)。
@@ -79,3 +81,10 @@ scripts\package-alpha.cmd
 打包脚本检查运行时、数据、WinUI self-contained 文件清单、四个产品的 `0.1.0-alpha.1` 版本资源、第三方许可与逐文件 SHA-256。已有同名产物时默认拒绝覆盖。图形安装器制作、只读校验和安装恢复边界见[Alpha 发布记录](ALPHA-RELEASE.md)。
 
 本地构建成功、生成 ZIP、CI 通过和实际安装验收是不同证据，应分别记录版本、源提交和测试范围。
+
+## 可选排序器源码验证
+
+可选 ONNX 排序器是默认关闭、尚未接入产品输入路径的独立库。仅验证可移植核心、
+资源与资产边界时可使用 `tests/scorer` 的 CMake/CTest 入口；这不改变应用只支持 Windows
+的构建要求。依赖、外部清单信任边界、专用工作进程约束与未覆盖的 Windows/TSF 验收见
+[可选排序器说明](OPTIONAL-SCORER.md)。不要把这些测试当成已发布的模型能力。

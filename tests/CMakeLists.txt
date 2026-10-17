@@ -115,3 +115,25 @@ set_tests_properties(ziliu_rime_engine_tests PROPERTIES
   ENVIRONMENT "ZILIU_RIME_USER_DATA_DIR=${CMAKE_BINARY_DIR}/test-state/rime-v3"
   SKIP_RETURN_CODE 77
   TIMEOUT 120)
+
+add_executable(ziliu_scorer_tests scorer_tests.cpp)
+target_link_libraries(ziliu_scorer_tests PRIVATE ziliu_core)
+ziliu_configure_target(ziliu_scorer_tests)
+add_test(NAME ziliu_scorer_tests COMMAND ziliu_scorer_tests)
+set_tests_properties(ziliu_scorer_tests PROPERTIES TIMEOUT 30)
+
+add_executable(ziliu_onnx_graph_gate_tests onnx_graph_gate_tests.cpp
+  ../src/broker/src/onnx_graph_gate.cpp)
+target_include_directories(ziliu_onnx_graph_gate_tests PRIVATE ../src/broker/src)
+ziliu_configure_target(ziliu_onnx_graph_gate_tests)
+add_test(NAME ziliu_onnx_graph_gate_tests COMMAND ziliu_onnx_graph_gate_tests)
+set_tests_properties(ziliu_onnx_graph_gate_tests PROPERTIES TIMEOUT 30)
+
+if(ZILIU_ENABLE_ONNX_SCORER)
+  add_executable(ziliu_scorer_asset_tests scorer_asset_tests.cpp)
+  target_include_directories(ziliu_scorer_asset_tests PRIVATE ../src/broker/src)
+  target_link_libraries(ziliu_scorer_asset_tests PRIVATE ziliu_onnx_scorer)
+  ziliu_configure_target(ziliu_scorer_asset_tests)
+  add_test(NAME ziliu_scorer_asset_tests COMMAND ziliu_scorer_asset_tests)
+  set_tests_properties(ziliu_scorer_asset_tests PROPERTIES TIMEOUT 30)
+endif()

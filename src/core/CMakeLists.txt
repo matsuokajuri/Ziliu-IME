@@ -2,6 +2,7 @@ add_library(ziliu_core STATIC
   src/candidate_filter.cpp
   src/ipc_protocol.cpp
   src/settings.cpp
+  src/scorer.cpp
   src/session_host.cpp
   src/sogou_theme.cpp
   src/stub_engine.cpp
