@@ -33,3 +33,21 @@ OpenCC 原生支持的 `text` 格式，以免要求额外的词典编译工具�
 
 - `STPhrases.txt`: `17fece21a28f3db2dc32397abd73d21ae73261c3f295fa6a3fe64b5e8d8b554b`
 - `STCharacters.txt`: `ed1d268e0ad028511dcf5b0089faed0a980ad332449ec11d481ceefde6879f41`
+
+## Optional scorer source
+
+The optional scorer's first-party host, token packing and C++ adapter are GPL-3.0-only.
+Architecture, model-format and native context-policy reference lineage is the
+`reference` crate in `metasequoiaime/chinese-ime-lm` at
+[`f4a3fc007fba051695ae8300de917bb824d458ba`](https://github.com/metasequoiaime/chinese-ime-lm/tree/f4a3fc007fba051695ae8300de917bb824d458ba/reference),
+copyright 2026 chinese-ime-lm contributors. That crate is Apache-2.0; the repository-root
+license has a different scope. The unchanged reference license and upstream root notice
+are retained in [licenses/scorer](licenses/scorer). This C++ adapter is not the upstream Rust
+runtime. The upstream notice's model/data references do not describe assets bundled here.
+
+The optional adapter uses an externally supplied official Microsoft ONNX Runtime 1.20.1 C API
+header (MIT; upstream commit `5c1b7ccbff7e5141c1da7a9d963d660e5741c319`) and a separately
+verified official CPU runtime. Linux verification uses OpenSSL 3 (`libcrypto`, Apache-2.0);
+Windows uses operating-system BCrypt APIs. No runtime, header, model, vocabulary or dataset
+is vendored by this change. Their applicable licenses/notices must accompany any later binary
+or asset distribution; enabling a source build does not establish redistribution permission.
