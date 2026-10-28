@@ -21,3 +21,8 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -m unittest discover -s tests -v
+      - name: Verify NumPy scorer stdlib-only contracts
+        working-directory: tools/compression/numpy_scorer
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest test_scorer_static -v
