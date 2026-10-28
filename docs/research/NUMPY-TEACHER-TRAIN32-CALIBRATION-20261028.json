@@ -1,0 +1,97 @@
+{
+  "schema": "ziliu.full-numpy-train32-calibration-public-aggregate.v1",
+  "status": "INDEPENDENT_NUMERICAL_CACHE_RUNTIME_AND_SUPERVISION_EVIDENCE_PASSED",
+  "scope": "One Linux research calibration window using the full-projection NumPy FP32 teacher; not training quality, full-worklist acceptance or Windows product acceptance.",
+  "actual_budget": {
+    "unique_train_inputs": 32,
+    "sentinel_calls": 2,
+    "score_calls_issued": 34,
+    "score_calls_completed": 34,
+    "model_loads_issued": 1,
+    "model_loads_completed": 1,
+    "native_thread_getters_issued": 2,
+    "native_thread_getters_completed": 2,
+    "runtime_guard_checkpoints": 74,
+    "mapping_snapshots_independently_checked": 148,
+    "fresh_storage_gate_receipts": 38,
+    "storage_gate_coverage": "Startup plus immediately before each of34scores,1load and2getters; gates include byte and inode headroom."
+  },
+  "verified": {
+    "selected_inputs_train_only": true,
+    "train_values_finite_exact_fp32": 32,
+    "sentinels_match_qualified_numpy_reference_bits": true,
+    "reference_is_original_torch_bitwise_contract": false,
+    "actual_score_files_verified_in_fresh_process": 34,
+    "lossless_guard_records_reconstructed": 74,
+    "anonymous_executable_or_writable_executable_mappings_observed": false,
+    "unresolved_score_load_or_getter_requests": 0,
+    "numerical_source_bindings_rehashed": 179
+  },
+  "measured": {
+    "runner_elapsed_seconds": 10.10113634600566,
+    "supervisor_elapsed_seconds": 14.697977319003257,
+    "peak_process_rss_kib": 332092,
+    "train_checked_request_ms": {
+      "min": 225.683796,
+      "median": 254.398748,
+      "max": 330.942446
+    },
+    "train_scorer_only_ms": {
+      "min": 29.597325,
+      "median": 34.334399000000005,
+      "max": 45.289642
+    },
+    "runner_evidence_logical_bytes": 1032710,
+    "runner_evidence_allocated_bytes": 3698688,
+    "runner_evidence_unique_inodes": 852,
+    "supervisor_evidence_allocated_bytes": 57344,
+    "supervisor_evidence_unique_inodes": 8,
+    "transient_peak_storage_measured": false
+  },
+  "resource_limits": {
+    "cpu_affinity_width": 2,
+    "actual_openblas_threads": 2,
+    "address_space_bytes_max": 4294967296,
+    "fresh_available_ram_bytes_min": 8589934592,
+    "disk_safety_reserve_bytes": 8589934592,
+    "inode_reserve": 200000,
+    "deadline_seconds": 120,
+    "term_to_kill_grace_seconds": 10,
+    "each_output_stream_cap_bytes": 4194304
+  },
+  "supervision": {
+    "independent_evidence_review_passed": true,
+    "prelaunch_intent_verified": true,
+    "child_process_start_identity_evidence_consistent": true,
+    "actual_command_and_environment_match_approved_manifest": true,
+    "source_files_rehashed": 187,
+    "terminal_exit_code": 0,
+    "stdout_bytes": 0,
+    "stderr_bytes": 0,
+    "both_stream_eofs_verified": true,
+    "owned_group_clear_observed_before_leader_reap": true,
+    "leader_reap_confirmed": true,
+    "audit_deviations_found": 0,
+    "deadline_or_forced_kill_triggered_in_this_real_window": false,
+    "timeout_failure_tests_scope": "Previously reviewed short synthetic subprocess tests only; successful real-window completion does not exercise forced timeout."
+  },
+  "production_status": {
+    "production_cache_entries": 0,
+    "training_labels_exported": 0,
+    "next_window_approved": false,
+    "production_window_size_frozen": false,
+    "final_acceptance_set_accessed": false,
+    "model_quality_improvement_claimed": false,
+    "windows_product_acceptance_claimed": false,
+    "one_shot_execution_gates_consumed": true
+  },
+  "limitations": [
+    "Lexicographic32TRAIN convenience subset is not representative latency, tail-latency or quality evidence.",
+    "Request timing ranges/medians describe32TRAIN calls; sentinel calls excluded from these distributions.",
+    "Runtime guards and process-group evidence are boundary observations, not continuous surveillance or arbitrary hostile-child isolation.",
+    "Raw score values, input identifiers, private locations, process identifiers, model weights and runtime manifests are excluded from this aggregate.",
+    "Measured storage is retained allocation, not transient peak. Storage checks do not reserve physical space or prove quota headroom.",
+    "Earlier whole-worklist worst-case storage risk is not removed by this small successful window; exact total budget and finite scope need review before any production plan.",
+    "No automatic retry, next-window admission, full-cache promotion or label export follows from this result."
+  ]
+}
