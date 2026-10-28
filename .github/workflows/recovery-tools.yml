@@ -31,3 +31,8 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -B -m unittest discover -s . -p 'test_*.py' -v
+      - name: Verify cache recovery stdlib-only failure handling
+        working-directory: tools/recovery/numpy_cache_primitives
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest discover -s . -p 'test_*.py' -v

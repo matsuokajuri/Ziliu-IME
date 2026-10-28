@@ -1,0 +1,76 @@
+{
+  "schema": "ziliu-public-cache-source-manifest-v1",
+  "scope": "original source plus synthetic tests; no numerical runtime admission",
+  "sources": [
+    {
+      "file": "contract_numpy_v2.py",
+      "sha256": "3c22e1c20e3e2b4c9d73933f034c759e43eeb0321b4d96f94f80442a62a36b1a",
+      "ast_sha256": "8a83f8926ef0da29c73136dfd5e53b6d30317624b0f92cf4b6ac53939ed67e55",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "cache_store_numpy_v2.py",
+      "sha256": "132a1ab6383818065c2e8c65f34e9f3444ad8c8e91477525ed4b36e2443940c8",
+      "ast_sha256": "5fe0128720604bc807399c43621999848d327bb3f423643258f18938270ffc4b",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "recovery_protocol_v2.py",
+      "sha256": "81cbc91e0f4398a963a45d50b4bec2b6fc96959d5490792a377493ae1cf61590",
+      "ast_sha256": "763d31397c742c9ace186bac3062fd65a5e077fa2f38b28d9f1c22934fcc9470",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "journal_io_v2.py",
+      "sha256": "87ec6e68f5e8019a3de8770fc4c8865cb976f0e95a9b2e9cd6edad284371c525",
+      "ast_sha256": "ab2ef4f84d4b43d3f8281db054dc4af5ca8030c1b70bd6df6af815abb53665b5",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "storage_admission_v2.py",
+      "sha256": "8b017ccba2eab85d616b1001b186c2362a8e6f219d8f72e84b93121560e1c0f3",
+      "ast_sha256": "09c828c81b98c7c02c34e70f28053c393f6c7d17a59b2b789bfecf3bb25e6d53",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "evidence_store_v3.py",
+      "sha256": "4666b4a6d0991e36f9afdb0e6ecee912983d22e62b63f4cc3c3d370e97d70aec",
+      "ast_sha256": "88d0e9e7e9a780a5485af17b16e2ab3c1e8485d4ef24284066e58dc989fb3fe8",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "test_core_v2.py",
+      "sha256": "b1ef4bc49d64c742650d5d6eeb5ed664b5167d134f6b42dfccfb6484a660a44f",
+      "ast_sha256": "2e512d85c30e7c9ebef91c9e087d206192f0380480d169651a6554d9347d16fe",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "test_cache_store_numpy_v2.py",
+      "sha256": "f1d0d88c2768f5fdf291af0b10d8abce1db1cc7ab1cf334dec51661c961e4ea8",
+      "ast_sha256": "047d9fd8c2aafb4b946d9fdcefeb9473285feb18a468a86de2fa42098565f5ad",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "test_journal_io_v2.py",
+      "sha256": "92b99cfc135a77a08ae2e60fb35f995c1a9ff60aa436e1d5bc589fb897151b7c",
+      "ast_sha256": "390330083ffa98804ba228de7528c7b14ccda8e8663c4a2f1b26b2b118fcfcba",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "test_storage_evidence_v3.py",
+      "sha256": "77410b7b225d43157ff68bd142990f2662f3dc5102fbcab33976f3a0687a34c8",
+      "ast_sha256": "6d7ccb6b591fc7923a35ca34690fd058bab5c8dc31b72f5280e1ed82151b375b",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    }
+  ]
+}
