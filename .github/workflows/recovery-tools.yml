@@ -56,3 +56,8 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -B -m unittest discover -s . -p 'test_*.py' -v
+      - name: Verify synthetic embedding materializer contracts
+        working-directory: tools/compression/synthetic_embedding_materializer
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest discover -s . -p 'test_*.py' -v
