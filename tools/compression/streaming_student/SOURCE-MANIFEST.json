@@ -1,0 +1,25 @@
+{
+  "execution_qualified": false,
+  "files": {
+    "adamw_profile_v1.py": "fb214c410a32e2ffa4d84b3b9a889f25636dfccf9bd4f02a6db3c7bd20f00dc3",
+    "backend.py": "10ea3ac09b3bfdfab9ac9492dfcc5bb3f27c515e8d10593e5152868b961cd365",
+    "initializer.py": "17e8cd4efac408e8892f67f547ae7a3d79a1f706a9ec0af69e87ba372dbd8191",
+    "label_contract.py": "2c14c13a490b84f44ff3d1f156bf12755012c3821d9e7bbb98d4ddb7889d1c42",
+    "planner_bridge.py": "47118e252e1a4f5d8337b886af8002fb82effc490817aa39c93881e072e35b52",
+    "session_gate.py": "c619aabf5ff20d78f4167ed844a208fdb8ffe8be5341846cbb032b3aef6efbfe",
+    "state_codec.py": "69418fba72faa1fdc430a463ad162e460be6be24812e1b83069ec17b1474303a",
+    "test_contracts.py": "3570c7b8f2020fc60461271c1003da9322a71f3d6b6a09078c8ce6f0a0fa0da0",
+    "test_initializer_fake.py": "64a2ca7073e7c261dcf73ea9b9ae8039b84fe305d134db578d9d7d53d35fb81e",
+    "test_loop_glue.py": "7b0490f4b3ec6c0740c22ce910de3ce3e61da15f694d7e72d614f89478acfdfc",
+    "test_optimizer_scalar_fake.py": "c9f435d2ef9fa5a49d112535da9ace569081bed334f09c72c8a5d72ca4a6fe1a",
+    "test_planner_bridge.py": "bdc10d94a091fa4a1354e3b9855e88f6c6440864f2dabfab8920337a19191eea",
+    "test_review_regressions.py": "2d0419e104350714186745fb23a443c2b00b8fd9e767b48f3c36f07d91656efe"
+  },
+  "schema": "PUBLIC_STREAMING_STUDENT_SOURCE_V1",
+  "scope": "original source and synthetic stdlib fixtures only; no private data bindings",
+  "test_path_adaptations": [
+    "test_contracts.py",
+    "test_loop_glue.py",
+    "test_planner_bridge.py"
+  ]
+}
