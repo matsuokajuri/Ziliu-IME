@@ -1,0 +1,64 @@
+{
+  "boundaries": [
+    "No model calls or student training performed by this diagnosis.",
+    "Student-DEV counts describe coverage only; DEV is not training data.",
+    "The teacher has previously seen this research domain; this is not teacher-unseen generalization.",
+    "No final acceptance set accessed, no quality improvement or Windows product acceptance claimed.",
+    "Original pools, unsupported entries and existing gates were not changed.",
+    "This aggregate excludes source identifiers and hashes, private paths, candidate text, raw tokens, raw scores and private streaming plans."
+  ],
+  "counts": {
+    "candidate_occurrences": 77699,
+    "student_dev": {
+      "affected_condition_pools": 35,
+      "affected_scenes": 15,
+      "candidate_occurrences": 25610,
+      "conditions": 252,
+      "fully_supported_complete_scene_candidate_occurrences": 19632,
+      "fully_supported_complete_scene_pools": 192,
+      "fully_supported_complete_scenes": 48,
+      "scene_exclusion_fraction_for_supported_only_pilot": 0.23809523809523808,
+      "scenes": 63,
+      "unsupported_occurrences": 62
+    },
+    "train": {
+      "affected_condition_pools": 56,
+      "affected_scenes": 24,
+      "candidate_occurrences": 52089,
+      "conditions": 512,
+      "fully_supported_complete_scene_candidate_occurrences": 42293,
+      "fully_supported_complete_scene_pools": 416,
+      "fully_supported_complete_scenes": 104,
+      "scene_exclusion_fraction_for_supported_only_pilot": 0.1875,
+      "scenes": 128,
+      "unsupported_occurrences": 214
+    },
+    "unsupported_due_to_length_or_context_limit": 0,
+    "unsupported_due_to_vocabulary_oov": 276,
+    "unsupported_occurrences": 276
+  },
+  "execution_admission": false,
+  "interpretation": {
+    "current_teacher": "Existing full NumPy baseline rejects unsupported candidate tails; no fallback teacher log probability is produced.",
+    "missing_score_rule": "A missing required supported score is an error, not an unsupported candidate.",
+    "occurrences_are_not_unique_candidate_texts": true,
+    "original_menu_policy": "An unsupported candidate in the original side pool triggers whole-menu fallback to the native/baseline path, rather than deleting that candidate and reranking the remainder. Unsupported movable native candidates also cause fallback.",
+    "training_gap": "Whole-menu fallback does not define complete-pool teacher soft targets for unsupported candidates. No zero, negative-infinity, baseline number or invented teacher score is substituted."
+  },
+  "official_format_reference": {
+    "scope": "Current upstream documentation provides general vocabulary-format context only; the diagnosed fallback follows the locally pinned project source, not a new upstream-version adoption.",
+    "url": "https://github.com/metasequoiaime/chinese-ime-lm/blob/main/docs/format.md"
+  },
+  "possible_next_step": {
+    "alternative": "Retaining all scenes requires a separately defined abstention/training policy or an independently qualified OOV-capable teacher contract; neither is implemented here.",
+    "available_scene_scope": 104,
+    "original_train_scene_scope": 128,
+    "route": "A separately reviewed finite pilot may select complete TRAIN scenes whose four original condition pools are fully supported, preserving every candidate inside those pools.",
+    "scene_exclusion_fraction": 0.1875,
+    "selection_requirement": "Predeclare score-independent selection and disclose restricted coverage; do not claim this covers all TRAIN scenes.",
+    "status": "proposal_only_not_training_admission"
+  },
+  "schema": "ziliu.unsupported-candidate-public-aggregate.v1",
+  "scope": "Source and frozen token-metadata diagnosis only; no model execution, training, candidate text or label inspection.",
+  "status": "aggregate_candidate_pending_independent_result_and_privacy_review"
+}
