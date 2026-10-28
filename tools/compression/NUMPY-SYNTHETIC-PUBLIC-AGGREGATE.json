@@ -1,0 +1,38 @@
+{
+  "cache_published": 0,
+  "checkpoint_count": 21,
+  "counts": {
+    "fixture_completed": 8,
+    "fixture_issued": 8,
+    "getter_completed": 2,
+    "getter_issued": 2
+  },
+  "cumulative_getter_calls": 3,
+  "elapsed_seconds": 2.1285213050068705,
+  "identity_sha256": "7b462415594a294754034e75dbd650aa61e3c24e267cf05ddfe890a014eeae84",
+  "limitations": [
+    "Eight fixed synthetic fixtures involve multiple array/BLAS operations, not eight kernel calls",
+    "Two getters may initialize library state; no thread setter used",
+    "Snapshot file/mapping checks do not prove absence of every transient mapping",
+    "No real model weights, forward score parity, product quality, production performance or Windows acceptance qualified",
+    "Original Torch strict/empirical failed gates remain failed; new mathematical namespace not original-A bitwise"
+  ],
+  "mapping_observations": 42,
+  "new_execution_authorized": false,
+  "observed_no_anonymous_exec_or_wx": true,
+  "original_review_sha256": "2a0d5dd2eec8bb3775104fdd4263c5eb505676028034775674fa3434bb712cfc",
+  "peak_rss_kib": 36724,
+  "prior_getter_calls": 1,
+  "real_model_forwards": 0,
+  "real_model_loads": 0,
+  "real_model_numeric_parity_passed": false,
+  "reported_thread_counts": [
+    2,
+    2
+  ],
+  "result_sha256": "b4cd55ba089c1cac1d519820c7095609ef8453131a1defcca2752d7229201c7e",
+  "runtime_files_rehashed": 102,
+  "schema": 1,
+  "status": "EIGHT_PRIMITIVES_TWO_GETTERS_INDEPENDENTLY_VERIFIED_CLOSED",
+  "weights_read": 0
+}
