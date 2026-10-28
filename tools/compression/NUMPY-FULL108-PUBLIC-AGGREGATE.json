@@ -1,0 +1,52 @@
+{
+  "bitwise_mismatch_count": 79,
+  "cache_published": 0,
+  "checkpoint_count": 222,
+  "counts": {
+    "getter_completed": 2,
+    "getter_issued": 2,
+    "load_completed": 1,
+    "load_issued": 1,
+    "score_completed": 108,
+    "score_issued": 108
+  },
+  "cumulative_native_getter_calls": 7,
+  "cumulative_numpy_model_score_calls": 109,
+  "elapsed_seconds": 32.99235611200129,
+  "epsilon_top_set_equal": true,
+  "exact_top_set_equal": true,
+  "first_candidate_self_replay_bitwise_equal": true,
+  "fixed_tolerances": {
+    "atol": 0.0001,
+    "rtol": 1e-05
+  },
+  "identity_sha256": "9f68a8296d0c2f5f85f7a663b5ada778c661c3a72827b1fcc9fcde0ede32ceee",
+  "limitations": [
+    "Only one fixed 108-candidate TRAIN pool, not global equivalence or product quality",
+    "New NumPy mathematical namespace; 79 values differ at FP32 bit level from original Torch A; no cache replacement",
+    "Candidate-zero self-replay check registered after first single-candidate observation, before this full-pool run",
+    "444 mapping snapshots do not prove absence of every transient mapping",
+    "Timing includes runtime hashing and journaling; not production speed or Windows acceptance",
+    "Two getters may initialize library state; no thread setters"
+  ],
+  "mapping_observations": 444,
+  "max_abs_error": 1.9073486328125e-06,
+  "new_execution_authorized": false,
+  "observed_no_anonymous_exec_or_wx": true,
+  "original_A_bitwise_contract": false,
+  "original_review_sha256": "eb4670602918bb1b78437a2da2f9112650876be81b9ff2fe4ce4a7bf752746b5",
+  "pair_count": 5778,
+  "pair_relation_changes": 0,
+  "peak_rss_kib": 63956,
+  "ranking_qualified_only_this_pool": true,
+  "reported_thread_counts": [
+    2,
+    2
+  ],
+  "result_sha256": "ce3300b430b9f382daafb436db319a8f57269716c27c626699aae48f91c2f435",
+  "runtime_files_rehashed": 102,
+  "schema": 1,
+  "stable_order_equal": true,
+  "status": "FULL108_NUMPY_NUMERIC_ORDER_INDEPENDENTLY_VERIFIED_CLOSED",
+  "top_epsilon": 1e-06
+}
