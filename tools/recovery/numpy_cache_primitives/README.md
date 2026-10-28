@@ -74,3 +74,30 @@ test counts are deterministic budget examples, not recorded input data.
 
 `SOURCE-MANIFEST.json` records this candidate's original source byte/AST hashes;
 it does not contain experiment inputs or authorize numerical execution.
+
+## Tiny-pilot helper increment (not a runtime runner)
+
+`pilot_adapter_v1.py` adds a pure full-projection contract check, metadata-only
+primary/repeat/sentinel schedule, one-operation journal/staging callback adapter,
+exact FP32 repeat comparisons and a TRAIN-only occurrence accessor. The added
+13 synthetic tests bring this directory's discovery suite to 74 tests.
+
+The adapter does **not** select real inputs, derive or validate real numerical
+keys, load a model, certify a production cache, or export training labels. It
+accepts injected callbacks for testing; a separately reviewed fixed runtime
+wrapper must pin their implementation and enforce true score/load/getter
+budgets. `model_calls=1` describes the intended one callback, not a bound on
+arbitrary callback internals. A numerical binding's valid shape is not proof
+of provenance. Geometry/repeat helpers require a complete admitted schedule.
+
+A durable completed payload precedes the after-guard, preserving recoverable
+bits if that guard fails; those bits are **not** thereby qualified or promoted.
+Unknown issued requests are never retried by the helper. It requests a fresh
+storage gate before issuing, but actual statvfs, resource limits, hard deadlines,
+full checkpoint sequence verification and fresh-process cache-only validation
+remain wrapper responsibilities. DEV rows are rejected by the TRAIN accessor;
+upstream must verify the full worklist and preserve all candidates/OOV rows.
+
+No private pilot plan, exact experiment source pins, real worklist, token IDs,
+scores, weights or execution admission is included. Existing CI test discovery
+automatically includes the added tests without a duplicate workflow step.

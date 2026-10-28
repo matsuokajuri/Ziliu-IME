@@ -71,6 +71,20 @@
       "ast_sha256": "6d7ccb6b591fc7923a35ca34690fd058bab5c8dc31b72f5280e1ed82151b375b",
       "byte_identical_to_reviewed_source": true,
       "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "pilot_adapter_v1.py",
+      "sha256": "0b49d296341666eb26df00a1a33ac3b6281670a6fdf72c1e252943afec43528e",
+      "ast_sha256": "ea5502747fdad02e77020cf43afdc4e97c869dda5394bf8272cd25e4e82fac8f",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
+    },
+    {
+      "file": "test_pilot_adapter_v1.py",
+      "sha256": "a587f270aa73a35fb656609f9742d8f7899f2a1e8ce867493e1c3e5fad253f37",
+      "ast_sha256": "d8fd877cb145b00df745b82fe0f2f84959037335eeb6140435548be01bfe0392",
+      "byte_identical_to_reviewed_source": true,
+      "ast_identical_to_reviewed_source": true
     }
   ]
 }
