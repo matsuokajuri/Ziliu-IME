@@ -1,0 +1,54 @@
+{
+  "counts": {
+    "getter_completed": 2,
+    "getter_issued": 2,
+    "numeric_completed": 417,
+    "numeric_issued": 417
+  },
+  "cell_backward_completed": 18,
+  "cell_forward_attempts": 1689,
+  "cell_forward_completed": 1688,
+  "checkpoints": 16,
+  "expected_overflow_rejections": 1,
+  "external_gradient_max_abs": 3.7443603773112955e-11,
+  "mapping_snapshots": 32,
+  "peak_rss_kib": 66964,
+  "primary_gradient_max_abs": 4.903161210378926e-12,
+  "runtime_files": 102,
+  "elapsed_seconds": 2.626765968001564,
+  "unknown_getters": 0,
+  "unknown_numeric_requests": 0,
+  "schema": "GRU_SYNTHETIC_PUBLIC_AGGREGATE_V1",
+  "status": "INDEPENDENT_NUMERICAL_REVIEW_CLOSED_PUBLIC_AGGREGATE_PENDING_REVIEW",
+  "independent_review_sha256": "526bc3a8d21f3d951faf096bdbc1fb3dc7839aed253ca923dc7a41c4d74588b6",
+  "dtype": "float64",
+  "hidden_width": 2,
+  "input_width": 3,
+  "primary_gradient_coordinates": [
+    47,
+    53,
+    104
+  ],
+  "external_oracle_gradient_coordinates": [
+    53,
+    101
+  ],
+  "real_weights_read": 0,
+  "teacher_score_calls": 0,
+  "real_data_rows": 0,
+  "new_execution_authorized": false,
+  "limitations": [
+    "Only float64 H2/D3 synthetic primitives, not128-width complete model or training/quality",
+    "Frozen numerical harness completed assertions and persisted error maxima; full derivative vectors not retained",
+    "Mapping snapshots only at fixture/getter boundaries, not continuous",
+    "No private remote backup verification implied",
+    "No optimizer training or input-method quality was tested in this numerical window."
+  ],
+  "resources": {
+    "available_memory_bytes": 9398079488,
+    "address_space_bytes": 4294967296,
+    "cpu_count": 2,
+    "deadline_seconds": 120,
+    "core_soft_limit": 0
+  }
+}
