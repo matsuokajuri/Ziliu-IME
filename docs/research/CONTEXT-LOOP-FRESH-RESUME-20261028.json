@@ -1,0 +1,49 @@
+{
+  "schema": "ZILIU_SYNTHETIC_CONTEXT_LOOP_FRESH_RESUME_AGGREGATE_V1",
+  "scope": "Linux research only; deterministic synthetic H2/D3 model; not real training quality or Windows acceptance",
+  "trainable_parameters": 103,
+  "dtype": "float64",
+  "synthetic_scene_count": 1,
+  "conditions_per_scene": 4,
+  "complete_candidates_per_condition": 2,
+  "primary": {
+    "updates": 4,
+    "outer_requests": 7,
+    "forward_cells": 128,
+    "backward_cells": 80,
+    "native_getters": 2,
+    "elapsed_seconds": 0.81051995800226,
+    "peak_rss_kib": 63128
+  },
+  "fresh_process_resume": {
+    "restore_step": 2,
+    "finish_step": 4,
+    "updates": 2,
+    "outer_requests": 6,
+    "forward_cells": 64,
+    "backward_cells": 40,
+    "native_getters": 2,
+    "elapsed_seconds": 0.9384392050051247,
+    "peak_rss_kib": 65188
+  },
+  "comparison": {
+    "complete_parameter_moment_config_step_rng_cursor_bytes_equal": true,
+    "terminal_checkpoint_bytes_equal": true,
+    "tolerance_used": false
+  },
+  "durability": {
+    "primary_private_archive_remote_bytes_crc_members_verified": true,
+    "resumed_archive_remote_verified": true
+  },
+  "real_weight_reads": 0,
+  "real_data_rows": 0,
+  "teacher_calls": 0,
+  "final_acceptance_accessed": false,
+  "limits": [
+    "One deterministic synthetic fixture, not full-size gradient or quality acceptance",
+    "RNG state is preserved but unused; does not qualify stochastic scheduling",
+    "Boundary runtime maps checks are not continuous monitoring",
+    "Resume invocation printed only status rather than full result; numeric call and supervisor parameters unchanged; recorded for audit",
+    "Local checkpoint byte equality is not proof of platform-independent numerical determinism"
+  ]
+}
