@@ -46,3 +46,8 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -B -m unittest test_supervised_command -v
+      - name: Verify one-scene streaming pilot stdlib-only contracts
+        working-directory: tools/recovery/numpy_cache_primitives/streaming_pilot
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest -v

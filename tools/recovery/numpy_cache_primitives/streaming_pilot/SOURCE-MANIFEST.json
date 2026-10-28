@@ -1,0 +1,16 @@
+{
+  "files": {
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "PLAN.md": "9cb04013a1531df92e050ae5b59f8c6910930d5df4df69670a008f2d78c33f15",
+    "README.md": "13e94084e6bf4ee9553b3e6ffd1bc015f4b151a40118d63ff73bcc82f0b74dd0",
+    "planner.py": "6c8c5aedb6cf79842c50087138cdda0147dd3b114a003da6c686f0dcc8bc6b0d",
+    "test_planner.py": "945ccf4b70552bb1b613001d38d8e2d6a1340493fc4fa3cd8a052aa458f74641",
+    "transactions.py": "e33962c3c4c5109c1989b5cff5b7471e2f26cbb275b9675d31e30a702d434f0b"
+  },
+  "license": "GPL-3.0",
+  "models_or_data_included": false,
+  "runtime_dependency": "Existing sibling contract_numpy_v2.py; no new installation",
+  "schema": "ziliu.streaming-pilot-public-source-manifest.v1",
+  "scope": "Pure source and fake tests only; no numerical/data/execution admission",
+  "test_count": 13
+}
