@@ -1,0 +1,24 @@
+{
+  "files": {
+    "adamw_numpy.py": "471341fe009cb405c85f4f4616c6e76d2f97877220da35314c0b6fb755283d48",
+    "adamw_scalar_reference.py": "27dc26d94acbdf9c5e8d482becc135e1eee970ebd9a709c5b19009b3ca201dc3",
+    "adamw_synthetic_checks_v2.py": "2657ab89b486a5b77047a48b76024dbc824fddc2968bd8b0a52428de819e6928",
+    "gru_numpy.py": "96dab06266eb97df1576e706f2b8d67799b879d80f85084dcaee7238d38bb07c",
+    "gru_oracle_checks.py": "6d6856b3fac131cc3e29b9e599793f664829734c9765449fe863d979e8688685",
+    "gru_synthetic_checks.py": "ccab1e896a2010f97e71d25a4da54aa393a231f7782902bfd7ee2a9c8d9e9d6b",
+    "gru_toy_learning.py": "904fcd73d0cccc17b2b67fc9e118290cdaf5f0486d602f09a766aab89ff3aad0",
+    "head_oracle.py": "df3c14105b767a09d0b8acc1e7f2d5c2ac888b913de16cf14feab83c4a132427",
+    "independent_gru_oracle.py": "98307543fb390b285d996a291b69c0a33097f9548dc8f95ceecc88266b539904",
+    "model.py": "bd2957667ff7d0133af462a2c61003cc8d5913a8624e1b7bc841d65255410ae8",
+    "objective_reference.py": "c4075e5ab5b81935cc6798a0d73c86b0d2612ec32f2ae51bf1b4b520f63cc9d8",
+    "test_adamw_toy_static_v2.py": "f0d87c76fb4aba5376c3b1b7aef026602c45d1fa0242608dd3517524b46c382f",
+    "test_gru_static.py": "3b5ad8db126c3a65581bc937a4e889e62f3a6c671c787cd70293e877cce4657a",
+    "test_independent_gru_oracle.py": "bfa13ab78881b90ce7922be8f9e270075e557683557fab1742c580bb6bf1a111",
+    "test_model_static.py": "6bf274563b5307b3b9982af27daaac34faecc81d955917202dd7430675bfb1d0",
+    "test_objective_reference.py": "ab28efa38096d960a48c8dedc72489c393a58b5bc062b031e4467c2d1b4f1876",
+    "toy_checkpoint.py": "f3a8bc6d007e36634cb7c8d5e9b8139164115c04847d0994742b4fcdd8d5f30f"
+  },
+  "model_weights_or_data_included": false,
+  "private_runtime_bindings_included": false,
+  "schema": "ORIGINAL_SYNTHETIC_NUMPY_STUDENT_SOURCE_MANIFEST_V1"
+}
