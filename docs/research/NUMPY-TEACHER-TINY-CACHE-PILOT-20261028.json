@@ -1,0 +1,82 @@
+{
+  "schema": "ziliu.full-numpy-tiny-pilot-public-aggregate.v1",
+  "status": "NUMERICAL_AND_CACHE_EVIDENCE_PASSED_WITH_SUPERVISION_AUDIT_GAP",
+  "scope": "Linux research-only full-projection NumPy FP32 teacher runtime and cache-storage pilot; not Windows acceptance or model-quality evaluation.",
+  "actual_budget": {
+    "score_calls_issued": 8,
+    "score_calls_completed": 8,
+    "model_loads_issued": 1,
+    "model_loads_completed": 1,
+    "native_thread_getters_issued": 2,
+    "native_thread_getters_completed": 2,
+    "runtime_guard_checkpoints": 22,
+    "mapping_snapshots_independently_checked": 44,
+    "distinct_geometry_inputs": 3,
+    "geometry_repeat_calls": 3,
+    "sentinel_calls": 2
+  },
+  "verified": {
+    "all_geometry_repeats_bitwise_equal": true,
+    "both_sentinels_match_qualified_numpy_reference_bits": true,
+    "reference_is_original_torch_bitwise_contract": false,
+    "cache_files_verified_in_fresh_process": 8,
+    "lossless_guard_records_reconstructed": 22,
+    "anonymous_executable_or_writable_executable_mappings_observed": false,
+    "fresh_disk_and_inode_gates_verified": 12,
+    "unresolved_score_or_load_or_getter_requests": 0
+  },
+  "measured": {
+    "runtime_elapsed_seconds": 3.247369951001019,
+    "peak_process_rss_kib": 331956,
+    "checked_request_ms_min": 243.803353,
+    "checked_request_ms_max": 304.165391,
+    "scorer_only_ms_min": 33.787753,
+    "scorer_only_ms_max": 79.368633,
+    "final_evidence_logical_bytes": 426548,
+    "final_evidence_allocated_bytes": 1138688,
+    "final_evidence_unique_inodes": 228,
+    "transient_peak_storage_measured": false
+  },
+  "resource_limits": {
+    "cpu_affinity_width": 2,
+    "actual_openblas_threads": 2,
+    "address_space_bytes_max": 4294967296,
+    "fresh_available_ram_bytes_min": 8589934592,
+    "disk_safety_reserve_bytes": 8589934592,
+    "inode_reserve": 200000,
+    "supervisor_term_deadline_seconds": 120,
+    "supervisor_kill_grace_seconds": 10
+  },
+  "supervision_audit": {
+    "full_contract_satisfied": false,
+    "gap": "Separate pre-launch intent, operating-system process identity/start record, and captured standard-output/error files were not recorded.",
+    "available_evidence": "Pinned launch proposal; runner intent before numerical issue; recorded tool exit success; reported absence of surviving owned workers.",
+    "handling": "Deviation retained explicitly. No retrospective records represented as pre-launch evidence, no rerun, one-shot permission consumed. Structured supervisor evidence is required before another production admission."
+  },
+  "production_status": {
+    "production_cache_entries": 0,
+    "training_labels_exported": 0,
+    "final_acceptance_set_accessed": false,
+    "next_window_approved": false,
+    "production_window_size_frozen": false,
+    "quality_improvement_claimed": false,
+    "windows_product_acceptance_claimed": false
+  },
+  "storage_risk": {
+    "whole_worklist_unique_inputs": 76295,
+    "illustrative_calls_per_window": 32,
+    "illustrative_window_count": 2385,
+    "conservative_record_budget_bytes": 18126991360,
+    "record_budget_includes_sentinels": false,
+    "additional_artifacts_included": false,
+    "safety_reserve_included": false,
+    "conclusion": "This illustrative whole-worklist budget already exceeds then-available disk after the required safety reserve. Sentinels, additional artifacts and retained states require further budget. No whole-worklist execution is approved."
+  },
+  "limitations": [
+    "Only eight actual requests across selected geometry and sentinel cases; no tail-latency or full-domain performance guarantee.",
+    "Strict runtime checks observe boundaries, not continuous mapping surveillance.",
+    "Selected development-split geometry scores are pilot evidence only and must not become training labels.",
+    "No raw inputs, actual scores, private locations, model weights or individual input identifiers are included here.",
+    "Storage admission checks do not reserve physical disk space or establish quota guarantees."
+  ]
+}
