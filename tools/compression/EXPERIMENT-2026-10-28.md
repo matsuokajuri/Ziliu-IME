@@ -35,8 +35,9 @@ replacement. Finishing the training and recovery pipeline is not a quality pass.
 
 Training windows totaled 123.420 seconds; their maximum recorded peak RSS was
 667,032 KiB. These figures include setup and checkpoint work and are **not
-inference latency measurements**. A separate matched-list CPU latency protocol
-is pending; the overall experimental plan is not yet complete.
+inference latency measurements**. The separately frozen matched-list CPU
+benchmark below subsequently completed. Neither completion establishes
+acceptable ranking quality or product readiness.
 
 ## Recovery evidence and limits
 
@@ -51,3 +52,51 @@ Backups deliberately exclude frozen third-party embeddings, vocabulary,
 examples and raw teacher scores. They require the separately verified external
 dependencies; they are **not standalone full-environment snapshots**. No model
 weights or experimental examples are distributed with this report.
+
+
+## Subsequent matched-list warm CPU benchmark
+
+The fixed final student and frozen teacher were measured on the same 319 lists
+in eight serial CPU windows. Each list had three measured repeats; each model
+had three warm-up lists per window. Model loading, disk access and outer output
+checks were excluded. All eight windows completed; no failed samples were
+removed. Inputs, outputs, resources and aggregation identities were verified.
+
+| Implementation | Per-list median | Per-list p95 |
+|---|---:|---:|
+| Original Python/PyTorch teacher, full forward per candidate | 40.545 ms | 57.465 ms |
+| Fixed student, including its built-in input/output checks | 2.313 ms | 2.772 ms |
+
+Each condition first contributes the median of its three repeats. Percentiles
+then use nearest rank across the 319 conditions. The median **paired**
+teacher/student time ratio is 17.24; its p95 is 23.97. This is not a ratio of
+unpaired aggregate medians. The teacher baseline does not use a native runtime
+or optimized prefix KV reuse. Internal validation overhead differs between
+implementations. These are warm Python compute timings, **not equivalent-quality
+speedups, startup latency, Windows results or end-to-end IME latency**.
+
+The budget was 8,613 measured teacher candidate forwards plus 108 warm-up
+candidate forwards, and 957 measured student lists plus 12 warm-up lists.
+Private student outputs captured during these existing calls were reused for
+independent metric recomputation and the analysis below; no extra inference
+was needed. Top-1 and pairwise agreement matched exactly; recomputed score
+errors differed by less than 1e-6 from the original evaluation.
+
+## Descriptive error analysis
+
+On the 85 student-only diagnostic lists, the median score range was 0.406553
+for the student versus 1.186031 for the teacher. The median per-list
+student/teacher standard-deviation ratio was 0.358069; mean within-list
+Spearman correlation was 0.290784. These describe weak score spread and rank
+matching, not a proven causal explanation or a tuned calibration rule.
+
+A constant-equal-score reference has centered RMSE 0.392166; the student's
+0.375560 is only 4.23% lower in relative RMSE. This is not a 4.23 percentage-point
+accuracy improvement. Candidate ordering is construction-dependent, including
+the original gold candidate at position zero; order correlations must not be
+converted into input features or treated as independent quality evidence.
+
+**Decision remains: do not adopt this scorer as a teacher replacement.** No
+additional training, checkpoint selection or diagnostic-based tuning was done.
+All analysis remains inside the historical teacher training pool; the final
+acceptance set was not opened. Raw per-candidate outputs remain private.
