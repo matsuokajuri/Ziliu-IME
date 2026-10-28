@@ -56,3 +56,7 @@ utility hashes bytes but does not infer cross-file semantic consistency.
 Restored roots default to mode `0700`; payload files and the completion marker
 default to `0600`, even with a permissive umask. These are Unix permission
 semantics, not a claim about Windows ACL protection.
+
+The `recovery-tools` CI workflow runs these synthetic tests on Ubuntu only.
+It is independent of the existing Windows product build gate and does not
+replace that gate or establish Windows recovery-tool support.
