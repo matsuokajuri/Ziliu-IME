@@ -1,0 +1,18 @@
+{
+  "schema": "ziliu-context-training-loop-source-v1",
+  "scope": "source-only stdlib/fake tests; no numerical admission",
+  "files": {
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "checkpoint_store.py": "3797cf462521623017822f1cfe625a81bc2f257fd8c0957a341131719eebd695",
+    "numpy_adapter.py": "578d088b3e5d69e2860f33efc7e9e6db50ffa57e60f8546ce0c75e32b4ed5168",
+    "test_adapter_contract.py": "3cebd5b547f97555ba803ad87f8999de7ffd985e61834cecbbf5ec3cd6f182d7",
+    "test_checkpoint_store.py": "b97f41c9aaac462c37c032e51738c97167dc876adf6a8ba3fd0d4f5267e12d9d",
+    "test_training_loop.py": "2cad01806e4f2e6eb00f73ce8a08543d6c91be5bb6ce97670d5dce64288ed875",
+    "training_loop.py": "e6a9a0d157de5e633d207e641e0c89c83fc2c1525587f8477085fd22c7cf27b2",
+    "README.md": "2dae4c963464affbb547518e2aadedf42c9f5e9576f43bcebb55fe355a1e2308"
+  },
+  "tests_passed": 33,
+  "numerical_execution": false,
+  "training_updates": 0,
+  "private_data_included": false
+}
