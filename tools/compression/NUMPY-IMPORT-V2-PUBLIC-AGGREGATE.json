@@ -1,0 +1,26 @@
+{
+  "actual_file_records_rehashed": 104,
+  "array_operations_requested": 0,
+  "builtin_frontend_count": 1,
+  "complete_sha256": "b4abd591bc42fe65bb1ed103555b15f86b38933743caa7c9e741a0d5e6ea0360",
+  "discovery_sha256": "a06d700e12b8d8b594f6fa4ee5b64fceb8e5652043addf064dd4f6a61c373ff6",
+  "file_backed_executable_count": 16,
+  "frontend_count": 87,
+  "identity_sha256": "0ba5bc975e4a8d110b02a5cf313e818219c454497b6c936c0d8a4cce6e01b26e",
+  "limitations": [
+    "Import-only NumPy/ctypes inventory; not array arithmetic, actual thread getter or model qualification",
+    "No new teacher score cache; no equivalence to original Torch A or Windows acceptance",
+    "Private raw inventory and mapped addresses excluded from public report"
+  ],
+  "model_forwards": 0,
+  "native_getter_calls": 0,
+  "new_execution_authorized": false,
+  "numeric_qualification_passed": false,
+  "original_review_sha256": "ee566e2d3305cf2c770cf8f1be1e6b26e62f21f9fb4dd179e4df413123f0c9e3",
+  "previous_failed_attempt_retained": true,
+  "previous_failure": "Collector required file-backed _ctypes; v2 validated exact built-in module identity tied to pinned CPython executable",
+  "raw_maps_hashes_and_no_anonymous_exec_no_wx_verified": true,
+  "schema": 1,
+  "status": "IMPORT_ONLY_INVENTORY_INDEPENDENTLY_VERIFIED_CLOSED",
+  "thread_count_verified": false
+}
