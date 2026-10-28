@@ -41,3 +41,8 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: '1'
         run: python3 -B -m unittest discover -s . -p 'test_*.py' -v
+      - name: Verify local supervisor synthetic failure handling
+        working-directory: tools/recovery/supervised_command
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -B -m unittest test_supervised_command -v

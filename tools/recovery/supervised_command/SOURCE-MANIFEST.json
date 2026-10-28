@@ -1,0 +1,12 @@
+{
+  "schema": "public-supervisor-source-v1",
+  "files": {
+    "README.md": "aea1d4011bc23529d3d0bf308aa4aaa661e95b91e3078b0a94a4ddab80ff1180",
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "supervised_command.py": "c18377be24fee6b141efd12d164f9f79e8621a1288612f2685a966973a044228",
+    "test_supervised_command.py": "04079b5a7ae7358cc3255810ddcc66589ca37f7ccec5bbd44377b9b355147091",
+    "DESIGN.md": "8823eb0ab9aef759e3673a4b6b716e3aafa4f14d3a6794d4bc2759281ac1e04e"
+  },
+  "stdlib_synthetic_subprocess_tests": 10,
+  "numeric_model_calls": 0
+}
