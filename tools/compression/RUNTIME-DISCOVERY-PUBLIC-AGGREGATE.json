@@ -1,0 +1,32 @@
+{
+  "attempts": {
+    "completed": 1,
+    "failed": 2,
+    "failure_cause": "v1 failed frontend confinement without an exact module diagnostic; v2 identified torch.classes virtual placeholder; v3 exact object/type/source checks resolved the known namespaces without expanding allowed roots",
+    "failures_retained": true
+  },
+  "counts": {
+    "cache_score_reads": 0,
+    "distribution_metadata_records": 4,
+    "explicit_tensors_arrays": 0,
+    "forwards": 0,
+    "mapped_executable_files": 34,
+    "model_loads": 0,
+    "numerical_frontend_records": 1089,
+    "task_token_reads": 0
+  },
+  "discovery_sha256": "7d9d1424ea0e4badfbb30752003374ba07f30e148df4ca7fd15388b2f4009c63",
+  "failure_sha256": [
+    "b32c32f324fb5bce0e39e9ea62e95c2e2464e815d7a7c367c2dfb8d53e4d20d1",
+    "9745bdf173772cc0c4337c24ca232fe413f3f00dc2eaca2ef660d376b2abb280"
+  ],
+  "independent_review_sha256": "a02b1b72db8cc48e2719f07b741f0df2640dfbe44b1b7e00a23c2edc9f7e4efe",
+  "limits": [
+    "Import-only candidate inventory, not post-model-load or post-first-forward closure",
+    "Not final numeric runtime contract or cache-scoring admission",
+    "No Windows or product quality acceptance",
+    "Raw inventory paths are private; control backup excludes inventory contents"
+  ],
+  "schema": 1,
+  "status": "independently_verified_import_only_runtime_discovery"
+}
