@@ -1,0 +1,26 @@
+{
+  "completed": 0,
+  "failure_sha256": "381b196387751859eec01aa9161dff977841df6e827debb67129ee611de18808",
+  "identity_sha256": "dd4daabb35a527e3ffad9040253d0181e0fe7986b0f7f6348685364ab9f3f02a",
+  "interpretation": "Current environment rejected ptrace. No privilege escalation, security-setting changes, alternative-environment bypass or single-A tracing attempted. Anonymous executable origin remains unproven.",
+  "issued": 0,
+  "limitations": [
+    "Not a model failure or numerical evaluation",
+    "This tracing route unavailable here; independent supported runtime diagnostics remain research only",
+    "Raw tracing logs stay private"
+  ],
+  "live_gate_closed": true,
+  "model_loads": 0,
+  "observed_permission_denials": [
+    "PTRACE_TRACEME",
+    "PTRACE_SETOPTIONS"
+  ],
+  "owned_group_absent": true,
+  "schema": 1,
+  "scope": "Zero-model owned-child syscall tracing capability smoke only",
+  "single_A_observation_authorized": false,
+  "status": "FAILED_CLOSED_PTRACE_NOT_PERMITTED",
+  "stderr_sha256": "54c4fd1054c5c741ab0218ea148520f87ad3298ea3fac32a7fbfe043550ca21f",
+  "underlying_policy_component": "not identified; no bypass attempted",
+  "unknown_forward_upper_bound": 0
+}
