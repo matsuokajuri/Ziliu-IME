@@ -1,0 +1,43 @@
+{
+  "abs_error": 4.76837158203125e-07,
+  "bitwise_equal": false,
+  "cache_published": 0,
+  "checkpoint_count": 8,
+  "counts": {
+    "getter_completed": 2,
+    "getter_issued": 2,
+    "load_completed": 1,
+    "load_issued": 1,
+    "score_completed": 1,
+    "score_issued": 1
+  },
+  "elapsed_seconds": 1.15697282399924,
+  "fixed_tolerances": {
+    "atol": 0.0001,
+    "rtol": 1e-05
+  },
+  "identity_sha256": "17f77cd6857dd656ab4c869a105201cb66e9bd74d77de245fb9474d57e4a4f3f",
+  "limitations": [
+    "Only one fixed candidate, not complete-pool ordering, quality, production latency or Windows acceptance",
+    "New NumPy mathematics namespace: measured score is not bitwise equal to original Torch A; no cache replacement",
+    "Mapping snapshots do not prove absence of all transient mappings; old strict/empirical Torch failures preserved",
+    "Two native getter invocations may initialize library state; no thread setters"
+  ],
+  "mapping_observations": 16,
+  "new_execution_authorized": false,
+  "observed_no_anonymous_exec_or_wx": true,
+  "original_A_bitwise_contract": false,
+  "original_review_sha256": "c45e1cdb518fe91ef7b2f6c718e441a4bf09086e9609d65e282663b9d392bee4",
+  "peak_rss_kib": 63036,
+  "qualified_single_candidate": true,
+  "ranking_qualified": false,
+  "remaining108_authorized": false,
+  "reported_thread_counts": [
+    2,
+    2
+  ],
+  "result_sha256": "0104e4cf9b67df99c58385fcb03db16997e204bc2580fea053c8e6a53b2f5669",
+  "runtime_files_rehashed": 102,
+  "schema": 1,
+  "status": "ONE_NUMPY_MODEL_SCORE_INDEPENDENTLY_VERIFIED_CLOSED"
+}
