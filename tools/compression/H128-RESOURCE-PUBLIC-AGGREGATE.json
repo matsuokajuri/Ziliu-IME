@@ -1,0 +1,58 @@
+{
+  "dtype": "float64",
+  "embedding_width": 192,
+  "hidden_width": 128,
+  "limitations": [
+    "Deterministic synthetic API extremes beyond observed data geometry, not selected real inputs or observed-distribution worst cases",
+    "Finite scores/gradients and measured resources only; not full H128 derivative requalification, real training or quality acceptance",
+    "Checked total window time includes guards and evidence, not production latency or Windows product acceptance",
+    "Mapping snapshots at boundaries only, not continuous surveillance",
+    "No new execution or remote backup claim"
+  ],
+  "optimizer_updates": 0,
+  "real_data_rows": 0,
+  "real_pretrained_weight_reads": 0,
+  "resources": {
+    "address_space_limit_bytes": 4294967296,
+    "cpu_threads": 2,
+    "fresh_available_memory_min_bytes": 8589934592,
+    "per_window_deadline_seconds": 300
+  },
+  "schema": "H128_SYNTHETIC_RESOURCE_PUBLIC_AGGREGATE_V1",
+  "status": "BOTH_WINDOWS_INDEPENDENTLY_CLOSED_PUBLIC_AGGREGATE_PENDING_PRIVACY_REVIEW",
+  "total_cell_backward_completed": 8512,
+  "total_cell_forward_completed": 16960,
+  "total_mapping_snapshots": 24,
+  "total_native_getter_calls": 4,
+  "total_numeric_requests_completed": 4,
+  "total_runtime_checkpoints": 12,
+  "trainable_parameters": 288769,
+  "unknown_getters": 0,
+  "unknown_numeric_requests": 0,
+  "windows": [
+    {
+      "candidate_count": 132,
+      "candidate_length": 63,
+      "cell_backward_completed": 8317,
+      "cell_forward_completed": 16633,
+      "context_length": 1,
+      "elapsed_seconds": 4.942199190998508,
+      "finite_scores_and_gradients": true,
+      "native_getter_calls": 2,
+      "numeric_requests_completed": 2,
+      "peak_rss_kib": 122200
+    },
+    {
+      "candidate_count": 132,
+      "candidate_length": 1,
+      "cell_backward_completed": 195,
+      "cell_forward_completed": 327,
+      "context_length": 63,
+      "elapsed_seconds": 0.9603574679931626,
+      "finite_scores_and_gradients": true,
+      "native_getter_calls": 2,
+      "numeric_requests_completed": 2,
+      "peak_rss_kib": 96888
+    }
+  ]
+}
