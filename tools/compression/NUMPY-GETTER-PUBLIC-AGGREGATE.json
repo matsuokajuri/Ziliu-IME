@@ -1,0 +1,25 @@
+{
+  "array_operations_requested": 0,
+  "completed": 1,
+  "elapsed_seconds": 0.2783135339996079,
+  "exact_file_records_rehashed": 102,
+  "identity_sha256": "eb1e473f016dec29c284448017f3ef3a8da92da7a22e043e6688c8c555a5c372",
+  "issued": 1,
+  "limitations": [
+    "One OpenBLAS thread-count getter invocation (may initialize library state); no setter or matrix/model qualification",
+    "Four observed mapping snapshots unchanged and without anonymous executable or W+X; not universal proof",
+    "No new cache or original-A numeric equivalence; Windows product acceptance not performed"
+  ],
+  "maps_observations_verified": 4,
+  "model_forwards": 0,
+  "model_loads": 0,
+  "new_execution_authorized": false,
+  "no_anonymous_exec_or_wx_in_observations": true,
+  "numeric_qualification_passed": false,
+  "original_review_sha256": "a213e564f005da01844c3d7f50c0677cc6566ae901b2191204f28c5dc3f82296",
+  "peak_rss_kib": 33208,
+  "reported_num_threads": 2,
+  "result_sha256": "172112794b0a2212e8622b0e33354c351e333303e65cc4148e70a0da43bb9a14",
+  "schema": 1,
+  "status": "ONE_GETTER_AND_CLOSURE_INDEPENDENTLY_VERIFIED_CLOSED"
+}
