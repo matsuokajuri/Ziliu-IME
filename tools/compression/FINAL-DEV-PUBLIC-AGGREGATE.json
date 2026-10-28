@@ -1,0 +1,553 @@
+{
+  "schema": 1,
+  "title": "Fixed A/B distillation comparison on historically consumed development set",
+  "status": "completed_independently_verified_not_adopted",
+  "report_sha256": "906f0b4bc0ff5a4c691e37e3262f2aafdc472be623582b90280b0dcfdeaf41e2",
+  "plan_sha256": "2e013a007c6c592bcc9ea9a29a97c1254c41fdb6170cbb46f4b3a877cffe5700",
+  "checkpoint_sha256": {
+    "A": "cb39ee0b18eb0907b656fe0f795582d68415d3e30777d998a213976821a610d3",
+    "B": "1be9aedf33aaeed97e574b82043277933a0112e6ecccaf13f6a145add38a77bf"
+  },
+  "aggregate": {
+    "all1536": {
+      "B_breaks_A": 4,
+      "B_minus_A_percentage_points": -0.2604166666666667,
+      "B_repairs_A": 0,
+      "fallback_conditions": {
+        "A": 158,
+        "B": 158,
+        "baseline": 180,
+        "teacher": 158
+      },
+      "fallback_counts": {
+        "A": {
+          "original_native_structural_gate": 98,
+          "unsupported_movable_native": 20,
+          "unsupported_original_side_pool_whole_fallback": 54
+        },
+        "B": {
+          "original_native_structural_gate": 98,
+          "unsupported_movable_native": 20,
+          "unsupported_original_side_pool_whole_fallback": 54
+        },
+        "baseline": {
+          "original_native_structural_gate": 98,
+          "unsupported_movable_native": 20,
+          "unsupported_original_side_pool_whole_fallback": 74
+        },
+        "teacher": {
+          "original_native_structural_gate": 98,
+          "unsupported_movable_native": 20,
+          "unsupported_original_side_pool_whole_fallback": 54
+        }
+      },
+      "n": 1536,
+      "systems": {
+        "A": {
+          "accuracy": 0.22916666666666666,
+          "coverage": 803,
+          "coverage_rate": 0.5227864583333334,
+          "top1_correct": 352
+        },
+        "B": {
+          "accuracy": 0.2265625,
+          "coverage": 803,
+          "coverage_rate": 0.5227864583333334,
+          "top1_correct": 348
+        },
+        "baseline": {
+          "accuracy": 0.2936197916666667,
+          "coverage": 744,
+          "coverage_rate": 0.484375,
+          "top1_correct": 451
+        },
+        "teacher": {
+          "accuracy": 0.3118489583333333,
+          "coverage": 803,
+          "coverage_rate": 0.5227864583333334,
+          "top1_correct": 479
+        }
+      }
+    },
+    "nonfull1024": {
+      "B_breaks_A": 4,
+      "B_minus_A_percentage_points": -0.390625,
+      "B_repairs_A": 0,
+      "fallback_conditions": {
+        "A": 94,
+        "B": 94,
+        "baseline": 116,
+        "teacher": 94
+      },
+      "fallback_counts": {
+        "A": {
+          "original_native_structural_gate": 42,
+          "unsupported_movable_native": 12,
+          "unsupported_original_side_pool_whole_fallback": 54
+        },
+        "B": {
+          "original_native_structural_gate": 42,
+          "unsupported_movable_native": 12,
+          "unsupported_original_side_pool_whole_fallback": 54
+        },
+        "baseline": {
+          "original_native_structural_gate": 42,
+          "unsupported_movable_native": 12,
+          "unsupported_original_side_pool_whole_fallback": 74
+        },
+        "teacher": {
+          "original_native_structural_gate": 42,
+          "unsupported_movable_native": 12,
+          "unsupported_original_side_pool_whole_fallback": 54
+        }
+      },
+      "n": 1024,
+      "systems": {
+        "A": {
+          "accuracy": 0.021484375,
+          "coverage": 383,
+          "coverage_rate": 0.3740234375,
+          "top1_correct": 22
+        },
+        "B": {
+          "accuracy": 0.017578125,
+          "coverage": 383,
+          "coverage_rate": 0.3740234375,
+          "top1_correct": 18
+        },
+        "baseline": {
+          "accuracy": 0.1181640625,
+          "coverage": 324,
+          "coverage_rate": 0.31640625,
+          "top1_correct": 121
+        },
+        "teacher": {
+          "accuracy": 0.1455078125,
+          "coverage": 383,
+          "coverage_rate": 0.3740234375,
+          "top1_correct": 149
+        }
+      }
+    },
+    "paired_component_percentile_95_pp": {
+      "all1536": [
+        -0.6510416666666666,
+        0.0
+      ],
+      "nonfull1024": [
+        -0.9765625,
+        0.0
+      ]
+    },
+    "six_cells_descriptive": {
+      "cold-full": {
+        "B_breaks_A": 0,
+        "B_minus_A_percentage_points": 0.0,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 32,
+          "B": 32,
+          "baseline": 32,
+          "teacher": 32
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "B": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "baseline": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "teacher": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.6328125,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 162
+          },
+          "B": {
+            "accuracy": 0.6328125,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 162
+          },
+          "baseline": {
+            "accuracy": 0.6328125,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 162
+          },
+          "teacher": {
+            "accuracy": 0.6328125,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 162
+          }
+        }
+      },
+      "cold-mixed": {
+        "B_breaks_A": 1,
+        "B_minus_A_percentage_points": -0.390625,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 16,
+          "B": 16,
+          "baseline": 26,
+          "teacher": 16
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          },
+          "B": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          },
+          "baseline": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 20
+          },
+          "teacher": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.0234375,
+            "coverage": 151,
+            "coverage_rate": 0.58984375,
+            "top1_correct": 6
+          },
+          "B": {
+            "accuracy": 0.01953125,
+            "coverage": 151,
+            "coverage_rate": 0.58984375,
+            "top1_correct": 5
+          },
+          "baseline": {
+            "accuracy": 0.1875,
+            "coverage": 139,
+            "coverage_rate": 0.54296875,
+            "top1_correct": 48
+          },
+          "teacher": {
+            "accuracy": 0.21875,
+            "coverage": 151,
+            "coverage_rate": 0.58984375,
+            "top1_correct": 56
+          }
+        }
+      },
+      "cold-pureinitial": {
+        "B_breaks_A": 1,
+        "B_minus_A_percentage_points": -0.390625,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 31,
+          "B": 31,
+          "baseline": 32,
+          "teacher": 31
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "B": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "baseline": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "teacher": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.01953125,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 5
+          },
+          "B": {
+            "accuracy": 0.015625,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 4
+          },
+          "baseline": {
+            "accuracy": 0.0390625,
+            "coverage": 23,
+            "coverage_rate": 0.08984375,
+            "top1_correct": 10
+          },
+          "teacher": {
+            "accuracy": 0.05859375,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 15
+          }
+        }
+      },
+      "given-full": {
+        "B_breaks_A": 0,
+        "B_minus_A_percentage_points": 0.0,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 32,
+          "B": 32,
+          "baseline": 32,
+          "teacher": 32
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "B": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "baseline": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          },
+          "teacher": {
+            "original_native_structural_gate": 28,
+            "unsupported_movable_native": 4
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.65625,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 168
+          },
+          "B": {
+            "accuracy": 0.65625,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 168
+          },
+          "baseline": {
+            "accuracy": 0.65625,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 168
+          },
+          "teacher": {
+            "accuracy": 0.65625,
+            "coverage": 210,
+            "coverage_rate": 0.8203125,
+            "top1_correct": 168
+          }
+        }
+      },
+      "given-mixed": {
+        "B_breaks_A": 1,
+        "B_minus_A_percentage_points": -0.390625,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 16,
+          "B": 16,
+          "baseline": 26,
+          "teacher": 16
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          },
+          "B": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          },
+          "baseline": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 20
+          },
+          "teacher": {
+            "original_native_structural_gate": 6,
+            "unsupported_movable_native": 4,
+            "unsupported_original_side_pool_whole_fallback": 10
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.0234375,
+            "coverage": 150,
+            "coverage_rate": 0.5859375,
+            "top1_correct": 6
+          },
+          "B": {
+            "accuracy": 0.01953125,
+            "coverage": 150,
+            "coverage_rate": 0.5859375,
+            "top1_correct": 5
+          },
+          "baseline": {
+            "accuracy": 0.1953125,
+            "coverage": 139,
+            "coverage_rate": 0.54296875,
+            "top1_correct": 50
+          },
+          "teacher": {
+            "accuracy": 0.23046875,
+            "coverage": 150,
+            "coverage_rate": 0.5859375,
+            "top1_correct": 59
+          }
+        }
+      },
+      "given-pureinitial": {
+        "B_breaks_A": 1,
+        "B_minus_A_percentage_points": -0.390625,
+        "B_repairs_A": 0,
+        "fallback_conditions": {
+          "A": 31,
+          "B": 31,
+          "baseline": 32,
+          "teacher": 31
+        },
+        "fallback_counts": {
+          "A": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "B": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "baseline": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          },
+          "teacher": {
+            "original_native_structural_gate": 15,
+            "unsupported_movable_native": 2,
+            "unsupported_original_side_pool_whole_fallback": 17
+          }
+        },
+        "n": 256,
+        "systems": {
+          "A": {
+            "accuracy": 0.01953125,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 5
+          },
+          "B": {
+            "accuracy": 0.015625,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 4
+          },
+          "baseline": {
+            "accuracy": 0.05078125,
+            "coverage": 23,
+            "coverage_rate": 0.08984375,
+            "top1_correct": 13
+          },
+          "teacher": {
+            "accuracy": 0.07421875,
+            "coverage": 41,
+            "coverage_rate": 0.16015625,
+            "top1_correct": 19
+          }
+        }
+      }
+    },
+    "statistical_scope": "Historically consumed DEV, fixed endpoints; intervals omit training-seed variance and historical selection bias; not confirmatory significance",
+    "model_adoption_decision": "none",
+    "Windows_or_final10000_acceptance": false
+  },
+  "training": {
+    "A": {
+      "scope": "TRAIN96 fit only; not DEV/generalization/model selection/Windows acceptance",
+      "metrics": {
+        "candidate_scores": 2106,
+        "centered_MAE": 0.19418497982188168,
+        "centered_RMSE": 0.2532076441071784,
+        "conditions": 234,
+        "non_tied_pairs": 8424,
+        "pairwise_agreement": 0.7674501424501424,
+        "spearman_mean_nonconstant": 0.6628917378917379,
+        "spearman_nonconstant_lists": 234,
+        "student_teacher_std_ratio_mean": 0.762349145547174,
+        "student_teacher_std_ratio_median": 0.7624012523630905,
+        "teacher_stable_argmax_agreement": 0.47435897435897434,
+        "teacher_topset_hit_rate": 0.47435897435897434
+      }
+    },
+    "B": {
+      "scope": "TRAIN96 fit only; not DEV/generalization/model selection/Windows acceptance",
+      "metrics": {
+        "candidate_scores": 2106,
+        "centered_MAE": 0.20213830343678466,
+        "centered_RMSE": 0.26211344204644466,
+        "conditions": 234,
+        "non_tied_pairs": 8424,
+        "pairwise_agreement": 0.7630579297245964,
+        "spearman_mean_nonconstant": 0.6545584045584045,
+        "spearman_nonconstant_lists": 234,
+        "student_teacher_std_ratio_mean": 0.8766271045579559,
+        "student_teacher_std_ratio_median": 0.8618856382199773,
+        "teacher_stable_argmax_agreement": 0.5641025641025641,
+        "teacher_topset_hit_rate": 0.5641025641025641
+      }
+    }
+  },
+  "execution": {
+    "fixed_updates_per_arm": 384,
+    "score_conditions_per_arm": 1024,
+    "score_forward_calls_per_arm": 11963,
+    "new_native_conditions_per_arm": 1024,
+    "full_inherited_exact_conditions_per_arm": 512,
+    "label_join_executions": 1,
+    "new_teacher_calls": 0
+  },
+  "limitations": [
+    "Historically consumed DEV; not blind, independent confirmation, or final acceptance.",
+    "Full512 conditions are unchanged inherited outputs; nonfull1024 is reported separately.",
+    "No model adopted; both students below baseline and archived teacher on this fixed DEV.",
+    "Intervals describe fixed endpoint component resampling only; omit training-seed variance and repeated-DEV selection bias.",
+    "Linux research pipeline, not Windows product acceptance.",
+    "Previous48-step negative compression result and TRAIN8-only overfit result remain unchanged."
+  ]
+}
