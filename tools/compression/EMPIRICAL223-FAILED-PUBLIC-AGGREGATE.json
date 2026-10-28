@@ -1,0 +1,28 @@
+{
+  "actual_completed": 1,
+  "actual_issued": 1,
+  "actual_samples_completed": 0,
+  "actual_sentinels_completed": 1,
+  "cache_scores_published": 0,
+  "elapsed_seconds": 2.876450971001759,
+  "failure_sha256": "e786892b7ed0fda4c558cb9fc5e94c82bcfcb377ed83e9200277364cb8b30085",
+  "first_sentinel_FP32_matches_sealed_A": true,
+  "independent_review_sha256": "d2c1ad49812b507faec0c8c18b96fb8f80489b7eda99eca385c0ab9d018362b5",
+  "limitations": [
+    "Write-plus-execute mapping violated the pre-registered policy; bounds were not relaxed and no retry occurred",
+    "Previous strict closure failure and ptrace permission refusal remain unchanged",
+    "Dynamic code origin is not verified; this is not a security proof or Windows acceptance",
+    "No sample-quality evaluation or fullpool scoring completed"
+  ],
+  "mapping_origin_proven": false,
+  "numeric_runtime_qualified": false,
+  "observed_anonymous_W_plus_X_bytes": 262144,
+  "peak_rss_kib": 411996,
+  "planned_forwards": 223,
+  "planned_sample_forwards": 221,
+  "planned_sentinel_forwards": 2,
+  "remaining_forwards_not_run": 222,
+  "schema": 1,
+  "status": "FAILED_CLOSED_W_PLUS_X_AFTER_FIRST_SENTINEL_INDEPENDENTLY_VERIFIED",
+  "unknown_forward_upper_bound": 0
+}
