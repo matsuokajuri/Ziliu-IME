@@ -1,0 +1,400 @@
+{
+  "aggregate_generator_sha256": "a3df8cb94adc5e0dec7ffb385fa43dfb422f64a37184a291ee90c6962288554b",
+  "all_reference_pair_order_top_epsilon_relations_equal": true,
+  "all_sealed_numpy_bits_replayed": true,
+  "all_windows_independently_closed": true,
+  "auditor_source_sha256": "ebb4611f3129ddc8977c027bd2f408eedf9b0fbf4a68154399c90b27165a3f75",
+  "budget_sha256": "667ddd323549fbb064dd70644719ed7eab46cf43619c7f01b683d5a484f355f0",
+  "cache_published": 0,
+  "counts": {
+    "closure_checkpoints": 5424,
+    "getter_calls": 24,
+    "mapping_snapshots": 10848,
+    "measured_pool_score_calls": 1326,
+    "model_loads": 12,
+    "score_calls": 2676,
+    "sentinel_score_calls": 24,
+    "sentinels_per_window": 2,
+    "warmup_pool_score_calls": 1326,
+    "windows": 12
+  },
+  "fresh_resource_checks": [
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9425154048,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 101964,
+      "window_elapsed_seconds": 67.42628136200074,
+      "window_index": 0
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9431552000,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 101024,
+      "window_elapsed_seconds": 59.44903447399702,
+      "window_index": 1
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9430802432,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 100120,
+      "window_elapsed_seconds": 61.279809973995725,
+      "window_index": 2
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9422368768,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 101992,
+      "window_elapsed_seconds": 68.71197687899985,
+      "window_index": 3
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9414307840,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 98448,
+      "window_elapsed_seconds": 65.58514155500598,
+      "window_index": 4
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9431101440,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 101004,
+      "window_elapsed_seconds": 64.25962548300595,
+      "window_index": 5
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9412423680,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 101064,
+      "window_elapsed_seconds": 62.777974568998616,
+      "window_index": 6
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9420046336,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 98452,
+      "window_elapsed_seconds": 64.84357504500076,
+      "window_index": 7
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9435295744,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 98100,
+      "window_elapsed_seconds": 66.92049746799603,
+      "window_index": 8
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9433124864,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 103648,
+      "window_elapsed_seconds": 62.04678133699781,
+      "window_index": 9
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9430077440,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 103788,
+      "window_elapsed_seconds": 60.21277574099804,
+      "window_index": 10
+    },
+    {
+      "address_space_bytes": 4294967296,
+      "available_memory_bytes": 9426092032,
+      "cpu_count": 2,
+      "deadline_seconds": 120,
+      "peak_rss_kib": 99292,
+      "window_elapsed_seconds": 67.77094919599767,
+      "window_index": 11
+    }
+  ],
+  "limitations": [
+    "Two fixed TRAIN pools, six measured samples each; no cross-pool pooled latency, P95 or inferential confidence claim.",
+    "Checked request includes strict guards, durable journals and validation. Scorer sum retains both internal full-weight checks; neither is uninstrumented production latency.",
+    "Per-candidate integrity checks perturb and prewarm memory. Fresh process is not a cold machine or cold page cache.",
+    "Original Torch A is a sealed numerical reference only, not a contemporaneous timing baseline; no speed ratio.",
+    "Numerical equivalence is tolerance/ranking on these fixed pools, not original-A bitwise equality or full-domain quality.",
+    "Linux research only, not Windows product or final-ten-thousand acceptance.",
+    "Mapping snapshots cannot establish absence of transient executable mappings.",
+    "Private remote recovery after earlier uncertain upload remains unconfirmed; this aggregate is not a complete private-state backup."
+  ],
+  "new_execution_authorized": false,
+  "original_A_speed_comparison": false,
+  "pool_measurements": [
+    {
+      "candidate_count": 108,
+      "measured": {
+        "checked_request": {
+          "maximum_seconds": 34.030239242,
+          "median_seconds": 32.703929016000004,
+          "minimum_seconds": 32.102057853,
+          "samples_seconds": [
+            32.788924498,
+            34.030239242,
+            32.618933534,
+            32.102057853,
+            32.176742901,
+            33.654030425
+          ]
+        },
+        "scorer_sum": {
+          "maximum_seconds": 8.389816675,
+          "median_seconds": 8.1208829105,
+          "minimum_seconds": 7.87843121,
+          "samples_seconds": [
+            8.389816675,
+            7.987572083,
+            8.121898651,
+            7.87843121,
+            8.11986717,
+            8.138406082
+          ]
+        }
+      },
+      "pool_index": 0,
+      "warmup": {
+        "checked_request": {
+          "maximum_seconds": 32.895161969,
+          "median_seconds": 32.613991893999994,
+          "minimum_seconds": 31.062517608,
+          "samples_seconds": [
+            32.753284724,
+            32.851342577,
+            31.263991936,
+            31.062517608,
+            32.895161969,
+            32.474699064
+          ]
+        },
+        "scorer_sum": {
+          "maximum_seconds": 8.29103496,
+          "median_seconds": 8.044866557999999,
+          "minimum_seconds": 7.650136929,
+          "samples_seconds": [
+            7.974990923,
+            8.29103496,
+            7.83988668,
+            7.650136929,
+            8.187592506,
+            8.114742193
+          ]
+        }
+      },
+      "window_indices": [
+        0,
+        3,
+        4,
+        7,
+        8,
+        11
+      ]
+    },
+    {
+      "candidate_count": 113,
+      "measured": {
+        "checked_request": {
+          "maximum_seconds": 32.911291737,
+          "median_seconds": 29.421663313000003,
+          "minimum_seconds": 29.156104503,
+          "samples_seconds": [
+            29.233117848,
+            29.344914801,
+            32.911291737,
+            29.623160061,
+            29.498411825,
+            29.156104503
+          ]
+        },
+        "scorer_sum": {
+          "maximum_seconds": 4.521487899,
+          "median_seconds": 4.108901122500001,
+          "minimum_seconds": 4.036277861,
+          "samples_seconds": [
+            4.036277861,
+            4.099122085,
+            4.521487899,
+            4.245994664,
+            4.084443161,
+            4.11868016
+          ]
+        }
+      },
+      "pool_index": 1,
+      "warmup": {
+        "checked_request": {
+          "maximum_seconds": 31.441473884,
+          "median_seconds": 29.968909529999998,
+          "minimum_seconds": 28.501527204,
+          "samples_seconds": [
+            28.501527204,
+            30.283219556,
+            29.654599504,
+            31.441473884,
+            30.779210981,
+            29.311623138
+          ]
+        },
+        "scorer_sum": {
+          "maximum_seconds": 4.39260046,
+          "median_seconds": 4.1896516315,
+          "minimum_seconds": 3.889385643,
+          "samples_seconds": [
+            3.889385643,
+            4.20134415,
+            4.177959113,
+            4.39260046,
+            4.292468833,
+            4.133320056
+          ]
+        }
+      },
+      "window_indices": [
+        1,
+        2,
+        5,
+        6,
+        9,
+        10
+      ]
+    }
+  ],
+  "schedule_pool_indices": [
+    0,
+    1,
+    1,
+    0,
+    0,
+    1,
+    1,
+    0,
+    0,
+    1,
+    1,
+    0
+  ],
+  "schema": "NUMPY_PERFORMANCE12_PUBLIC_AGGREGATE_V1",
+  "source_review_sha256": "7d02f641f07fc4eb9c76fc2262befa1a079fd35b012b335d317c2d4d42e3383c",
+  "startup_and_load": [
+    {
+      "admission_seconds": 0.000940965,
+      "load_seconds": 0.119245153,
+      "window_index": 0,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.044605183
+    },
+    {
+      "admission_seconds": 0.000721224,
+      "load_seconds": 0.101387896,
+      "window_index": 1,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.038247275
+    },
+    {
+      "admission_seconds": 0.000551202,
+      "load_seconds": 0.121043947,
+      "window_index": 2,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.038251566
+    },
+    {
+      "admission_seconds": 0.000507747,
+      "load_seconds": 0.130011427,
+      "window_index": 3,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.041643119
+    },
+    {
+      "admission_seconds": 0.000620652,
+      "load_seconds": 0.101462883,
+      "window_index": 4,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.039889445
+    },
+    {
+      "admission_seconds": 0.000467844,
+      "load_seconds": 0.097102482,
+      "window_index": 5,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.037087518
+    },
+    {
+      "admission_seconds": 0.000627913,
+      "load_seconds": 0.09190367,
+      "window_index": 6,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.049104355
+    },
+    {
+      "admission_seconds": 0.000554722,
+      "load_seconds": 0.106405373,
+      "window_index": 7,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.041322231
+    },
+    {
+      "admission_seconds": 0.000505913,
+      "load_seconds": 0.107830945,
+      "window_index": 8,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.045313793
+    },
+    {
+      "admission_seconds": 0.000571548,
+      "load_seconds": 0.099593594,
+      "window_index": 9,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.044783452
+    },
+    {
+      "admission_seconds": 0.000539094,
+      "load_seconds": 0.096144916,
+      "window_index": 10,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.091653989
+    },
+    {
+      "admission_seconds": 0.000564692,
+      "load_seconds": 0.103495352,
+      "window_index": 11,
+      "worker_scope": "worker callback including numerical imports and guard construction; not whole process startup",
+      "worker_seconds": 0.042088249
+    }
+  ],
+  "status": "TWELVE_WINDOWS_VERIFIED_CLOSED_PENDING_AGGREGATE_INDEPENDENT_REVIEW",
+  "unknown_score_load_getter_calls": 0,
+  "window_review_sha256": [
+    "d6369ebb9c6c8077792b1b1350e11ade2b97f6385e23f8ee86af17670ccc5f7b",
+    "cb85f22b76863e84083b61bba473d65a41a8723d1425bbcd7968382aebcd55b9",
+    "bcc8116f915f144a71913e794d2556103fb0c4124207de2ba81148a547ee26dd",
+    "7d6af419c2c913b8715a804dcddc24fce5f245ce85a168e3aea98e37fbea3e05",
+    "9beb9b8f7a9c8be7bf410cbb33a7a4da48dff3a655e1b0ab7ec04d95c66e7b99",
+    "e6c65bae61399072206e029aa9e60dcd316a43ce39d0e57bdfcc33a74ccb0592",
+    "67d68b3b39b155c22aae6ee2a6e9b864fc736d0f4cd8f9586b3686d7286c0d0a",
+    "8b54799683b9052581969866b12f89808f08157e628d421ba27a596501786645",
+    "cebe6606e1b21cc898d3a840c658d9c17be7a993ed707748a2c781ca99980509",
+    "be3d099617391435a8f571a779cd1ca9e420305a17fafa7329f2c72a64b5d285",
+    "ed5eb10a90b01564b73821200d2c785ae8b551ca9cc8afdfb38219c2b98d2966",
+    "00812417503eee367636cdd65a4788c41323a6c5bbb0b16d1962522e91b46d94"
+  ],
+  "windows_acceptance": false
+}
