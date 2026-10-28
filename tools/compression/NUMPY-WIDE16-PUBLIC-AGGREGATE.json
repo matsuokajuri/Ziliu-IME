@@ -1,0 +1,49 @@
+{
+  "all_32_sentinels_bitwise_equal": true,
+  "all_exact_top_epsilon_top_stable_order_equal": true,
+  "bitwise_mismatch_count": 1127,
+  "cache_published": 0,
+  "checkpoint_count": 3340,
+  "counts": {
+    "getter_completed": 32,
+    "getter_issued": 32,
+    "load_completed": 16,
+    "load_issued": 16,
+    "score_completed": 1622,
+    "score_issued": 1622
+  },
+  "cumulative_getters": 39,
+  "cumulative_numpy_scores": 1731,
+  "fixed_tolerances": {
+    "atol": 0.0001,
+    "rtol": 1e-05,
+    "top_epsilon": 1e-06
+  },
+  "independent_review_sha256": "cad1f62ad0b8850867144a4c43f6c3e298dcf1ea8c0ada4cc00c8e60b856d8ce",
+  "limitations": [
+    "Fixed 16 TRAIN pools only, including repeated original108 pool; not full-domain equivalence or quality",
+    "New NumPy namespace; not original Torch A bitwise contract",
+    "32 sentinels and pool0 replay registered after observing earlier NumPy results",
+    "Mapping snapshots do not establish absence of transient executable mappings",
+    "Includes validation overhead; not benchmark or Windows acceptance",
+    "Getter calls may initialize library state; no setter used",
+    "Remote control backup after earlier getter upload remains unconfirmed; no complete remote recovery claimed"
+  ],
+  "mapping_snapshots": 6680,
+  "max_abs_error": 3.337860107421875e-06,
+  "max_window_elapsed_seconds": 36.14514588199381,
+  "min_available_memory_bytes": 9405718528,
+  "new_execution_authorized": false,
+  "observed_no_anonymous_exec_or_wx": true,
+  "pair_relation_changes": 0,
+  "pair_relations": 80181,
+  "peak_rss_kib": 64756,
+  "pool0_full108_numpy_replay_bitwise_equal": true,
+  "pool_candidates": 1590,
+  "runtime_files_rehashed_each_checkpoint": 102,
+  "schema": 1,
+  "sentinel_scores": 32,
+  "status": "NUMPY_WIDE16_INDEPENDENTLY_VERIFIED_ALL_GATES_CLOSED",
+  "summed_window_elapsed_seconds": 456.0993468419765,
+  "windows": 16
+}
