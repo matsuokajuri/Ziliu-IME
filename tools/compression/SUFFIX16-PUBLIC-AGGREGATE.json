@@ -1,0 +1,44 @@
+{
+  "candidate_occurrences": 1590,
+  "completed_windows": 16,
+  "full_numpy_reference": {
+    "all_scalar_checks_including_sentinels_passed": true,
+    "candidate_bitwise_mismatches": 0,
+    "candidate_max_absolute_error": 0.0
+  },
+  "limitations": [
+    "Only sixteen fixed TRAIN pools in Linux research runtime.",
+    "No input-method quality acceptance, Windows product acceptance, latency or performance conclusion.",
+    "No final frozen acceptance set used.",
+    "No remote-backup or fresh-machine recovery claim.",
+    "Full NumPy bit equality is limited to these tested inputs; original A uses qualified scalar tolerance, not bit equality.",
+    "No new execution or publication authorized by this artifact."
+  ],
+  "mapping_snapshots": 6680,
+  "model_loads": 16,
+  "native_thread_getter_calls": 32,
+  "original_a_reference": {
+    "all_scalar_tolerance_checks_including_sentinels_passed": true,
+    "bitwise_identity_claimed": false,
+    "candidate_max_absolute_error": 3.337860107421875e-06,
+    "candidate_pairs_checked": 80181,
+    "epsilon_top_sets_unchanged": true,
+    "exact_top_sets_unchanged": true,
+    "pair_relation_changes": 0,
+    "stable_order_unchanged": true,
+    "top_epsilon": 1e-06
+  },
+  "resource_observations": {
+    "anonymous_executable_or_writable_executable_mappings_observed": false,
+    "cpu_threads": 2,
+    "maximum_peak_rss_kib": 82508,
+    "minimum_available_memory_at_start_bytes": 9405575168,
+    "per_process_address_space_limit_bytes": 4294967296,
+    "per_window_deadline_seconds": 120,
+    "scope": "Recorded boundary snapshots only; not proof of continuous absence."
+  },
+  "runtime_checkpoints": 3340,
+  "schema": "ZILIU_NUMPY_SUFFIX16_QUALIFICATION_PUBLIC_AGGREGATE_V1",
+  "status": "SIXTEEN_FIXED_TRAIN_WINDOWS_INDEPENDENTLY_VERIFIED",
+  "total_score_calls_including_sentinels": 1622
+}
