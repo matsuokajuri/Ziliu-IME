@@ -1,0 +1,69 @@
+{
+  "checkpoint": {
+    "fresh_object_same_process_restore_passed": true,
+    "fresh_process_restore_tested": false,
+    "parameters_moments_rng_cursor_and_identity_checked": true,
+    "remote_durability_tested": false,
+    "saved_completed_step": 64,
+    "terminal_state_equality_basis": "Frozen harness assertion; terminal state arrays not separately retained for independent replay"
+  },
+  "counts": {
+    "cell_backwards": 1536,
+    "cell_forwards": 1560,
+    "expected_alias_rejections": 2,
+    "native_thread_getters": 2,
+    "numeric_requests_completed": 203,
+    "numeric_requests_issued": 203,
+    "optimizer_step_attempts": 197,
+    "optimizer_steps_completed": 195,
+    "toy_primary_updates": 128,
+    "toy_resumed_updates": 64
+  },
+  "final_acceptance_set_used": false,
+  "learning": {
+    "final_mse": 6.07698116292016e-08,
+    "fixed_absolute_mse_limit": 0.01,
+    "fixed_final_to_initial_limit": 0.1,
+    "fixed_thresholds_passed": true,
+    "initial_mse": 0.2184947802188839,
+    "resumed_mse": 6.07698116292016e-08
+  },
+  "limitations": [
+    "45 parameter synthetic float64 toy only; no real TRAIN/DEV/teacher or Windows acceptance",
+    "Fresh-object exact-state equality checked by frozen numerical harness; terminal state arrays not separately persisted for post-run replay",
+    "Same process restore only, not fresh-process or remote recovery",
+    "Boundary snapshots only, not continuous mapping surveillance"
+  ],
+  "model": {
+    "dtype": "float64",
+    "hidden_size": 2,
+    "input_size": 3,
+    "synthetic_examples": 4,
+    "trainable_parameters": 45
+  },
+  "optimizer_oracle": {
+    "caller_arrays_unchanged_checks_passed": true,
+    "max_absolute_error": 2.7755575615628914e-17,
+    "scalar_reference_steps": 3
+  },
+  "platform": "Linux research test",
+  "pretrained_weights_loaded": false,
+  "quality_or_release_claim": false,
+  "real_training_rows": 0,
+  "runtime": {
+    "address_space_limit_bytes": 4294967296,
+    "anonymous_executable_or_writable_executable_mappings_observed": false,
+    "cpu_threads": 2,
+    "deadline_seconds": 120,
+    "elapsed_seconds": 4.793850982998265,
+    "fresh_available_memory_minimum_bytes": 8589934592,
+    "guard_checkpoints": 8,
+    "mapping_scope": "Fixture/getter boundaries only, not continuous surveillance",
+    "mapping_snapshots": 16,
+    "peak_rss_kib": 67960
+  },
+  "schema": "SYNTHETIC_ADAMW_GRU_TOY_QUALIFICATION_V1",
+  "status": "SYNTHETIC_LEARNING_AND_LOCAL_FRESH_OBJECT_RESUME_PASSED",
+  "teacher_calls": 0,
+  "windows_acceptance": false
+}
