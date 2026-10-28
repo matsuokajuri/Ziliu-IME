@@ -1,0 +1,24 @@
+{
+  "cache_publication": false,
+  "completed": 1,
+  "elapsed_seconds": 3.5441177030006656,
+  "failure_sha256": "525b68b1916e714d470245353d776f56e350a8732f6a21743590108ba2426ac9",
+  "first_score_matches_sealed_A_FP32_bits": true,
+  "identity_sha256": "7219b526eae42be2ed17fd79ab22da6d40487ab7c94f4b9af6d0d8cbb285928b",
+  "interpretation": "Post-load check passed; first forward matched sealed A exactly, but an anonymous executable mapping appeared and strict file-backed closure check stopped the attempt. Specific mapping origin is not proven. No cache namespace promotion or retry.",
+  "issued": 1,
+  "limitations": [
+    "One exact result does not qualify runtime or entire worklist",
+    "Not Windows acceptance",
+    "Failure evidence preserved; future dynamic-runtime policy requires separate review"
+  ],
+  "live_gate_closed": true,
+  "numeric_runtime_qualified": false,
+  "peak_rss_kib": 409200,
+  "planned_A_forwards": 221,
+  "remaining_220_not_executed": true,
+  "schema": 1,
+  "specific_anonymous_mapping_origin": "not proven",
+  "status": "FAILED_CLOSED_ANONYMOUS_EXECUTABLE_AFTER_FIRST_FORWARD",
+  "unknown_forward_upper_bound": 0
+}
