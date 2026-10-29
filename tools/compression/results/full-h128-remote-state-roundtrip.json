@@ -1,0 +1,40 @@
+{
+  "evidence": {
+    "captured_streams_eof": true,
+    "complete_state_bytes": 13863908,
+    "elapsed_seconds": 1.717989986995235,
+    "external_supervisor_exit": "EXIT_ZERO",
+    "moment_scalars": 577538,
+    "native_getter_checks": 2,
+    "owned_process_group_cleaned": true,
+    "parameter_scalars": 288769,
+    "receipts_verified": 18,
+    "remote_archive_member_equals_exported_original_and_numpy_restored_bytes": true,
+    "runtime_checkpoints": 8,
+    "runtime_source_pins_verified": 217,
+    "supervisor_manifest_pins_verified": 220,
+    "threads_per_getter": 2
+  },
+  "independent_review_passed": true,
+  "limitations": [
+    "Self-generated initialized student state only; no pretrained weights or real inputs distributed.",
+    "Raw-state recovery is not a TrainingLoop checkpoint recovery proof.",
+    "No real student training, quality improvement, final-set evaluation, Windows acceptance or product latency claim.",
+    "NumPy import may initialize legacy RNG; no explicit operation draw was made."
+  ],
+  "platform": "Linux research; not Windows product acceptance",
+  "schema": "ZILIU_SYNTHETIC_FULL_STATE_RECOVERY_RESULT_V1",
+  "status": "PASS_REMOTE_FULL_STATE_NUMPY_ROUNDTRIP_ONLY",
+  "work_performed": {
+    "backward_calls": 0,
+    "explicit_random_draws": 0,
+    "forward_calls": 0,
+    "full_state_freeze_mappings": 3,
+    "full_state_thaw_mappings": 3,
+    "generator_constructions": 1,
+    "optimizer_updates": 0,
+    "pcg64_constructions": 1,
+    "rng_state_reads": 1,
+    "rng_state_writes": 1
+  }
+}
