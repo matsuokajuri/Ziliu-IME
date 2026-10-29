@@ -1,0 +1,60 @@
+{
+  "actual_training_updates_in_evaluation": 0,
+  "baseline_reuse": {
+    "all_menus_sealed_before_target_analysis": true,
+    "new_fork1_menus_generated": 252,
+    "parent25_menus_exactly_reused": 252
+  },
+  "comparison": [
+    {
+      "comparison": "parent_epoch25",
+      "conditions": 252,
+      "loss_eligible_conditions": 220,
+      "loss_ineligible_conditions": 32,
+      "mrr": 0.14668731087430378,
+      "target_retained": 94,
+      "target_top1": 24
+    },
+    {
+      "comparison": "rank_fork_logical1_adam26",
+      "conditions": 252,
+      "loss_eligible_conditions": 220,
+      "loss_ineligible_conditions": 32,
+      "mrr": 0.1464866610903515,
+      "target_retained": 94,
+      "target_top1": 24
+    }
+  ],
+  "conditions_per_checkpoint": 252,
+  "fixed_reused_dev_scenes": 63,
+  "limitations": [
+    "One ranking-loss training update previously completed; this comparison did not train.",
+    "Reused known DEV, not blind validation or final 10000 acceptance.",
+    "No Windows product acceptance, host installation, or release.",
+    "No quality improvement is established by equal Top1 and retention counts; paired rank/MRR details are reported."
+  ],
+  "paired": {
+    "mrr_delta": -0.00020064978395228916,
+    "rank": {
+      "improved": 6,
+      "unchanged": 240,
+      "worsened": 6
+    },
+    "retention": {
+      "improved": 0,
+      "unchanged": 252,
+      "worsened": 0
+    },
+    "top1": {
+      "improved": 0,
+      "unchanged": 252,
+      "worsened": 0
+    }
+  },
+  "schema": "ZILIU_RANK_FORK_FIXED_DEV63_RESEARCH_V1",
+  "supervision": {
+    "actions_cleanly_completed": 34,
+    "cpu_threads": 2,
+    "own_memory_limit_GiB": 4
+  }
+}
