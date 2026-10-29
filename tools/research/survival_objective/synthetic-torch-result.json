@@ -1,0 +1,46 @@
+{
+  "schema": "SYNTHETIC_SURVIVAL_OBJECTIVE_SCOPE_V1",
+  "source_pins": {
+    "objective_sha256": "ccacd91f759d366d76888b9afe1031f8ec35b1988dc42d3a1c79b0bde10304af",
+    "data_sha256": "6a0cf5efdedfbedd9035fa9fff1eef5e34900305bd425632a715f85702e4a0ae"
+  },
+  "cases": [
+    {
+      "target_rank": 2,
+      "target_in_pool": true,
+      "selected_survival_comparisons": 0,
+      "counts": {
+        "proper_boundaries": 1,
+        "terminal_pool_rescued": 1,
+        "missing_frontier": 0,
+        "unsaturated": 1,
+        "no_nonproductive": 0,
+        "same_text_rescue": 0,
+        "selected": 0
+      },
+      "loss": 0.0,
+      "gradient_l1": 0.0
+    },
+    {
+      "target_rank": null,
+      "target_in_pool": false,
+      "selected_survival_comparisons": 1,
+      "counts": {
+        "proper_boundaries": 1,
+        "terminal_pool_rescued": 0,
+        "missing_frontier": 0,
+        "unsaturated": 1,
+        "no_nonproductive": 0,
+        "same_text_rescue": 0,
+        "selected": 1
+      },
+      "loss": 3.0,
+      "gradient_l1": 4.0
+    }
+  ],
+  "tensor_execution": true,
+  "native_execution": false,
+  "private_data_or_checkpoint_read": false,
+  "optimizer_updates": 0,
+  "conclusion": "Pool survival does not imply Top1; this diagnoses existing objective scope, not a production defect or a quality result."
+}
