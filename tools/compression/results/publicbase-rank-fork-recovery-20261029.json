@@ -1,0 +1,33 @@
+{
+  "limitations": [
+    "No quality comparison has yet completed for this fork.",
+    "Fresh process constructed once and restored migration then post-update state; not two blank-machine rebuilds.",
+    "External original public-base embedding, vocabulary and qualified runtime remain required.",
+    "No final acceptance, Windows product acceptance, main-host installation or release.",
+    "This one-batch experiment is closed; additional training requires a separately reviewed plan."
+  ],
+  "recovery": {
+    "additional_optimizer_updates_during_restore": 0,
+    "both_migration_and_post_update_checkpoints_saved": true,
+    "fresh_process_constructs": 1,
+    "independent_fresh_numerical_restore_verified": true,
+    "remote_complete_archive_bytes_verified": true,
+    "restore_source_separately_backed_up_and_byte_verified": true,
+    "restored_parameter_adam_rng_states": 2,
+    "self_contained_blank_machine_recovery": false
+  },
+  "result": {
+    "fixed_training_scenes": 4,
+    "full_declared_conditions": 16,
+    "inherited_global_adam_step": 25,
+    "migration_preserved_parent_state_and_rng": true,
+    "new_experiment_logical_updates": 1,
+    "old_parent_checkpoint_unchanged": true,
+    "parameter_arrays_changed": 8,
+    "parameter_elements": 23232,
+    "ranking_term_applied_conditions": 16,
+    "result_global_adam_step": 26
+  },
+  "schema": "ZILIU_RANK_FORK_FIRST_BATCH_RESEARCH_RESULT_V2",
+  "scope": "Linux research; fixed TRAIN batch; not quality or Windows product acceptance"
+}
