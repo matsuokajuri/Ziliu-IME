@@ -1,0 +1,39 @@
+{
+  "actual_training": {
+    "backward_cells": 2025,
+    "candidate_aliases": 402,
+    "candidate_pools": 4,
+    "cumulative_real_student_updates": 2,
+    "different_complete_training_scene": true,
+    "forward_cells": 4032,
+    "full_optimizer_state_restored_not_reset": true,
+    "new_updates_in_this_milestone": 1,
+    "optimizer_step_and_cursor_advanced_from_1_to_2": true,
+    "resumed_from_verified_remote_step1": true,
+    "rng_state_unchanged": true,
+    "synthetic_updates_counted_as_real": false
+  },
+  "checkpoint_recovery": {
+    "complete_remote_readback_verified": true,
+    "control_head_compare_and_swap_and_readback_verified": true,
+    "fresh_remote_segmented_restore_independently_verified": true,
+    "method": "Restore original parent chain, then explicitly verify the successor transition; do not claim mixed-identity validation by the original single-identity restore routine.",
+    "previous_checkpoints_and_failure_history_preserved": true,
+    "private_checkpoint_backup_completed": true,
+    "recovery_training_updates": 0
+  },
+  "limitations": [
+    "Step2 development-set scoring and quality comparison are not yet complete.",
+    "A successful numerical update and restore do not establish ranking quality improvement.",
+    "No Windows IME, Rime integration, latency, or end-user product acceptance is claimed by this result.",
+    "This summary contains no private inputs, training payloads, checkpoint data, private storage identifiers, or private artifact hashes."
+  ],
+  "schema": "ziliu-public-real-step2-backup-v2",
+  "scope": "Linux research training and recovery verification; not Windows product acceptance",
+  "validation": {
+    "final_acceptance_set_used": false,
+    "independent_actual_result_review_passed": true,
+    "independent_backup_and_recovery_review_passed": true,
+    "resource_limits": "CPU two threads; process address-space limit 4 GiB; fresh available physical memory at least 8 GiB before execution"
+  }
+}
