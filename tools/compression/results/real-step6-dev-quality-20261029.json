@@ -1,0 +1,60 @@
+{
+  "all_pools": {
+    "denominator": 252,
+    "mrr_after": 0.080699190903,
+    "mrr_before": 0.072279528849,
+    "top1_correct_after": 14,
+    "top1_correct_before": 12
+  },
+  "candidate_pools": 252,
+  "dev_scenes": 63,
+  "evaluation_execution": {
+    "backward_cells": 0,
+    "checkpoint6_only_forward_cells": 136252,
+    "prior_step2_scores_preserved": true,
+    "student_updates": 0,
+    "target_free_scores_sealed_before_target_join": true,
+    "teacher_calls": 0,
+    "windows": 31
+  },
+  "fallback_pools": 35,
+  "fallback_pools_only": {
+    "denominator": 35,
+    "mrr_after": 0.273573801614,
+    "mrr_before": 0.273573801614,
+    "top1_correct_after": 8,
+    "top1_correct_before": 8
+  },
+  "limitations": [
+    "This development set was already known and teacher-seen; this is not a blind evaluation.",
+    "All 148 target-absent pools remain in the denominator with zero credit.",
+    "33 pools worsened in reciprocal rank despite a small aggregate improvement.",
+    "Fallback results did not change.",
+    "No final acceptance-set data was used.",
+    "Linux CPU research results do not constitute Windows IME product acceptance."
+  ],
+  "neural_pools": 217,
+  "neural_pools_only": {
+    "denominator": 217,
+    "mrr_after": 0.049590382724,
+    "mrr_before": 0.039812710661,
+    "top1_correct_after": 6,
+    "top1_correct_before": 4
+  },
+  "paired_changes": {
+    "reciprocal_rank_improved": 47,
+    "reciprocal_rank_tied": 172,
+    "reciprocal_rank_worsened": 33,
+    "top1_improved": 2,
+    "top1_tied": 250,
+    "top1_worsened": 0
+  },
+  "schema": "ZILIU_PUBLIC_DEV_STEP2_TO_STEP6_QUALITY_V1",
+  "status": "INDEPENDENTLY_VERIFIED_KNOWN_DEV_COMPARISON",
+  "target_absent_pools": 148,
+  "target_present_pools": 104,
+  "training_steps_compared": [
+    2,
+    6
+  ]
+}
