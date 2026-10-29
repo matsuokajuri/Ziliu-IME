@@ -1,0 +1,44 @@
+{
+  "backward_cells_completed": 8314,
+  "candidate_aliases": 1562,
+  "candidate_pools": 16,
+  "completed_steps": [
+    3,
+    4,
+    5,
+    6
+  ],
+  "cpu_threads": 2,
+  "distinct_new_training_scenes": 4,
+  "durable_outer_elapsed_seconds": 17.271055,
+  "experiment": "REAL_TRAIN_V1 finite four-scene continuation",
+  "forward_cells_completed": 16534,
+  "limitations": [
+    "This is CPU Linux research, not Windows IME product acceptance.",
+    "No step6 development-set quality result is available yet.",
+    "The final acceptance set was not used.",
+    "This is four separate original four-pool optimizer updates, not synthetic updates or one merged update.",
+    "Remote step6 backup and fresh remote restore are not yet complete."
+  ],
+  "model_window_limit_seconds": 120,
+  "new_real_student_updates": 4,
+  "process_memory_limit_gib": 4,
+  "real_student_updates_before": 2,
+  "real_student_updates_total": 6,
+  "recovery": {
+    "last_verified_remote_training_step": 2,
+    "local_training_step": 6,
+    "new_segment_remote_backup": "PENDING"
+  },
+  "schema": "ZILIU_PUBLIC_REAL_K4_TRAINING_RESULT_V1",
+  "status": "INDEPENDENTLY_VERIFIED_LOCAL_STEP6_REMOTE_BACKUP_PENDING",
+  "verification": {
+    "all_four_updates_durable": true,
+    "complete_parameters_and_optimizer_moments_finite": true,
+    "explicit_parent_step2_plus_segment_restore_verified": true,
+    "model_reexecution_during_independent_review": false,
+    "previous_remote_checkpoint_chain_unchanged": true,
+    "rng_and_optimizer_configuration_unchanged": true,
+    "second_moments_nonnegative": true
+  }
+}
