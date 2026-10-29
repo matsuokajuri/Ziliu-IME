@@ -1,0 +1,58 @@
+{
+  "limitations": [
+    "Fixed synthetic inputs and fabricated targets only; no real-training or quality-improvement result.",
+    "A synthetic qualification checkpoint is not a real TRAIN initialization or final model.",
+    "No Windows product acceptance, final-set evaluation or production latency claim.",
+    "Supervised operation duration is not inference latency or end-to-end P95.",
+    "NumPy import may initialize legacy RNG; no explicit operation random draw was made.",
+    "No second optimizer step was executed or admitted by this qualification."
+  ],
+  "operation": {
+    "backward_cells": 20,
+    "candidates_per_pool": 2,
+    "cursor_completed_updates": 1,
+    "cursor_next_batch": 1,
+    "dev_or_final_access": false,
+    "explicit_random_draws": 0,
+    "forward_cells": 32,
+    "optimizer_updates": 1,
+    "real_data_training_updates": 0,
+    "real_teacher_calls": 0,
+    "synthetic_pools": 4
+  },
+  "platform": "Linux research only",
+  "recovery_evidence": {
+    "archive_members": 19,
+    "complete_parameters_moments_rng_cursor_restored": true,
+    "head_compare_and_swap_and_readback_verified": true,
+    "historical_unknown_operations_preserved": true,
+    "original_reader_fresh_process_restore_chain": true,
+    "private_archive_bytes": 10172838,
+    "remote_download_byte_identical": true,
+    "restore_executed_training_updates": 0,
+    "restored_step": 1
+  },
+  "runtime_evidence": {
+    "actual_external_deadline_seconds": 120,
+    "address_space_limit_bytes": 4294967296,
+    "cpu_limit": 2,
+    "exit_status": "EXIT_ZERO",
+    "fresh_available_memory_minimum_bytes": 8589934592,
+    "native_thread_getters": 2,
+    "receipts_verified": 24,
+    "runtime_checkpoints": 9,
+    "source_and_launch_pins_verified": 246,
+    "streams_eof_and_owned_group_cleanup": true,
+    "supervised_operation_seconds": 3.1470758020004723,
+    "threads_per_getter": 2
+  },
+  "schema": "ZILIU_H128_SYNTHETIC_ONE_UPDATE_AND_REMOTE_RECOVERY_V1",
+  "status": "ONE_SYNTHETIC_UPDATE_BACKED_UP_AND_REMOTE_CHAIN_RESTORED",
+  "student": {
+    "adam_moment_scalars": 577538,
+    "all_fp64_finite": true,
+    "parameter_scalars": 288769,
+    "parameters_changed": true,
+    "rng_state_unchanged": true
+  }
+}
