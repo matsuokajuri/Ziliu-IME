@@ -1,0 +1,97 @@
+{
+  "checkpoint_selection": false,
+  "evaluation": {
+    "all_menus_sealed_before_target_read": true,
+    "clean_actions": 34,
+    "comparison_labels": {
+      "25": "parent_epoch25",
+      "50": "rank_complete_logical24_adam50"
+    },
+    "conditions_per_arm": 252,
+    "fixed_reused_scenes": 63,
+    "mrr_delta": 0.022685958437676595,
+    "paired": {
+      "target_rank": {
+        "improved": {
+          "conditions": 38,
+          "distinct_scenes": 16
+        },
+        "regressed": {
+          "conditions": 25,
+          "distinct_scenes": 12
+        },
+        "unchanged": {
+          "conditions": 189,
+          "distinct_scenes": 58
+        }
+      },
+      "target_retained": {
+        "improved": {
+          "conditions": 2,
+          "distinct_scenes": 1
+        },
+        "regressed": {
+          "conditions": 4,
+          "distinct_scenes": 2
+        },
+        "unchanged": {
+          "conditions": 246,
+          "distinct_scenes": 63
+        }
+      },
+      "target_top1": {
+        "improved": {
+          "conditions": 8,
+          "distinct_scenes": 4
+        },
+        "regressed": {
+          "conditions": 1,
+          "distinct_scenes": 1
+        },
+        "unchanged": {
+          "conditions": 243,
+          "distinct_scenes": 63
+        }
+      }
+    },
+    "summary": {
+      "25": {
+        "mrr_all252_absent_zero": 0.1466873108743038,
+        "planned_conditions": 252,
+        "scored_conditions": 252,
+        "target_retained": 94,
+        "target_top1": 24
+      },
+      "50": {
+        "mrr_all252_absent_zero": 0.1693732693119804,
+        "planned_conditions": 252,
+        "scored_conditions": 252,
+        "target_retained": 92,
+        "target_top1": 31
+      }
+    }
+  },
+  "evidence": {
+    "aggregate_sha256": "bbdac79ff727e49c8a8ad2196f38b7555ebb460f348b016cb682c40da85440d2",
+    "global_seal_sha256": "b8c0adffb4834a61db774dad6aecbb71a6fdc555aade84d1d2e69b0892a8d78d",
+    "metrics_review_sha256": "197db08d7704c8c1136cdb7d6d846679eb87b9e9edbd1839994baeb5b13a63ac"
+  },
+  "final_acceptance": false,
+  "further_training_performed": false,
+  "limitations": [
+    "Known reused DEV63, not independent blind/final/Windows acceptance.",
+    "Loss values not recomputed; this review verifies only exact target rank, Top1, retention, pool size, denominators and descriptive MRR.",
+    "Distinct scene counts across paired buckets may overlap.",
+    "Training objective and optimizer-update count both changed versus parent25; without an equal-update survival-only control, no causal attribution to ranking is supported."
+  ],
+  "research_only": true,
+  "schema": "PUBLIC_BASE_RANK_FIXED97_DEV63_RESEARCH_SUMMARY_V1",
+  "training": {
+    "global_adam_endpoint": 50,
+    "new_completion_scenes": 93,
+    "new_logical_endpoint": 24,
+    "no_intermediate_dev_in_completion": true,
+    "ranking_scenes": 97
+  },
+  "windows_product_acceptance": false
+}
