@@ -1,0 +1,70 @@
+{
+  "conclusion": {
+    "all_top1_matches_came_from_original_order_fallback": true,
+    "quality_goal_reached": false,
+    "ready_for_product_acceptance": false,
+    "top1_improvement_observed": false
+  },
+  "environment": "Linux research only",
+  "limitations": [
+    "A higher mean reciprocal rank is not a Top1 improvement or a quality-goal achievement.",
+    "Only104 of252 original menus contain the exact target; no target-derived candidates were added.",
+    "These are offline reranking and original-order fallback metrics, not native Rime replay or Windows product acceptance.",
+    "This student-held-out set comes from the teacher-seen original training domain; it is not teacher-unseen generalization.",
+    "No statistical significance claim is made. The final acceptance set remains unused.",
+    "No private targets, candidate text, individual scores, tokens, data hashes, private paths, remote identifiers, or weights are included."
+  ],
+  "method": {
+    "all_metrics_independently_recomputed": true,
+    "both_checkpoint_scores_sealed_before_target_join": true,
+    "exact_original_unicode_target_matching": true,
+    "metrics_predeclared_before_scoring_or_target_read": true,
+    "missing_targets_and_fallback_pools_retained_in_denominator": true,
+    "score_ties_use_original_candidate_order": true
+  },
+  "results": {
+    "all_pools": {
+      "checkpoint0_mean_reciprocal_rank": 0.05031366191180929,
+      "checkpoint0_top1_matches": 8,
+      "checkpoint1_mean_reciprocal_rank": 0.05765776096421249,
+      "checkpoint1_top1_matches": 8,
+      "denominator": 252,
+      "reciprocal_rank_improved_pools": 65,
+      "reciprocal_rank_tied_pools": 163,
+      "reciprocal_rank_worsened_pools": 24,
+      "target_absent_pools_retained_as_zero": 148,
+      "target_present_pools": 104
+    },
+    "neural_scored_pools": {
+      "checkpoint0_mean_reciprocal_rank": 0.014303961959896482,
+      "checkpoint0_top1_matches": 0,
+      "checkpoint1_mean_reciprocal_rank": 0.022832593117526005,
+      "checkpoint1_top1_matches": 0,
+      "denominator": 217,
+      "target_present_pools": 89
+    },
+    "original_order_fallback_pools": {
+      "checkpoint0_mean_reciprocal_rank": 0.27357380161366873,
+      "checkpoint0_top1_matches": 8,
+      "checkpoint1_mean_reciprocal_rank": 0.27357380161366873,
+      "checkpoint1_top1_matches": 8,
+      "denominator": 35,
+      "target_present_pools": 15
+    }
+  },
+  "schema": "ZILIU_DEV63_OFFLINE_QUALITY_COMPARISON_V1",
+  "scope": {
+    "checkpoints_compared": [
+      0,
+      1
+    ],
+    "neural_scored_whole_pools": 217,
+    "original_order_fallback_whole_pools": 35,
+    "student_held_out_scenes": 63,
+    "student_training_updates_between_checkpoints": 1,
+    "teacher_seen_original_domain": true,
+    "training_updates_during_evaluation": 0,
+    "whole_pools": 252
+  },
+  "status": "EXACT_TARGET_JOIN_AND_METRICS_INDEPENDENTLY_VERIFIED"
+}
