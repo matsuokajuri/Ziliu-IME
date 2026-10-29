@@ -1,0 +1,29 @@
+{
+  "schema": "ZILIU_VOCABULARY_NAMESPACE_BRIDGE_RESULT_V1",
+  "status": "INDEPENDENTLY_VERIFIED_LOCAL_VOCABULARY_IDENTITY_BRIDGE",
+  "environment": "Linux research validation only",
+  "vocabulary_rows": 8192,
+  "reserved_rows_verified": 3,
+  "complete_ordered_vocabulary_equal": true,
+  "file_byte_canonical_list_and_indexed_row_digest_namespaces_separately_verified": true,
+  "current_source_integrity_verified": true,
+  "supervised_exit_zero_and_owned_process_cleanup_verified": true,
+  "resource_limits": {
+    "cpu_threads": 2,
+    "address_space_bytes": 4294967296,
+    "minimum_available_memory_bytes": 8589934592,
+    "window_deadline_seconds": 120
+  },
+  "scope": {
+    "only_selected_vocabulary_member_and_header_vocabulary_parsed": true,
+    "weights_deserialized": false,
+    "model_calls": 0,
+    "training_updates": 0,
+    "development_or_final_sample_values_parsed": false
+  },
+  "limitations": [
+    "Vocabulary identity only; no teacher scoring or student training admission",
+    "Not quality evaluation, final acceptance or Windows product acceptance",
+    "No model weights, vocabulary contents, private inputs, local paths or source-data identifiers included"
+  ]
+}
