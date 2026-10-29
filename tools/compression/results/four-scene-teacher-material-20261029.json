@@ -1,0 +1,32 @@
+{
+  "actual_verified_embedding_materials": {
+    "matrices": 1578,
+    "original_fp32_to_fp64_values_and_candidate_order_independently_verified": true,
+    "pools": 16,
+    "scenes": 4
+  },
+  "actual_verified_teacher_work": {
+    "all_four_phase_terminals_per_window_verified": true,
+    "automatic_window_closures_followed_by_separate_nonauthor_full_batch_review": true,
+    "candidate_occurrences": 1562,
+    "completed_windows": 50,
+    "cross_scene_global_deduplication_claimed": false,
+    "scene_local_unique_inputs_total": 1556,
+    "scoring_calls": 1656,
+    "sentinel_calls_included": 100,
+    "student_updates": 0
+  },
+  "limitations": [
+    "The four new student updates have not yet executed. The previously verified cumulative real student-update count remains two.",
+    "Teacher scores and material preparation do not establish improved student quality.",
+    "The final acceptance set was not used. No Windows IME, Rime integration, latency, or end-user acceptance is claimed.",
+    "No private input, raw score, model weight, storage identifier, private path, or private artifact digest is included."
+  ],
+  "schema": "ziliu-public-four-scene-teacher-material-v1",
+  "scope": "Linux research data preparation, not student-update or Windows-product acceptance",
+  "selection": {
+    "complete_candidate_pools": 16,
+    "full_training_scenes": 4,
+    "selection_order": "Frozen original TRAIN order, excluding both already-trained scenes and all 63 development scenes; not selected by development scores"
+  }
+}
