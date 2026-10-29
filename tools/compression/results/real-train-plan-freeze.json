@@ -1,0 +1,51 @@
+{
+  "schema": "ZILIU_REAL_TRAIN_PLAN_FREEZE_RESULT_V1",
+  "status": "ACTUAL_PLAN_GENERATED_AND_INDEPENDENTLY_REVIEWED_NOT_EXECUTION_ADMISSION",
+  "environment": "Linux research validation only",
+  "source_scope": {
+    "train_scenes": 128,
+    "whole_supported_train_scenes": 104,
+    "selected_train_scenes": 1,
+    "selection": "Previously frozen lexicographically first whole-supported scene; no label or score selection"
+  },
+  "complete_pools": {
+    "count": 4,
+    "candidate_occurrences": [
+      107,
+      107,
+      90,
+      90
+    ],
+    "total_candidate_occurrences": 394,
+    "unique_teacher_inputs": 390,
+    "all_candidate_aliases_and_order_preserved": true
+  },
+  "planned_initial_teacher_work": {
+    "windows": 13,
+    "maximum_unique_inputs_per_window": 32,
+    "sentinel_calls_per_window": 2,
+    "score_calls_including_sentinels": 416,
+    "loads": 13,
+    "thread_getters": 26,
+    "guard_checkpoints": 910,
+    "mapping_snapshots": 1820
+  },
+  "planned_student_work": {
+    "updates": 1,
+    "forward_cells": 4734,
+    "backward_cells": 2374
+  },
+  "actual_execution": {
+    "teacher_calls": 0,
+    "student_updates": 0,
+    "projection_exit_zero_and_cleanup_verified": true,
+    "development_payload_values_decoded": false,
+    "final_values_read": false
+  },
+  "review_scope": "Produced-plan mappings, strict schema and budgets independently rechecked; full-source selection relies on reviewed pinned source and closed actual execution evidence, not a second raw-source reconstruction.",
+  "limitations": [
+    "Plan freeze only; teacher and student execution remain unadmitted",
+    "Not quality evaluation, final acceptance or Windows product acceptance",
+    "No raw inputs, selected scene IDs, private paths or source-data hashes included"
+  ]
+}
