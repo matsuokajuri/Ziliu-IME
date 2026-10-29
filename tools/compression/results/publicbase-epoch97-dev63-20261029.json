@@ -1,0 +1,36 @@
+{
+  "schema": "ZILIU_PUBLIC_BASE_FIRST_EPOCH_DEV63_RESEARCH_RESULT_V1",
+  "experiment": {
+    "route": "original publicly released pretrained embedding with separately initialized trainable generator head",
+    "training_scene_count": 97,
+    "completed_optimizer_updates": 25,
+    "training_schedule": "one fixed first pass, no intermediate DEV checkpoint selection",
+    "checkpoint_private_backup": "remote bytes and full parameter, optimizer, RNG restore independently verified; external base and runtime dependencies retained"
+  },
+  "evaluation": {
+    "fixed_development_scene_count": 63,
+    "conditions_per_checkpoint": 252,
+    "evaluated_conditions_per_checkpoint": 252,
+    "baseline": "exact previously sealed step0 candidate menus from the same route (reused, not regenerated)",
+    "step0": {
+      "target_in_candidate_pool": 90,
+      "top1_correct": 20
+    },
+    "step25": {
+      "target_in_candidate_pool": 94,
+      "top1_correct": 24
+    },
+    "loss_eligible_conditions_per_checkpoint": 220,
+    "loss_ineligible_conditions_per_checkpoint": 32,
+    "generation_and_label_order": "all target-free menus sealed before reading the fixed development targets",
+    "state_updates_during_evaluation": 0
+  },
+  "limitations": [
+    "Small improvement on a repeatedly inspected development benchmark; not a fresh blind evaluation or statistical proof.",
+    "This is candidate-generation research, not a claim that end-to-end input-method accuracy meets the project target.",
+    "Loss ineligibility follows the declared graph/objective rules and is not by itself proof of a missing dictionary entry.",
+    "Original public pretraining corpus overlap with final acceptance text has not been certified; no final acceptance samples or labels were opened in this experiment.",
+    "Private backups require retained external fixed base, embedding/vocabulary reconstruction and runtime dependencies; they are not a blank-machine recovery certification.",
+    "No Windows host installation, product acceptance, release, or model adoption is claimed."
+  ]
+}
