@@ -1,0 +1,31 @@
+{
+  "schema": "ZILIU_PUBLIC_RESEARCH_PROGRESS_V1",
+  "scope": "Linux research candidate-generator head pilot, separate from the earlier H128 reranker experiment",
+  "completed": {
+    "embedding_source": "Original upstream pinyin-ime-reranker-4M public checkpoint, not the private R59 or KD370 post-training descendants",
+    "embedding_rows": 8192,
+    "embedding_dimensions": 192,
+    "embedding_frozen": true,
+    "new_head_parameters": 23232,
+    "initialization": "Fresh seed and optimizer state; no prior private generator or reranker head/optimizer inheritance",
+    "new_head_updates": 1,
+    "train_scenes": 1,
+    "graphs": 2,
+    "conditions": 4,
+    "actual_update_independently_verified": true,
+    "full_parameters_optimizer_rng_restore_verified": true
+  },
+  "limitations": [
+    "One training update is not convergence or a quality improvement claim.",
+    "No independent development evaluation has been completed for this new head.",
+    "The public upstream training corpus is documented, but absolute historical non-overlap with the final evaluation corpus has not been certified.",
+    "No final evaluation examples or labels were directly read or added by this pilot.",
+    "Linux research verification is not Windows installation or product acceptance."
+  ],
+  "checkpoint_backup": {
+    "status": "Private step1 archive uploaded once, read back in full and independently restored from the remote copy.",
+    "dependencies": "Restore requires the exact public embedding/vocabulary and qualified external runtime; this is not a standalone environment image.",
+    "prior_backups_retained": true
+  },
+  "next": "Run a bounded same-training-scene before/after diagnostic without further training; no independent-development quality claim."
+}
