@@ -1,0 +1,35 @@
+{
+  "evaluation": {
+    "final_acceptance_opened": false,
+    "new_intermediate_dev_evaluations": 0,
+    "quality_improvement_claimed": false,
+    "windows_product_acceptance": false
+  },
+  "limitations": [
+    "Predeclared ranking-objective training progress: 97 of 97 scenes processed including the previously completed four; not a quality result.",
+    "Remaining93 experiment keeps fixed objective and order; no intermediate DEV tuning or checkpoint selection.",
+    "All97 scenes were previously used by the original survival-loss training epoch; these are not new independent examples.",
+    "The earlier four-scene pilot had a DEV comparison; this remaining93 continuation has none yet.",
+    "Fresh restoration verifies recorded state, not blank-machine complete recovery, product quality or Windows acceptance."
+  ],
+  "recovery": {
+    "external_public_base_and_runtime_still_required": true,
+    "fresh_process_full_parameter_adam_rng_restore_verified": true,
+    "remote_complete_archive_byte_verified": true,
+    "restore_additional_updates": 0,
+    "saved_full_checkpoint_pairs": 4
+  },
+  "result": {
+    "conditions_in_window": 58,
+    "each_update_changed_parameter_arrays": 8,
+    "fixed_ranking_epoch_planned_scenes": 97,
+    "frozen_embedding_rng_and_old_checkpoints_unchanged": true,
+    "global_adam_step": 50,
+    "new_logical_updates_completed": 24,
+    "new_train_scenes_completed": 93,
+    "ranking_applied_conditions": 58,
+    "ranking_train_scenes_including_prior_four": 97
+  },
+  "schema": "ZILIU_RANK_FIXED97_WINDOW_RESEARCH_V1",
+  "window_index": 5
+}
