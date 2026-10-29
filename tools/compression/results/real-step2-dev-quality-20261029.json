@@ -1,0 +1,60 @@
+{
+  "limitations": [
+    "Earlier development-set results and targets were already known; this is not a blind test.",
+    "Reciprocal rank worsened in 28 pools despite aggregate improvement.",
+    "Target coverage is only 104 of 252 pools; 148 absent targets remain in the denominator with zero credit.",
+    "These small-sample offline results do not establish generalization, statistical significance, final acceptance, Windows IME readiness, Rime integration, or latency targets."
+  ],
+  "population": {
+    "complete_candidate_pools": 252,
+    "neural_pools": 217,
+    "scenes": 63,
+    "target_absent_pools_retained_as_zero": 148,
+    "target_present_pools": 104,
+    "whole_pool_original_order_fallback_pools": 35
+  },
+  "results": {
+    "all_pools": {
+      "denominator": 252,
+      "mrr_after": 0.0722795288490385,
+      "mrr_before": 0.05765776096421249,
+      "top1_count_after": 12,
+      "top1_count_before": 8
+    },
+    "fallback_pools": {
+      "denominator": 35,
+      "mrr_after": 0.27357380161366873,
+      "mrr_before": 0.27357380161366873,
+      "top1_count_after": 8,
+      "top1_count_before": 8
+    },
+    "neural_pools": {
+      "denominator": 217,
+      "mrr_after": 0.03981271066119491,
+      "mrr_before": 0.022832593117526005,
+      "top1_count_after": 4,
+      "top1_count_before": 0
+    },
+    "paired_reciprocal_rank": {
+      "improved": 60,
+      "tied": 164,
+      "worsened": 28
+    },
+    "paired_top1": {
+      "improved": 4,
+      "tied": 248,
+      "worsened": 0
+    }
+  },
+  "schema": "ziliu-public-real-step2-dev-quality-v1",
+  "scope": "Repeated development-set offline comparison, checkpoint1 to checkpoint2; not blinded or final acceptance",
+  "verification": {
+    "checkpoint_state_unchanged_by_evaluation": true,
+    "final_acceptance_set_used": false,
+    "forward_cells": 136252,
+    "independent_scoring_and_quality_reviews_passed": true,
+    "new_checkpoint_only_scoring_windows": 31,
+    "previous_checkpoint_scores_reused_without_recomputation": true,
+    "training_updates_during_evaluation": 0
+  }
+}
