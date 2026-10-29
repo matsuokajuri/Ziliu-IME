@@ -7,6 +7,24 @@
     "top1_correct_before": 12
   },
   "candidate_pools": 252,
+  "conclusion": "Step6 improved relative to step2 but remains worse than the fixed original candidate-order baseline; this model has not demonstrated a ranking improvement over that baseline.",
+  "coverage_diagnostic": {
+    "scenes_all_four_target_absent": 27,
+    "scenes_target_present_in_all_four_pools": 16,
+    "scenes_target_present_only_in_two_mixed_pools": 20,
+    "target_absent_pools_by_four_task_types": [
+      47,
+      47,
+      27,
+      27
+    ],
+    "task_type_order": [
+      "pure_initial_cold",
+      "pure_initial_given",
+      "mixed_cold",
+      "mixed_given"
+    ]
+  },
   "dev_scenes": 63,
   "evaluation_execution": {
     "backward_cells": 0,
@@ -25,13 +43,25 @@
     "top1_correct_after": 8,
     "top1_correct_before": 8
   },
+  "fixed_original_candidate_order_baseline": {
+    "all_denominator": 252,
+    "all_top1_correct": 24,
+    "definition": "Original stored candidate order, without any model- or target-based reordering.",
+    "fallback_denominator": 35,
+    "fallback_top1_correct": 8,
+    "neural_denominator": 217,
+    "neural_top1_correct": 16,
+    "step6_minus_baseline_top1_correct": -10
+  },
   "limitations": [
     "This development set was already known and teacher-seen; this is not a blind evaluation.",
     "All 148 target-absent pools remain in the denominator with zero credit.",
     "33 pools worsened in reciprocal rank despite a small aggregate improvement.",
     "Fallback results did not change.",
     "No final acceptance-set data was used.",
-    "Linux CPU research results do not constitute Windows IME product acceptance."
+    "Linux CPU research results do not constitute Windows IME product acceptance.",
+    "The original-order baseline is an offline comparison, not a native Windows replay.",
+    "Teacher target accuracy on the identical development-set scope has not yet been established; six student updates do not establish convergence."
   ],
   "neural_pools": 217,
   "neural_pools_only": {
