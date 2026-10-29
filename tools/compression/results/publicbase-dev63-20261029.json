@@ -1,0 +1,62 @@
+{
+  "evaluation": {
+    "additional_training_updates": 0,
+    "checkpoint_steps": [
+      0,
+      2
+    ],
+    "conditions_per_checkpoint": 252,
+    "fixed_windows": 16,
+    "original_graphs": 126,
+    "scenes": 63,
+    "target_free_menus_sealed_before_target_analysis": 504
+  },
+  "interpretation": "No quality improvement was observed: pool retention stayed at 90/252, while Top1 fell from 20/252 to 18/252. The two worsened conditions belong to one scene, so they are not two independent scene outcomes.",
+  "limitations": [
+    "252 conditions come from 63 scenes and are not 252 independent examples.",
+    "Loss ineligibility reflects the original survival objective, which excludes full-span edges; it is not automatically an input-method failure or proof of missing dictionary coverage.",
+    "This is a development evaluation, not the final evaluation set or Windows product acceptance.",
+    "The model has received only two training updates; these results do not establish convergence or the final capability of the approach.",
+    "Absolute historical non-overlap between upstream public pretraining and the final evaluation corpus has not been certified."
+  ],
+  "paired_top1_changes": {
+    "improved_conditions": 0,
+    "unchanged_conditions": 250,
+    "worsened_conditions": 2
+  },
+  "results": [
+    {
+      "loss_eligible_conditions": 220,
+      "loss_ineligible_conditions": 32,
+      "planned_conditions": 252,
+      "scored_conditions": 252,
+      "step": 0,
+      "target_retained": 90,
+      "target_top1": 20,
+      "unscorable_conditions": 0
+    },
+    {
+      "loss_eligible_conditions": 220,
+      "loss_ineligible_conditions": 32,
+      "planned_conditions": 252,
+      "scored_conditions": 252,
+      "step": 2,
+      "target_retained": 90,
+      "target_top1": 18,
+      "unscorable_conditions": 0
+    }
+  ],
+  "schema": "ZILIU_PUBLIC_FIXED_DEV63_EVALUATION_V1",
+  "scope": "Fixed student_dev split, disjoint from all qualified training IDs; original public embedding with candidate-generator head at steps 0 and 2. Not the earlier H128 reranker evaluation.",
+  "training_before_evaluation": {
+    "train_scenes": 5,
+    "updates": 2
+  },
+  "verification": {
+    "all_actions_explicitly_successful_and_cleaned_up": 34,
+    "all_menu_retention_rank_top1_values_independently_recomputed": true,
+    "checkpoint_embedding_and_material_files_unchanged": true,
+    "eligible_original_loss_values_independently_recomputed": 440,
+    "ineligible_loss_values_kept_null": 64
+  }
+}
