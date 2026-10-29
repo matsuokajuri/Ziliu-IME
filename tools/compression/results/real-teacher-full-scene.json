@@ -1,0 +1,41 @@
+{
+  "actual_completed": {
+    "all_owned_supervisor_groups_cleared_and_reaped": true,
+    "all_windows_independently_reviewed": true,
+    "fresh_cache_score_files_verified": 416,
+    "loads": 13,
+    "mapping_snapshots": 1820,
+    "native_thread_queries": 26,
+    "runtime_guard_checkpoints": 910,
+    "sentinel_score_calls": 26,
+    "storage_admission_receipts": 468,
+    "student_updates": 0,
+    "threads_per_query": 2,
+    "total_score_calls": 416,
+    "unique_train_inputs": 390,
+    "windows": 13
+  },
+  "environment": "Linux research only",
+  "limitations": [
+    "One frozen TRAIN scene for pipeline correctness, not a quality evaluation.",
+    "Teacher scoring is not a student training update.",
+    "No final acceptance set was used; no Windows product acceptance is claimed.",
+    "Real student label materialization, distinct clean-genesis recovery and exact runtime admission remain required.",
+    "No private inputs, token IDs, candidate text, scores, data hashes, paths or model weights are included."
+  ],
+  "schema": "ZILIU_REAL_TEACHER_ONE_SCENE_PROGRESS_V1",
+  "status": "REAL_TEACHER_FULL_FROZEN_SCENE_WINDOWS_INDEPENDENTLY_CLOSED",
+  "student_material_preparation": {
+    "actual_embedding_material_extraction_independently_verified": true,
+    "candidate_aliases": 394,
+    "candidate_counts": [
+      107,
+      107,
+      90,
+      90
+    ],
+    "embedding_matrices_verified": 398,
+    "training_execution_admission": false,
+    "whole_candidate_pools": 4
+  }
+}
