@@ -1,0 +1,24 @@
+{
+  "schema": "RANK_FORK_CORE_SYNTHETIC_VALIDATION_V1",
+  "author_toy_tests_passed": 18,
+  "independent_toy_tests_passed": 18,
+  "logical_updates_supported": [
+    0,
+    1
+  ],
+  "global_adam_steps_supported": [
+    25,
+    26
+  ],
+  "new_history_length_equals_logical_update": true,
+  "array_rng_preflight_and_exception_rollback_tested": true,
+  "exact_predecessor_and_immutable_outputs_tested": true,
+  "real_model_or_data_loaded_in_tests": false,
+  "real_training_updates_in_tests": 0,
+  "limitations": [
+    "Invented toy model and synthetic parent callback only.",
+    "Not a real-data update, independent binary build reproduction, or Windows/final product acceptance.",
+    "NPZ plus RNG sidecar is not a cross-file atomic transaction; incomplete operations retain UNKNOWN.",
+    "Runtime materials, identity, sources, resource lease and actual launch require separate review."
+  ]
+}
