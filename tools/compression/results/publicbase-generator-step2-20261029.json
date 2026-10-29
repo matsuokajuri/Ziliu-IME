@@ -1,0 +1,27 @@
+{
+  "completed": {
+    "aggregation": "Mean within each scene, then mean across four scenes; not an equal mean across fourteen conditions.",
+    "explicit_schedule_identity_migration_state_unchanged": true,
+    "frozen_public_embedding_unchanged": true,
+    "new_batch_conditions": 14,
+    "new_batch_graphs": 7,
+    "new_batch_train_scenes": 4,
+    "new_checkpoint_full_parameters_adam_rng_restore_independently_verified": true,
+    "old_checkpoints_and_backups_retained": true,
+    "original_step1_parameters_adam_and_rng_inherited": true,
+    "private_remote_archive_read_back_and_restored_with_archived_original_sources": true,
+    "total_train_scenes": 5,
+    "total_training_updates": 2
+  },
+  "next": "Evaluate the fixed independent development split with original native candidate generation, comparing the untrained head and step2 without further training.",
+  "recovery_limitations": "Private checkpoint archives require the exact external public embedding, vocabulary and qualified runtime; they are not standalone environment images.",
+  "schema": "ZILIU_PUBLIC_GENERATOR_CONTINUATION_V1",
+  "scope": "Linux research on the original public embedding and separately initialized candidate-generator head",
+  "verification_boundaries": [
+    "The exact reviewed training code and unequal-condition synthetic regression verify the scene-weighted aggregation implementation; actual per-condition losses were not separately saved or independently recomputed.",
+    "This is training and recovery progress, not evidence of improved input-method quality.",
+    "No independent DEV evaluation of step2 has completed yet; no final evaluation set was directly read.",
+    "Absolute historical non-overlap between upstream public pretraining data and final evaluation data has not been certified.",
+    "Linux research and CI are not Windows installation or product acceptance."
+  ]
+}
