@@ -1,0 +1,27 @@
+{
+  "archive_bytes": 30482409,
+  "archive_members": 24,
+  "backup_format": "incremental segment steps 3-6 with explicitly required prior step2 archive",
+  "latest_verified_remote_training_step": 6,
+  "limitations": [
+    "The delta archive requires the retained step2 parent archive; it is not a standalone full-history backup.",
+    "No step6 development-set quality result is available yet.",
+    "These are Linux CPU research and recovery results, not Windows IME product acceptance.",
+    "The final acceptance set was not used.",
+    "No private inputs, teacher data or third-party model weights are included in this public summary."
+  ],
+  "real_student_updates_total": 6,
+  "schema": "ZILIU_PUBLIC_REAL_K4_BACKUP_RESULT_V1",
+  "status": "INDEPENDENTLY_VERIFIED_REMOTE_RECOVERY_STEP6",
+  "verification": {
+    "complete_remote_readback_byte_equal": true,
+    "fresh_restore_from_remote_archives_completed": true,
+    "full_parameters_optimizer_moments_rng_and_cursors_validated": true,
+    "historical_unknown_records_preserved": true,
+    "original_backup_gate_passed": true,
+    "previous_backups_preserved": true,
+    "prior_parent_chain_and_new_segment_files_byte_equal": true,
+    "recovery_head_compare_and_swap_and_full_readback_verified": true,
+    "single_private_create_completed": true
+  }
+}
