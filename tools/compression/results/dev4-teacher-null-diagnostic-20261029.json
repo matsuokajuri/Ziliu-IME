@@ -1,0 +1,49 @@
+{
+  "candidate_aliases": 1554,
+  "conclusion": "All targets are absent from the fixed candidate pools. This diagnostic cannot determine whether teacher ranking is better than the student or the original order. The fixed selection and null result are retained, not replaced after seeing the outcome.",
+  "limitations": [
+    "Known development-set diagnostic, not blind evaluation.",
+    "No generalization claim about all 63 DEV scenes or production quality.",
+    "Teacher mean log probability is a diagnostic score, not native IME replay.",
+    "No final acceptance-set data was used.",
+    "DEV diagnostic outputs are not authorized for training.",
+    "No Windows IME product acceptance is claimed."
+  ],
+  "paired_reciprocal_rank_changes": "All three pairwise comparisons: 0 improved, 0 worsened, 16 tied.",
+  "same_scope_quality": {
+    "original_order": {
+      "denominator": 16,
+      "mrr": 0,
+      "top1_correct": 0
+    },
+    "student6": {
+      "denominator": 16,
+      "mrr": 0,
+      "top1_correct": 0
+    },
+    "teacher_mean_logprob": {
+      "denominator": 16,
+      "mrr": 0,
+      "top1_correct": 0
+    }
+  },
+  "scene_local_unique_inputs": 1550,
+  "schema": "ZILIU_PUBLIC_FIXED_FIRST4_DEV_TEACHER_DIAGNOSTIC_V1",
+  "selected_pools": 16,
+  "selected_scenes": 4,
+  "selection": "First four scenes in the previously frozen DEV projection order, selected without target or score inspection; all four pools per scene retained.",
+  "sentinel_calls": 100,
+  "status": "INDEPENDENTLY_VERIFIED_UNINFORMATIVE_TARGET_COVERAGE",
+  "student_teacher_top1_candidate_index_agreement": {
+    "denominator": 16,
+    "is_target_accuracy": false,
+    "matching_pools": 1
+  },
+  "student_updates": 0,
+  "target_absent_pools": 16,
+  "target_present_pools": 0,
+  "teacher_calls": 1650,
+  "teacher_supported_pools": 16,
+  "teacher_windows": 50,
+  "whole_pool_fallbacks": 0
+}
