@@ -1,0 +1,43 @@
+{
+  "additional_training_updates": 0,
+  "checkpoint_steps": [
+    0,
+    1
+  ],
+  "conditions_per_checkpoint": 4,
+  "graphs": 2,
+  "interpretation": "The surrogate loss decreased slightly, but target pool retention and Top1 remained 0/4. This does not show improved recall or input-method quality.",
+  "limitations": [
+    "Each checkpoint uses its own native frontier; loss values alone do not prove search-quality improvement.",
+    "No independent DEV or final evaluation was performed.",
+    "Linux research is not Windows installation or product acceptance.",
+    "The first diagnostic attempt failed on a repeated Torch inter-op initialization; the corrected attempt used one model construction and complete checkpoint restores."
+  ],
+  "menus_sealed_before_target_dependent_analysis": 8,
+  "read_only_diagnostic": true,
+  "results": [
+    {
+      "conditions": 4,
+      "mean_original_survival_loss": 13.636526852224868,
+      "step": 0,
+      "target_in_terminal_pool": 0,
+      "target_top1": 0
+    },
+    {
+      "conditions": 4,
+      "mean_original_survival_loss": 13.63468750598768,
+      "step": 1,
+      "target_in_terminal_pool": 0,
+      "target_top1": 0
+    }
+  ],
+  "scenes": 1,
+  "schema": "ZILIU_PUBLIC_SAME_TRAIN_DIAGNOSTIC_V1",
+  "scope": "Linux research: before/after one update on the same single TRAIN scene, not independent development evaluation",
+  "verification": {
+    "all_eight_losses_recomputed_from_saved_residuals_and_native_frontiers": true,
+    "checkpoint_and_rng_files_unchanged": true,
+    "pre_update_loss_matches_actual_training_loss": true,
+    "worker_full_state_and_rng_checks_passed": true
+  }
+}
