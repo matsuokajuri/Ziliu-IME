@@ -1,0 +1,42 @@
+{
+  "actual_completed": {
+    "all_owned_supervisor_groups_cleared_and_reaped": true,
+    "backward_cells": 2374,
+    "candidate_aliases": 394,
+    "durable_receipts_checked": 24,
+    "forward_cells": 4734,
+    "native_thread_queries": 2,
+    "optimizer_slots_verified_finite": 577538,
+    "parameters_changed": true,
+    "parameters_verified_finite": 288769,
+    "real_student_updates": 1,
+    "result_independently_reviewed": true,
+    "rng_state_unchanged": true,
+    "runtime_guard_checkpoints": 9,
+    "source_and_file_pins_checked": 202,
+    "started_from_independent_clean_step_zero": true,
+    "threads_per_query": 2,
+    "whole_training_pools": 4
+  },
+  "environment": "Linux research only",
+  "limitations": [
+    "One frozen TRAIN scene exercises the real training and recovery pipeline; it is not a quality evaluation.",
+    "No claim is made that the update improves ranking or typing quality.",
+    "No development-set evaluation or final acceptance-set use occurred in this run.",
+    "Linux research verification is not Windows product acceptance.",
+    "This report does not authorize another training update, publication of model weights, installation, or release.",
+    "No private input, candidate text, token IDs, scores, data hashes, private paths, remote identifiers, or model weights are included."
+  ],
+  "recovery": {
+    "continuation_authorized_by_this_report": false,
+    "historical_unknown_operations_preserved": true,
+    "independent_recovery_review_passed": true,
+    "original_full_state_chain_restored_from_remote_archive": true,
+    "parameters_optimizer_rng_and_cursors_verified": true,
+    "private_checkpoint_archive_uploaded_and_fully_read_back": true,
+    "remote_recovery_head_updated_and_read_back": true,
+    "training_updates_performed_by_restore": 0
+  },
+  "schema": "ZILIU_REAL_STUDENT_ONE_UPDATE_PROGRESS_V1",
+  "status": "ONE_REAL_TRAIN_UPDATE_AND_PRIVATE_FULL_STATE_RECOVERY_INDEPENDENTLY_VERIFIED"
+}
