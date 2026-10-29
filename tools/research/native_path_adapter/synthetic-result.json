@@ -1,0 +1,43 @@
+{
+  "schema": "SYNTHETIC_NATIVE_PATH_ADAPTER_RESEARCH_V1",
+  "stdlib_tests_passed": 16,
+  "independently_reexecuted_stdlib_tests": 16,
+  "actual_native_probe_calls": 3,
+  "actual_native_cases": [
+    {
+      "case": "zero_residual",
+      "validated_pool_paths": 2
+    },
+    {
+      "case": "nonzero_residual",
+      "validated_pool_paths": 2
+    },
+    {
+      "case": "no_complete_path",
+      "validated_pool_paths": 0
+    }
+  ],
+  "checks": [
+    "complete edge path and reconstructed text",
+    "cumulative base and learned search score distinction",
+    "same-text path deduplication",
+    "shared prefix",
+    "full-span candidate exclusion",
+    "incorrect residual snapshot rejection"
+  ],
+  "fixed_score_tolerance": {
+    "absolute": 1e-10,
+    "relative": 1e-12
+  },
+  "real_input_or_targets_read": false,
+  "model_calls": 0,
+  "optimizer_updates": 0,
+  "training_integration": false,
+  "development_or_final_data_read": false,
+  "limitations": [
+    "Native results apply only to these invented fixtures and the privately pinned tested binary.",
+    "Historical source and binary co-pins do not reconstruct the compiler/object/link chain.",
+    "No full ABI, production, Windows or final quality acceptance is claimed.",
+    "This probe did not independently hash-attest every dynamically loaded dependency or prove null Grammar in all environments."
+  ]
+}
