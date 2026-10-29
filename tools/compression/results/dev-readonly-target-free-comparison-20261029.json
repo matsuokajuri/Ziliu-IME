@@ -1,0 +1,49 @@
+{
+  "actual_completed": {
+    "all_owned_supervisor_groups_cleared_and_reaped": true,
+    "backward_cells": 0,
+    "both_complete_checkpoint_states_and_files_unchanged": true,
+    "candidate_scores_per_checkpoint": 22239,
+    "durable_receipt_hashes_verified": 837,
+    "finite_candidate_scores_total": 44478,
+    "fixed_windows": 31,
+    "forward_cells": 272504,
+    "independent_result_review_passed": true,
+    "native_thread_queries": 62,
+    "optimizer_updates": 0,
+    "runtime_guard_checkpoints": 341,
+    "source_and_file_pins_per_window": 206,
+    "teacher_calls": 0,
+    "threads_per_query": 2
+  },
+  "environment": "Linux research only",
+  "limitations": [
+    "This is a target-free behavior comparison, not an accuracy or quality evaluation.",
+    "Changed rankings do not imply better rankings.",
+    "The full252-pool denominator is retained;35 whole menus were not neurally scored, and no unsupported candidates were removed.",
+    "Student-held-out scenes originate from the teacher-seen original training domain; this is not teacher-unseen generalization.",
+    "Target labels and the final acceptance set were not read in this scoring experiment.",
+    "Original-order fallback is an offline policy, not a native Rime replay or Windows product acceptance.",
+    "No private input, candidate text, tokens, individual scores, data hashes, private paths, remote identifiers, or weights are included."
+  ],
+  "schema": "ZILIU_DEV_TARGET_FREE_CHECKPOINT_COMPARISON_V1",
+  "scope": {
+    "candidate_occurrences": 25610,
+    "checkpoints_compared": [
+      0,
+      1
+    ],
+    "neural_scored_whole_pools": 217,
+    "student_held_out_scenes": 63,
+    "teacher_seen_original_domain": true,
+    "whole_candidate_pools": 252,
+    "whole_menu_unscored_original_order_fallback_pools": 35
+  },
+  "status": "ALL_FIXED_READONLY_DEV_WINDOWS_INDEPENDENTLY_VERIFIED",
+  "target_free_behavior": {
+    "comparison_denominator_neural_pools": 217,
+    "quality_improvement_inferred": false,
+    "ranking_changed_neural_pools": 217,
+    "top1_changed_neural_pools": 201
+  }
+}
