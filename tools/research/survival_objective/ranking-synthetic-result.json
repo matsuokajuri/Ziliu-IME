@@ -1,0 +1,47 @@
+{
+  "schema": "SYNTHETIC_RANKING_SUPPLEMENT_RESEARCH_V1",
+  "scope": "invented-only objective tests; no real-training integration",
+  "formula": "original_survival_and_regularizer + ranking_weight * max(0, margin + negative_score - gold_score)",
+  "margin": 1.0,
+  "ranking_weight": 1.0,
+  "parameter_status": "fixed synthetic starting specification, not development-set tuned",
+  "test_cases": 14,
+  "author_tensor_tests_passed": 14,
+  "independent_tensor_tests_passed": 14,
+  "strongest_negative_fixture": {
+    "ranking_loss": 3.0,
+    "residual_gradient": [
+      0.0,
+      -1.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "shared_edge_gradient": 0.0
+  },
+  "coverage": [
+    "strongest different-text negative selection",
+    "original coherent gold path including higher-scoring same-text alternative",
+    "shared-edge gradient cancellation",
+    "all target-text paths excluded from negatives",
+    "missing negative preserves original nonzero loss and exact gradient",
+    "unreachable target explicitly ineligible",
+    "malformed paths and nonfinite values rejected",
+    "satisfied and exact-boundary margin handling",
+    "deterministic score ties",
+    "same-value comparison with PyTorch margin_ranking_loss"
+  ],
+  "ineligible_ranking_policy": "ranking term remains absent, explicitly not applied; preserve original loss unchanged if defined, otherwise retain original ineligibility",
+  "original_objective_modified": false,
+  "optimizer_updates": 0,
+  "model_or_checkpoint_loading": false,
+  "native_execution": false,
+  "native_adapter_implemented": false,
+  "development_data_read": false,
+  "final_acceptance_data_read": false,
+  "limitations": [
+    "Hand-built fixtures do not certify native search provenance or score equivalence.",
+    "Inspected candidate native source is not yet matched to the current build; node references are a research lead only.",
+    "No actual quality improvement, Windows product acceptance or final acceptance is claimed."
+  ]
+}
