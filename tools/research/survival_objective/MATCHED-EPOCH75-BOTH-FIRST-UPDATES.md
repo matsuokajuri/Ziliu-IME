@@ -1,0 +1,9 @@
+# Matched continuation: both first updates recoverable
+
+The fixed continuation experiment has completed and independently verified the first update of each arm: survival-only control and unchanged combined ranking objective. Each advanced from Adam50 to Adam51 on the same four TRAIN scenes and sixteen mode/context conditions. The control arm did not calculate a ranking term; the ranking arm applied its existing ranking term to all sixteen conditions.
+
+For each arm, both the unchanged-parent migration checkpoint and updated checkpoint were privately backed up, completely read back, and restored in a fresh numerical process. All 23,232 trainable parameters, eight Adam parameter-state groups and RNG matched exactly. Frozen embeddings and deterministic-update RNG remained unchanged. The remote recovery index updates were independently checked against their complete official readbacks, with previous recovery history retained.
+
+This is a snapshot of those two completed first-update recovery boundaries, not a claim that the planned 25 updates per arm or later windows have finished. A further 24 updates per arm remain in the protocol at these boundaries. Single-update windows continue to require full remote recovery before proceeding. The planned fixed, already-used development-set comparison is reserved for the two terminal Adam75 checkpoints; it has not been run for this snapshot.
+
+No final data were read, and no candidate-ranking or input-quality improvement is established. The earlier failed synthetic reference comparison remains recorded; after correcting its computation graph, the 52 invented tests passed without relaxing exact state comparisons. This is Linux research and recoverability evidence, not Windows product acceptance or a release. No private inputs, checkpoint payloads or recovery identifiers are published here.
