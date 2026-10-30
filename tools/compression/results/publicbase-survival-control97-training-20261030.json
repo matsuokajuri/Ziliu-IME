@@ -1,0 +1,35 @@
+{
+  "same_original_parent25_parameters_adam_rng_as_rank_arm": true,
+  "actual_ranking_order_exact": true,
+  "no_scene_duplicate_or_omission": true,
+  "logical_start": 0,
+  "logical_finish": 25,
+  "global_adam_start": 25,
+  "global_adam_finish": 50,
+  "unique_scenes": 97,
+  "conditions": 364,
+  "updates": 25,
+  "retained_pairs_including_migration": 26,
+  "window_scene_cursors": [
+    4,
+    17,
+    33,
+    49,
+    65,
+    81,
+    97
+  ],
+  "ranking_applied_conditions": 0,
+  "no_intermediate_dev": true,
+  "fixed_terminal_endpoint_no_selection": true,
+  "epoch_complete": true,
+  "next_training_authorized": false,
+  "final_window_remote_backup_still_required": true,
+  "limitations": [
+    "TRAIN execution/state evidence only, not quality/generalization/final or Windows product acceptance.",
+    "Final window private remote full restoration and head97 closure remain separately required.",
+    "Single deterministic matched control with known repeated DEV, not broad causal or statistical generalization."
+  ],
+  "status": "VERIFIED_MATCHED_SURVIVAL_CONTROL97_TRAIN_COMPLETE_RECOVERY_PENDING",
+  "quality_or_final_or_windows_acceptance": false
+}
